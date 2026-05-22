@@ -4,7 +4,7 @@ Code-level orientation for contributors and Claude Code sessions on this repo.
 
 ## What this is
 
-`fad-check` — **Fucking Autonomous Dependency Checker**. Node.js CLI (`fad-check`, or short alias `fad`) that:
+`fad-checker` — **Fucking Autonomous Dependency Checker**. Node.js CLI (`fad-checker`, or short alias `fad`) that:
 
 1. Walks a multi-module Maven tree, removes private/excluded dependencies (regex on groupId), writes a parallel directory of "cleaned" POMs that can be fed to Snyk.
 2. Walks every JS package (`package.json` + `package-lock.json` v1/v2/v3 or `yarn.lock` v1) in the same source tree.
@@ -27,9 +27,9 @@ npm install
 npm test                  # 96 unit tests via node --test
 
 # basic cleanup workflow
-node fad-check.js -s ./proj                                        # read-only, full report
-node fad-check.js -s ./proj -t ../pom-clean -e "^client\\."        # write cleaned tree
-node fad-check.js -s ./proj -t ../pom-clean -e "^client\\." --snyk # also drive snyk
+node fad-checker.js -s ./proj                                        # read-only, full report
+node fad-checker.js -s ./proj -t ../pom-clean -e "^client\\."        # write cleaned tree
+node fad-checker.js -s ./proj -t ../pom-clean -e "^client\\." --snyk # also drive snyk
 
 # read the full usage doc
 cat docs/USAGE.md
@@ -38,8 +38,8 @@ cat docs/USAGE.md
 Binary builds (requires `bun`):
 
 ```bash
-npm run build:linux   # → dist/fad-check-linux
-npm run build:win     # → dist/fad-check.exe
+npm run build:linux   # → dist/fad-checker-linux
+npm run build:win     # → dist/fad-checker.exe
 npm run build         # both
 ```
 
@@ -51,7 +51,7 @@ Guardrails enforced at startup:
 ## Architecture (one-liner per file)
 
 ```
-fad-check.js                 Thin CLI: commander parsing, orchestration only.
+fad-checker.js                 Thin CLI: commander parsing, orchestration only.
 lib/core.js                  POM parsing, parent resolution, all-profile merge, rewrite.
 lib/maven-version.js         Maven version parsing + range comparison (no external deps).
 lib/cve-download.js          Bulk download of CVEProject/cvelistV5 + Maven-relevant index build.
@@ -64,13 +64,13 @@ lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
 lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configurations).
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
 lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser.
-lib/scan-completeness.js     Warnings for deps fad-check couldn't fully resolve.
+lib/scan-completeness.js     Warnings for deps fad-checker couldn't fully resolve.
 lib/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 parsers.
 lib/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
-lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-check/.
-lib/config.js                Persistent user config in ~/.fad-check/config.json (mode 0600).
+lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/.
+lib/config.js                Persistent user config in ~/.fad-checker/config.json (mode 0600).
 data/                        known-obsolete.json, eol-mapping.json, cpe-coord-map.json, known-public-namespaces.json
-completions/                 fad-check.bash, fad-check.zsh
+completions/                 fad-checker.bash, fad-checker.zsh
 test/                        node:test suite + fixtures (simple, complex-enterprise, monorepo-mixed, …).
 ```
 
@@ -104,8 +104,8 @@ Test fixtures live in `test/fixtures/`:
 ## Gotchas / edge cases worth knowing
 
 - CVE bundle from CVEProject is ~500 MB unpacked. Shells out to `curl + unzip` (fallback to `fetch()` + `unzip` / `Expand-Archive`). Extracted JSON deleted after index build. Ships as `cves.zip.zip` (nested zip) — `extractZip()` recurses up to 3 levels.
-- `endoflife.date` API responses cached 7 days; Maven Central version lookups cached 24 hours. Cache lives in `~/.fad-check/`.
-- **Persistent config**: `~/.fad-check/config.json` (mode 0600). Set NVD key via `fad-check --set-nvd-key <KEY>` (free, instant from <https://nvd.nist.gov/developers/request-an-api-key> — bumps rate limit from 5/30s to 50/30s).
+- `endoflife.date` API responses cached 7 days; Maven Central version lookups cached 24 hours. Cache lives in `~/.fad-checker/`.
+- **Persistent config**: `~/.fad-checker/config.json` (mode 0600). Set NVD key via `fad-checker --set-nvd-key <KEY>` (free, instant from <https://nvd.nist.gov/developers/request-an-api-key> — bumps rate limit from 5/30s to 50/30s).
 - **`--offline` umbrella flag**: skips every network call (CVE/OSV/NVD/Maven Central/endoflife/retire). Falls back to whatever is already cached. Per-source variants (`--cve-offline`, `--no-osv`, `--no-nvd`, `--no-retire`, `--no-transitive`) still work independently.
 - `snyk` is not a hard dep — shells out via `execFile`. `snyk` exits 1 on findings; the JSON is still on stdout.
 - The cleaned POM is the union of every profile's deps. Counts will be larger than the source POM. Intentional — don't "fix" that.
@@ -116,11 +116,11 @@ Test fixtures live in `test/fixtures/`:
 
 | Cache | Location | TTL |
 |---|---|---|
-| CVEProject bulk index | `~/.fad-check/cve-data/maven-cve-index.json` | 24 h |
-| OSV per-dep stub list | `~/.fad-check/osv-cache/<eco>__<g>__<a>__<v>.json` | 12 h |
-| OSV vuln details | `~/.fad-check/osv-cache/vuln_<id>.json` | 12 h |
-| NVD CVE record | `~/.fad-check/nvd-cache/<cveId>.json` | 7 d |
-| endoflife.date cycles | `~/.fad-check/eol-cache.json` | 7 d |
-| Maven Central latest | `~/.fad-check/version-cache.json` | 24 h |
-| Transitive POM | `~/.fad-check/poms-cache/<g>__<a>__<v>.pom` | ∞ (immutable on Maven Central) |
-| retire.js findings | `~/.fad-check/retire-cache/<md5(src)>.json` | 24 h |
+| CVEProject bulk index | `~/.fad-checker/cve-data/maven-cve-index.json` | 24 h |
+| OSV per-dep stub list | `~/.fad-checker/osv-cache/<eco>__<g>__<a>__<v>.json` | 12 h |
+| OSV vuln details | `~/.fad-checker/osv-cache/vuln_<id>.json` | 12 h |
+| NVD CVE record | `~/.fad-checker/nvd-cache/<cveId>.json` | 7 d |
+| endoflife.date cycles | `~/.fad-checker/eol-cache.json` | 7 d |
+| Maven Central latest | `~/.fad-checker/version-cache.json` | 24 h |
+| Transitive POM | `~/.fad-checker/poms-cache/<g>__<a>__<v>.pom` | ∞ (immutable on Maven Central) |
+| retire.js findings | `~/.fad-checker/retire-cache/<md5(src)>.json` | 24 h |

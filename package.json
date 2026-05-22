@@ -1,5 +1,5 @@
 {
-  "name": "fad-check",
+  "name": "fad-checker",
   "version": "1.0.0",
   "description": "Fucking Autonomous Dependency Checker — multi-ecosystem CVE / EOL / outdated / vendored-JS scanner for Maven, npm and Yarn monorepos. Self-contained HTML + Word report.",
   "license": "MIT",
@@ -11,14 +11,14 @@
     "N8tz (https://github.com/N8tz)"
   ],
   "bin": {
-    "fad-check": "fad-check.js",
-    "fad": "fad-check.js"
+    "fad-checker": "fad-checker.js",
+    "fad": "fad-checker.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "build:linux": "bun build fad-check.js --compile --target=bun-linux-x64 --outfile=dist/fad-check-linux",
-    "build:win": "bun build fad-check.js --compile --target=bun-windows-x64 --outfile=dist/fad-check.exe",
-    "build:macos": "bun build fad-check.js --compile --target=bun-darwin-x64 --outfile=dist/fad-check-macos",
+    "build:linux": "bun build fad-checker.js --compile --target=bun-linux-x64 --outfile=dist/fad-checker-linux",
+    "build:win": "bun build fad-checker.js --compile --target=bun-windows-x64 --outfile=dist/fad-checker.exe",
+    "build:macos": "bun build fad-checker.js --compile --target=bun-darwin-x64 --outfile=dist/fad-checker-macos",
     "build": "npm run build:linux && npm run build:win"
   },
   "dependencies": {

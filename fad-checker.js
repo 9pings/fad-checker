@@ -27,7 +27,7 @@ if (process.argv.includes("--completion")) {
 	const shell = process.argv[shellIdx] && !process.argv[shellIdx].startsWith("-")
 		? process.argv[shellIdx]
 		: "bash";
-	const completionPath = path.join(__dirname, "completions", `fad-check.${shell}`);
+	const completionPath = path.join(__dirname, "completions", `fad-checker.${shell}`);
 	try {
 		process.stdout.write(fs.readFileSync(completionPath, "utf8"));
 		process.exit(0);
@@ -87,7 +87,7 @@ if (process.argv.includes("--add-repo") || process.argv.includes("--remove-repo"
 		const url = process.argv[idx + 2];
 		if (!name || name.startsWith("-") || !url || url.startsWith("-")) {
 			console.error(chalk.red("❌  --add-repo requires <name> <url>"));
-			console.error("   Example: fad-check --add-repo nexus https://nexus.acme.com/repository/maven-public/");
+			console.error("   Example: fad-checker --add-repo nexus https://nexus.acme.com/repository/maven-public/");
 			console.error("   Optional auth: --add-repo nexus https://nexus.acme.com/repository/maven-public/ --auth user:pass");
 			process.exit(1);
 		}
@@ -121,7 +121,7 @@ if (process.argv.includes("--export-cache") || process.argv.includes("--import-c
 			if (exportIdx !== -1) {
 				const dest = process.argv[exportIdx + 1];
 				if (!dest || dest.startsWith("-")) {
-					console.error(chalk.red("❌  --export-cache requires a destination path (e.g. fad-check-cache.tar.gz)"));
+					console.error(chalk.red("❌  --export-cache requires a destination path (e.g. fad-checker-cache.tar.gz)"));
 					process.exit(1);
 				}
 				const includeConfig = process.argv.includes("--include-config");
@@ -150,11 +150,11 @@ if (process.argv.includes("--export-cache") || process.argv.includes("--import-c
 }
 
 const USAGE = `
-(1) fad-check -s ./proj                                              # read-only: full report (CVE + EOL + obsolete + outdated + transitive)
-(2) fad-check -s ./proj -e "^(org.private|client)"                   # same, with regex exclusion of private deps
-(3) fad-check -s ./proj -t ../pom-clean -e "^(org.private|client)"   # write cleaned POMs + full report
-(4) fad-check -s ./proj --no-transitive --no-all-libs                # faster, only direct deps, no Maven Central queries
-(5) fad-check -s ./proj -t ../pom-clean -e "^..." --snyk             # also run snyk and merge findings
+(1) fad-checker -s ./proj                                              # read-only: full report (CVE + EOL + obsolete + outdated + transitive)
+(2) fad-checker -s ./proj -e "^(org.private|client)"                   # same, with regex exclusion of private deps
+(3) fad-checker -s ./proj -t ../pom-clean -e "^(org.private|client)"   # write cleaned POMs + full report
+(4) fad-checker -s ./proj --no-transitive --no-all-libs                # faster, only direct deps, no Maven Central queries
+(5) fad-checker -s ./proj -t ../pom-clean -e "^..." --snyk             # also run snyk and merge findings
 `;
 
 program
@@ -173,13 +173,13 @@ program
 	.option("--no-osv", "skip OSV.dev (Google/GitHub aggregated Maven CVE feed)")
 	.option("--no-nvd", "skip NIST NVD enrichment of matched CVEs")
 	.option("--offline", "no network: use cached CVE/OSV/NVD/POM data only")
-	.option("--set-nvd-key <key>", "save NVD API key to ~/.fad-check/config.json (10× faster NVD enrichment)")
-	.option("--show-config", "print the persisted ~/.fad-check/config.json")
-	.option("--export-cache <file>", "tar.gz/zip the ~/.fad-check/ caches to <file> (excludes config.json by default)")
-	.option("--import-cache <file>", "restore ~/.fad-check/ from a previously exported archive (existing dir is moved to .bak unless --force)")
+	.option("--set-nvd-key <key>", "save NVD API key to ~/.fad-checker/config.json (10× faster NVD enrichment)")
+	.option("--show-config", "print the persisted ~/.fad-checker/config.json")
+	.option("--export-cache <file>", "tar.gz/zip the ~/.fad-checker/ caches to <file> (excludes config.json by default)")
+	.option("--import-cache <file>", "restore ~/.fad-checker/ from a previously exported archive (existing dir is moved to .bak unless --force)")
 	.option("--include-config", "with --export-cache: also bundle config.json (contains the NVD API key)")
-	.option("--force", "with --import-cache: replace ~/.fad-check/ without backup")
-	.option("--report-output <dir>", "report output directory", "./fad-check-report")
+	.option("--force", "with --import-cache: replace ~/.fad-checker/ without backup")
+	.option("--report-output <dir>", "report output directory", "./fad-checker-report")
 	.option("--ignore-test", "skip test-scoped dependencies in report")
 	.option("--cve-refresh", "force re-download of CVE database")
 	.option("--cve-offline", "use cached CVE index only (no download)")
@@ -218,7 +218,7 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 	const p = `${g.replace(/\./g, "/")}/${a}/maven-metadata.xml`;
 	const { existsInAny } = require("./lib/maven-repo");
 	try {
-		const hit = await existsInAny(repos, p, { userAgent: "fad-check-existence" });
+		const hit = await existsInAny(repos, p, { userAgent: "fad-checker-existence" });
 		if (hit) return true;
 		console.log(`❌  NOT found on any repo: ${g}:${a}`);
 		return false;
@@ -231,7 +231,7 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 (async function main() {
 	console.log(chalk.bold.cyan("\n🚀 Fucking Autonomous Dependency Checker\n") + chalk.gray("─────────────────────────────"));
 
-	// Build the Maven repo list once: persisted repos (from ~/.fad-check/config.json)
+	// Build the Maven repo list once: persisted repos (from ~/.fad-checker/config.json)
 	// + ad-hoc --repo URLs + Maven Central as final fallback. Used by transitive
 	// resolution, outdated-version check, and existence check.
 	const { getMavenRepos } = require("./lib/config");
@@ -401,7 +401,7 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 	}
 	const directCount = resolved.size;
 
-	// Scan-completeness signals: BOMs and unresolved-version deps mean fad-check
+	// Scan-completeness signals: BOMs and unresolved-version deps mean fad-checker
 	// has gone as far as it can without running Maven/Snyk itself.
 	if (runMaven) {
 		const { detectScanCompletenessWarnings } = require("./lib/scan-completeness");
@@ -581,7 +581,7 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 	if (!outdatedResults.length && options.allLibs) console.log(chalk.gray("     (none)"));
 	if (!options.allLibs) console.log(chalk.gray("     (re-run with -a/--allLibs to query Maven Central)"));
 
-	const reportDir = options.reportOutput || "./fad-check-report";
+	const reportDir = options.reportOutput || "./fad-checker-report";
 	await fs.promises.mkdir(reportDir, { recursive: true });
 	const projectInfo = {
 		name: path.basename(path.resolve(options.src)),
@@ -613,7 +613,7 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 					const paths = (dep?.pomPaths || []).map(p => path.relative(options.src, p));
 					return { id, manifestPaths: paths };
 				}),
-				message: `${privateLibIds.length} Maven coord(s) not found on Maven Central — they are private/internal libraries. Their CVEs (if any) cannot be detected by fad-check; if you have an internal CVE feed, audit them separately.`,
+				message: `${privateLibIds.length} Maven coord(s) not found on Maven Central — they are private/internal libraries. Their CVEs (if any) cannot be detected by fad-checker; if you have an internal CVE feed, audit them separately.`,
 			}] : []),
 		],
 	});

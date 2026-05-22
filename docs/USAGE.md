@@ -5,7 +5,7 @@ Every flag, every common workflow, with copy-pasteable commands.
 ## Synopsis
 
 ```text
-fad-check -s <src> [-t <target>] [-e <regex>] [other options]
+fad-checker -s <src> [-t <target>] [-e <regex>] [other options]
 ```
 
 - `-s, --src <src>` — **required**. Root of the source tree to scan. Contains `pom.xml` and/or `package(-lock).json` / `yarn.lock`.
@@ -13,21 +13,21 @@ fad-check -s <src> [-t <target>] [-e <regex>] [other options]
 
 ## Output
 
-By default the HTML + Word reports land in `./fad-check-report/`. Override with `--report-output <dir>`.
+By default the HTML + Word reports land in `./fad-checker-report/`. Override with `--report-output <dir>`.
 
 ## Ecosystem selection
 
 ```bash
 # Auto-detect (default): scan whatever pom.xml / package(-lock).json / yarn.lock exists
-fad-check -s .
+fad-checker -s .
 
 # Force one ecosystem
-fad-check -s . --ecosystem maven
-fad-check -s . --ecosystem npm
-fad-check -s . --ecosystem both     # scan both even if only one is auto-detected
+fad-checker -s . --ecosystem maven
+fad-checker -s . --ecosystem npm
+fad-checker -s . --ecosystem both     # scan both even if only one is auto-detected
 
 # Disable JS scanning entirely (Maven-only)
-fad-check -s . --no-js
+fad-checker -s . --no-js
 ```
 
 ## Filtering deps
@@ -35,8 +35,8 @@ fad-check -s . --no-js
 `-e <regex>` filters out coords whose **groupId** (Maven) or **name** (npm) matches the regex. Useful for private/internal libs that you know aren't on a public registry.
 
 ```bash
-fad-check -s . -e "^(com\.acme|org\.private)\."
-fad-check -s . -e "^@acme/"
+fad-checker -s . -e "^(com\.acme|org\.private)\."
+fad-checker -s . -e "^@acme/"
 ```
 
 The excluded coords are listed at the end of the run so you can audit the regex.
@@ -59,18 +59,18 @@ Each data source can be disabled independently:
 
 ```bash
 # Use cached data only, no network (works for everything)
-fad-check -s . --offline
+fad-checker -s . --offline
 
 # Per-source offline
-fad-check -s . --cve-offline                  # use cached CVE index only
-fad-check -s . --cve-refresh                  # force re-download of CVE bundle
-fad-check -s . --retire-refresh               # force re-scan with retire.js (ignore cache)
+fad-checker -s . --cve-offline                  # use cached CVE index only
+fad-checker -s . --cve-refresh                  # force re-download of CVE bundle
+fad-checker -s . --retire-refresh               # force re-scan with retire.js (ignore cache)
 
 # Cache export / import (useful for air-gapped boxes)
-fad-check --export-cache fad-cache.tar.gz
-fad-check --export-cache fad-cache.tar.gz --include-config   # bundle NVD key too
-fad-check --import-cache fad-cache.tar.gz
-fad-check --import-cache fad-cache.tar.gz --force            # replace existing without backup
+fad-checker --export-cache fad-cache.tar.gz
+fad-checker --export-cache fad-cache.tar.gz --include-config   # bundle NVD key too
+fad-checker --import-cache fad-cache.tar.gz
+fad-checker --import-cache fad-cache.tar.gz --force            # replace existing without backup
 ```
 
 ## NVD API key
@@ -79,24 +79,24 @@ NVD's public rate limit is 5 requests / 30s without a key. The free key bumps it
 
 ```bash
 # Get a key in 30 seconds: https://nvd.nist.gov/developers/request-an-api-key
-fad-check --set-nvd-key YOUR_KEY      # stored in ~/.fad-check/config.json (mode 0600)
-fad-check --show-config               # confirm it's persisted (key masked)
+fad-checker --set-nvd-key YOUR_KEY      # stored in ~/.fad-checker/config.json (mode 0600)
+fad-checker --show-config               # confirm it's persisted (key masked)
 ```
 
 Or pass it ad-hoc via the `NVD_API_KEY` env var.
 
 ## Snyk integration
 
-If you have `snyk` installed and authenticated, `fad-check` can drive it:
+If you have `snyk` installed and authenticated, `fad-checker` can drive it:
 
 ```bash
-fad-check -s ./proj -t ../proj-clean -e "^com\.acme\." --snyk
+fad-checker -s ./proj -t ../proj-clean -e "^com\.acme\." --snyk
 ```
 
 This:
 1. Generates the cleaned POM tree at `../proj-clean/`.
 2. Runs `snyk test --all-projects --json` against it.
-3. Merges Snyk's findings into the report — entries present in both `fad-check` and Snyk are tagged `source: "both"`.
+3. Merges Snyk's findings into the report — entries present in both `fad-checker` and Snyk are tagged `source: "both"`.
 
 `--snyk` requires `-t` (Snyk needs a real POM tree to scan).
 
@@ -104,7 +104,7 @@ This:
 
 | Mode | Trigger | Disk writes |
 | --- | --- | --- |
-| Read-only | `-t` omitted (default) | Only `~/.fad-check/` caches and the report dir |
+| Read-only | `-t` omitted (default) | Only `~/.fad-checker/` caches and the report dir |
 | Write | `-t <dir>` provided | Above + the cleaned POM tree at `<dir>` (and `<dir>` is `rimraf`'d first!) |
 
 The `--target` guardrails refuse:
@@ -114,30 +114,30 @@ The `--target` guardrails refuse:
 ## Verbosity
 
 ```bash
-fad-check -s . -v          # progress per source (OSV batches, NVD pages, retire scan, …)
+fad-checker -s . -v          # progress per source (OSV batches, NVD pages, retire scan, …)
 ```
 
 ## Shell completion
 
 ```bash
-fad-check --completion bash > /etc/bash_completion.d/fad-check
-fad-check --completion zsh  > ~/.zsh/completions/_fad-check
+fad-checker --completion bash > /etc/bash_completion.d/fad-checker
+fad-checker --completion zsh  > ~/.zsh/completions/_fad-checker
 ```
 
 ## All flags at a glance
 
 ```bash
-fad-check --help
+fad-checker --help
 ```
 
 ## Recipes
 
 ### CI gate: fail the build on any CRITICAL prod CVE
 
-`fad-check` exits 0 even when CVEs are found (it's a reporter, not a gate). Wire your own:
+`fad-checker` exits 0 even when CVEs are found (it's a reporter, not a gate). Wire your own:
 
 ```bash
-fad-check -s . --no-nvd > /dev/null
+fad-checker -s . --no-nvd > /dev/null
 # Then grep the report or parse the structured output (planned).
 ```
 
@@ -148,7 +148,7 @@ fad-check -s . --no-nvd > /dev/null
 Keep dated copies of the report:
 
 ```bash
-fad-check -s . --report-output reports/$(date +%F)
+fad-checker -s . --report-output reports/$(date +%F)
 diff reports/2026-04-01/cve-report.html reports/2026-05-01/cve-report.html
 ```
 
@@ -157,15 +157,15 @@ diff reports/2026-04-01/cve-report.html reports/2026-05-01/cve-report.html
 On a connected machine:
 
 ```bash
-fad-check -s ./dummy-empty-dir       # populates ~/.fad-check/ caches
-fad-check --export-cache fad-cache.tar.gz --include-config
+fad-checker -s ./dummy-empty-dir       # populates ~/.fad-checker/ caches
+fad-checker --export-cache fad-cache.tar.gz --include-config
 ```
 
 Move `fad-cache.tar.gz` to the air-gapped box, then:
 
 ```bash
-fad-check --import-cache fad-cache.tar.gz
-fad-check -s ./real-project --offline
+fad-checker --import-cache fad-cache.tar.gz
+fad-checker -s ./real-project --offline
 ```
 
 ### Monorepo with Maven + JS + vendored JS
@@ -173,7 +173,7 @@ fad-check -s ./real-project --offline
 The reference-project-style project (Java backend, React frontend in `web/`, vendored jQuery/PDF.js under `web/src/main/webapp/`):
 
 ```bash
-fad-check -s . -e "^(com\.captcha|org\.voxaly|com\.voxaly)\."
+fad-checker -s . -e "^(com\.captcha|org\.voxaly|com\.voxaly)\."
 # → finds CVE in Maven deps, in web/package-lock.json deps,
 #   AND in the vendored .js files under webapp/.
 ```
