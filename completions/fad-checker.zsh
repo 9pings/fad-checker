@@ -1,5 +1,5 @@
-#compdef fad-check
-# Zsh completion for fad-check (Fucking Autonomous Dependency Checker)
+#compdef fad-checker
+# Zsh completion for fad-checker (Fucking Autonomous Dependency Checker)
 _fad_check() {
 	local -a opts
 	opts=(

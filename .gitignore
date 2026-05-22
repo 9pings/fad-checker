@@ -5,7 +5,7 @@ node_modules/
 dist/
 
 # Generated reports
-fad-check-report/
+fad-checker-report/
 melino-report/
 sample-melino-report/
 *-report/

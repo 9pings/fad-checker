@@ -1,8 +1,8 @@
-# fad-check
+# fad-checker
 
 > **F**ucking **A**utonomous **D**ependency **C**hecker
 
-`fad-check` scans **Maven**, **npm**, **Yarn** and **vendored JavaScript** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE, EOL, obsolete and outdated findings, plus per-ecosystem fix recipes.
+`fad-checker` scans **Maven**, **npm**, **Yarn** and **vendored JavaScript** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE, EOL, obsolete and outdated findings, plus per-ecosystem fix recipes.
 
 It runs against the source files alone. **No `mvn`, no `npm install`, no `yarn`, no Docker.** It reads `pom.xml`, `package-lock.json` and `yarn.lock` directly.
 
@@ -47,16 +47,16 @@ The HTML report opens in any browser, contains every detail (CVSS vectors, refer
 ## Quick start
 
 ```bash
-npm install -g fad-check
-fad-check -s ./my-project
+npm install -g fad-checker
+fad-checker -s ./my-project
 ```
 
-That's it. The report lands in `./fad-check-report/cve-report.html`.
+That's it. The report lands in `./fad-checker-report/cve-report.html`.
 
 Want a 10× faster NVD enrichment? [Get a free NVD API key](https://nvd.nist.gov/developers/request-an-api-key) (instant), then:
 
 ```bash
-fad-check --set-nvd-key YOUR_KEY
+fad-checker --set-nvd-key YOUR_KEY
 ```
 
 ---
@@ -65,28 +65,28 @@ fad-check --set-nvd-key YOUR_KEY
 
 ```bash
 # Read-only full scan (default: all sources on)
-fad-check -s ./proj
+fad-checker -s ./proj
 
 # Exclude private/internal libs by groupId regex
-fad-check -s ./proj -e "^(com\.acme|org\.private)\."
+fad-checker -s ./proj -e "^(com\.acme|org\.private)\."
 
 # Also write cleaned POMs (private deps stripped, ready for Snyk)
-fad-check -s ./proj -t ../proj-clean -e "^com\.acme\."
+fad-checker -s ./proj -t ../proj-clean -e "^com\.acme\."
 
 # Then run Snyk on the cleaned tree and merge findings
-fad-check -s ./proj -t ../proj-clean -e "^com\.acme\." --snyk
+fad-checker -s ./proj -t ../proj-clean -e "^com\.acme\." --snyk
 
 # Faster: skip Maven Central / no transitive walk
-fad-check -s ./proj --no-all-libs --no-transitive
+fad-checker -s ./proj --no-all-libs --no-transitive
 
 # Fully offline (uses cached data only)
-fad-check -s ./proj --offline
+fad-checker -s ./proj --offline
 
 # Only one ecosystem
-fad-check -s ./proj --ecosystem maven   # or npm | both | auto (default)
+fad-checker -s ./proj --ecosystem maven   # or npm | both | auto (default)
 ```
 
-Run `fad-check --help` for the full flag list.
+Run `fad-checker --help` for the full flag list.
 
 ---
 
@@ -131,38 +131,38 @@ Each CVE row shows: severity badge · CVE / GHSA id · dep coord & version · wh
 ### As a global CLI
 
 ```bash
-npm install -g fad-check
+npm install -g fad-checker
 ```
 
 ### From source
 
 ```bash
-git clone <repo-url> fad-check
-cd fad-check
+git clone <repo-url> fad-checker
+cd fad-checker
 npm install
-node fad-check.js --help
+node fad-checker.js --help
 ```
 
 ### Single-binary build (no Node required)
 
 ```bash
 npm install        # one-time, brings in bun
-npm run build      # → dist/fad-check-linux + dist/fad-check.exe
+npm run build      # → dist/fad-checker-linux + dist/fad-checker.exe
 ```
 
 ### Shell completion
 
 ```bash
-fad-check --completion bash > /etc/bash_completion.d/fad-check
+fad-checker --completion bash > /etc/bash_completion.d/fad-checker
 # or for zsh:
-fad-check --completion zsh  > ~/.zsh/completions/_fad-check
+fad-checker --completion zsh  > ~/.zsh/completions/_fad-checker
 ```
 
 ---
 
 ## How it scans without any build tool
 
-This is the surprising bit. The whole point is that you can run `fad-check` against a *checkout* with no build environment.
+This is the surprising bit. The whole point is that you can run `fad-checker` against a *checkout* with no build environment.
 
 - **Maven** — `pom.xml` files are parsed with xml2js. Property substitution (`${jackson.version}`), parent inheritance, local BOM imports (`<scope>import</scope>`) and every profile are resolved in-process. Transitive deps are walked by fetching child POMs from Maven Central (cached forever — POMs are immutable). When the project uses an **external BOM** (`spring-boot-dependencies` etc.), the deps whose version comes from that BOM can't be resolved without `mvn` itself — those are surfaced in chapter 0 as "unresolved-versions" so you know what's missing.
 - **npm / Yarn** — `package-lock.json` (v1, v2, v3) and `yarn.lock` v1 are parsed directly. Lockfiles already contain every transitive version. No `node_modules/` traversal, no `npm install`. A package.json *without* a sibling lockfile is intentionally skipped (its ranges aren't queryable) and reported in chapter 0.
@@ -177,7 +177,7 @@ This is the surprising bit. The whole point is that you can run `fad-check` agai
 
 ## Caching
 
-All cached data lives in `~/.fad-check/`:
+All cached data lives in `~/.fad-checker/`:
 
 | Cache | Path | TTL |
 | --- | --- | --- |
@@ -194,9 +194,9 @@ All cached data lives in `~/.fad-check/`:
 Export the lot to share between machines:
 
 ```bash
-fad-check --export-cache fad-cache.tar.gz
+fad-checker --export-cache fad-cache.tar.gz
 # on the other box:
-fad-check --import-cache fad-cache.tar.gz
+fad-checker --import-cache fad-cache.tar.gz
 ```
 
 `--include-config` ships the NVD API key too (off by default).
@@ -205,19 +205,19 @@ fad-check --import-cache fad-cache.tar.gz
 
 ## Custom Maven repositories
 
-Out of the box `fad-check` queries Maven Central for transitive POMs and latest versions. If your project depends on artifacts that live on a private Nexus / Artifactory / JBoss repo, add them so transitive resolution and outdated checks work end-to-end.
+Out of the box `fad-checker` queries Maven Central for transitive POMs and latest versions. If your project depends on artifacts that live on a private Nexus / Artifactory / JBoss repo, add them so transitive resolution and outdated checks work end-to-end.
 
 ```bash
-# Persist a repo (lives in ~/.fad-check/config.json)
-fad-check --add-repo nexus       https://nexus.acme.com/repository/maven-public/
-fad-check --add-repo nexus-priv  https://nexus.acme.com/repository/maven-private/  --auth alice:s3cr3t
-fad-check --list-repos
-fad-check --remove-repo nexus-priv
+# Persist a repo (lives in ~/.fad-checker/config.json)
+fad-checker --add-repo nexus       https://nexus.acme.com/repository/maven-public/
+fad-checker --add-repo nexus-priv  https://nexus.acme.com/repository/maven-private/  --auth alice:s3cr3t
+fad-checker --list-repos
+fad-checker --remove-repo nexus-priv
 
 # One-off (not persisted) — repeatable
-fad-check -s ./proj --repo https://nexus.acme.com/repository/maven-public/
+fad-checker -s ./proj --repo https://nexus.acme.com/repository/maven-public/
 # Inline auth in the URL also works:
-fad-check -s ./proj --repo https://alice:s3cr3t@nexus.acme.com/repository/maven-public/
+fad-checker -s ./proj --repo https://alice:s3cr3t@nexus.acme.com/repository/maven-public/
 ```
 
 Repos are tried **in declared order, Maven Central last**. Auth is sent as a `Basic <base64>` header. POMs and `maven-metadata.xml` are cached per coord, so subsequent runs are free even against a private repo.
@@ -226,7 +226,7 @@ Repos are tried **in declared order, Maven Central last**. Auth is sent as a `Ba
 
 ## Data sources & acknowledgments
 
-`fad-check` is glue around several outstanding public datasets. Each is used per its license terms.
+`fad-checker` is glue around several outstanding public datasets. Each is used per its license terms.
 
 | Source | What we use | License | API / endpoint |
 | --- | --- | --- | --- |
@@ -239,7 +239,7 @@ Repos are tried **in declared order, Maven Central last**. Auth is sent as a `Ba
 | [Snyk](https://snyk.io/) (optional) | Additional CVE source via `snyk test --all-projects --json` | Per Snyk EULA; needs a Snyk account | Local CLI `snyk` |
 | [MITRE CWE](https://cwe.mitre.org/) | Weakness category links in the report | Free public reference | Linked by URL only, no API call |
 
-Persistent caches mean each source is hit at most once per its TTL (see [Caching](#caching) table). No telemetry, no third-party analytics — every request listed above is made directly to the named endpoint with a `User-Agent: fad-check-*` header.
+Persistent caches mean each source is hit at most once per its TTL (see [Caching](#caching) table). No telemetry, no third-party analytics — every request listed above is made directly to the named endpoint with a `User-Agent: fad-checker-*` header.
 
 ---
 
@@ -255,14 +255,14 @@ Built-in guardrails that fire **before** any disk write:
 
 ## Compared to…
 
-| Tool | What `fad-check` adds |
+| Tool | What `fad-checker` adds |
 | --- | --- |
 | `mvn dependency:tree` | No Maven needed; multi-source CVE scan; HTML report |
 | `npm audit` | Polyglot (Maven + npm + vendored JS in one report); EOL & obsolete checks; works without `npm install` |
 | Snyk CLI | Free; offline-capable; integrates Snyk's results if you have it |
 | OWASP DC | Faster (cached); cleaner UI; multi-source dedup |
 
-You don't have to choose — `fad-check` will use any of them as input (`--snyk`) and merge results.
+You don't have to choose — `fad-checker` will use any of them as input (`--snyk`) and merge results.
 
 ---
 

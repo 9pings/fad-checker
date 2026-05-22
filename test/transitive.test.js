@@ -5,9 +5,9 @@ const os = require("os");
 const path = require("path");
 const { parsePomXml, resolveProps, buildMgmt, SCOPE_MATRIX, resolveTransitiveDeps } = require("../lib/transitive");
 
-// Per-test cache dir so we don't poison ~/.fad-check/poms-cache during tests
+// Per-test cache dir so we don't poison ~/.fad-checker/poms-cache during tests
 function freshCache() {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-check-pom-cache-"));
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-checker-pom-cache-"));
 	return dir;
 }
 
