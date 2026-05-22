@@ -531,6 +531,7 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 		name: path.basename(path.resolve(options.src)),
 		src: path.resolve(options.src),
 		generatedAt: new Date().toISOString(),
+		toolVersion: pkg.version,
 		cveDataDate,
 	};
 	const { htmlPath, docPath } = await writeReports({
