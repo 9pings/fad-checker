@@ -540,27 +540,30 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 	}
 
 	// Split prod vs dev based on the dep's isDev flag (set at collection time
-	// from Maven scope=test/provided and npm dev/devOptional/optional).
-	// CPE-filtered matches are excluded from the CLI headline — they're surfaced
-	// in the HTML report's "Likely false positives" appendix instead.
-	const prodMatches = cveMatches.filter(m => !m.dep?.isDev && !m.cpeFiltered);
-	const devMatches  = cveMatches.filter(m =>  m.dep?.isDev && !m.cpeFiltered);
-	const cpeFilteredCount = cveMatches.filter(m => m.cpeFiltered).length;
+	// from Maven scope=test/provided and npm dev/devOptional/optional). Keep the
+	// full per-bucket list (including cpeFiltered) so the HTML report can render
+	// its "Likely false positives" appendix — only the CLI headline excludes
+	// cpeFiltered to avoid alarming on triaged-out matches.
+	const prodMatches = cveMatches.filter(m => !m.dep?.isDev);
+	const devMatches  = cveMatches.filter(m =>  m.dep?.isDev);
+	const prodActive  = prodMatches.filter(m => !m.cpeFiltered);
+	const devActive   = devMatches.filter(m => !m.cpeFiltered);
+	const cpeFilteredCount = (prodMatches.length - prodActive.length) + (devMatches.length - devActive.length);
 
-	const stats = computeStats(prodMatches);
-	const devStats = computeStats(devMatches);
-	console.log(chalk.bold.cyan(`\n  1. CVE Vulnerabilities (production: ${prodMatches.length})`));
+	const stats = computeStats(prodActive);
+	const devStats = computeStats(devActive);
+	console.log(chalk.bold.cyan(`\n  1. CVE Vulnerabilities (production: ${prodActive.length})`));
 	console.log(`     critical=${stats.critical}  high=${stats.high}  medium=${stats.medium}  low=${stats.low}  unknown=${stats.unknown}`);
 	const depLabel = d => d.ecosystem === "npm" ? `npm:${d.artifactId}` : `${d.groupId}:${d.artifactId}`;
-	for (const m of prodMatches.slice(0, 20)) {
+	for (const m of prodActive.slice(0, 20)) {
 		const sev = (m.cve.severity || "UNKNOWN").padEnd(8);
 		console.log(`       ${chalk.red(sev)} ${m.cve.id}  ${depLabel(m.dep)}:${m.dep.version}`);
 	}
-	if (prodMatches.length > 20) console.log(`       ... and ${prodMatches.length - 20} more (see report)`);
+	if (prodActive.length > 20) console.log(`       ... and ${prodActive.length - 20} more (see report)`);
 	if (cpeFilteredCount) console.log(chalk.gray(`     (${cpeFilteredCount} likely false positives moved to report appendix)`));
 
-	if (devMatches.length) {
-		console.log(chalk.bold.cyan(`\n  2. CVE in dev dependencies (${devMatches.length})`));
+	if (devActive.length) {
+		console.log(chalk.bold.cyan(`\n  2. CVE in dev dependencies (${devActive.length})`));
 		console.log(`     critical=${devStats.critical}  high=${devStats.high}  medium=${devStats.medium}  low=${devStats.low}  unknown=${devStats.unknown}`);
 	}
 	if (retireMatches.length) {
