@@ -541,8 +541,11 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 
 	// Split prod vs dev based on the dep's isDev flag (set at collection time
 	// from Maven scope=test/provided and npm dev/devOptional/optional).
-	const prodMatches = cveMatches.filter(m => !m.dep?.isDev);
-	const devMatches  = cveMatches.filter(m =>  m.dep?.isDev);
+	// CPE-filtered matches are excluded from the CLI headline — they're surfaced
+	// in the HTML report's "Likely false positives" appendix instead.
+	const prodMatches = cveMatches.filter(m => !m.dep?.isDev && !m.cpeFiltered);
+	const devMatches  = cveMatches.filter(m =>  m.dep?.isDev && !m.cpeFiltered);
+	const cpeFilteredCount = cveMatches.filter(m => m.cpeFiltered).length;
 
 	const stats = computeStats(prodMatches);
 	const devStats = computeStats(devMatches);
@@ -554,6 +557,7 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 		console.log(`       ${chalk.red(sev)} ${m.cve.id}  ${depLabel(m.dep)}:${m.dep.version}`);
 	}
 	if (prodMatches.length > 20) console.log(`       ... and ${prodMatches.length - 20} more (see report)`);
+	if (cpeFilteredCount) console.log(chalk.gray(`     (${cpeFilteredCount} likely false positives moved to report appendix)`));
 
 	if (devMatches.length) {
 		console.log(chalk.bold.cyan(`\n  2. CVE in dev dependencies (${devMatches.length})`));

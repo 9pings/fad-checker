@@ -41,6 +41,15 @@ test("isVersionAffected returns false when status != affected", () => {
 	assert.equal(isVersionAffected("1.5", spec), false);
 });
 
+test("isVersionAffected fail-closed when spec has no version bounds (H1)", () => {
+	// CVEProject sometimes emits {status:"affected"} stubs with no version
+	// fields. The matcher must NOT fall through to `return true` — that was
+	// the H1 cascade.
+	assert.equal(isVersionAffected("2.14.0", { status: "affected" }), false);
+	assert.equal(isVersionAffected("2.14.0", {}), false);
+	assert.equal(isVersionAffected("0.0.1", { status: "affected" }), false);
+});
+
 test("parseRange handles Maven range syntax", () => {
 	assert.deepEqual(parseRange("1.2.3"), { exact: "1.2.3" });
 	assert.deepEqual(parseRange("[1.0,2.0)"), { lower: "1.0", lowerInclusive: true, upper: "2.0", upperInclusive: false });

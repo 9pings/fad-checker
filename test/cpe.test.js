@@ -51,6 +51,24 @@ test("matchVersionRange honours hard-pinned criteria version", () => {
 	assert.equal(matchVersionRange("2.14.1", m), false);
 });
 
+test("matchVersionRange folds CPE update qualifier into the version pin (H5)", () => {
+	// CPE 2.3 ":1.0.0:rc1:" describes the 1.0.0-rc1 pre-release. A release dep
+	// at 1.0.0 must NOT match — that was the H5 cascade.
+	const beta = { criteria: "cpe:2.3:a:apache:foo:1.0.0:beta1:*:*:*:*:*:*", vulnerable: true };
+	assert.equal(matchVersionRange("1.0.0", beta), false);
+	assert.equal(matchVersionRange("1.0.0-beta1", beta), true);
+
+	const rc = { criteria: "cpe:2.3:a:apache:foo:1.0.0:rc1:*:*:*:*:*:*", vulnerable: true };
+	assert.equal(matchVersionRange("1.0.0", rc), false);
+	assert.equal(matchVersionRange("1.0.0-rc1", rc), true);
+});
+
+test("cpeMatchesDep rejects short-token vendor leak (M4 mirror of H2)", () => {
+	const cpe = parseCpe23("cpe:2.3:a:a:log4j-core:*:*:*:*:*:*:*:*");
+	const dep = { groupId: "com.unrelated.log4j-core", artifactId: "log4j-core", ecosystem: "maven" };
+	assert.equal(cpeMatchesDep(cpe, dep), false);
+});
+
 test("matchVersionRange returns true for unknown dep version (conservative)", () => {
 	const m = { criteria: "cpe:2.3:a:apache:log4j:*:*:*:*:*:*:*:*", vulnerable: true, versionEndExcluding: "2.15.0" };
 	assert.equal(matchVersionRange(null, m), true);
