@@ -1,14 +1,14 @@
 {
   "name": "fad-checker",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "Fucking Autonomous Dependency Checker — multi-ecosystem CVE / EOL / outdated / vendored-JS scanner for Maven, npm and Yarn monorepos. Self-contained HTML + Word report.",
   "license": "MIT",
-  "author": "N8tz <n8tz.js@gmail.com>",
+  "author": "pp9Ping <pp9Ping@gmail.com>",
   "maintainers": [
-    "Nathan Braun <n8tz.js@gmail.com>"
+    "pp9Ping <pp9Ping@gmail.com>"
   ],
   "contributors": [
-    "N8tz (https://github.com/N8tz)"
+    "pp9Ping <pp9Ping@gmail.com>"
   ],
   "bin": {
     "fad-checker": "fad-checker.js",
