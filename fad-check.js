@@ -57,9 +57,57 @@ if (process.argv.includes("--show-config")) {
 	const cfg = config.load();
 	const masked = { ...cfg };
 	if (masked.nvd_api_key) masked.nvd_api_key = masked.nvd_api_key.slice(0, 8) + "…" + masked.nvd_api_key.slice(-4);
+	if (Array.isArray(masked.maven_repos)) {
+		masked.maven_repos = masked.maven_repos.map(r => ({ ...r, auth: r.auth ? "***" : undefined }));
+	}
 	console.log(JSON.stringify(masked, null, 2));
 	console.log(chalk.gray("Config file: " + config.CONFIG_PATH));
 	process.exit(0);
+}
+
+// -------- --add-repo / --remove-repo / --list-repos (run before program.parse) --------
+if (process.argv.includes("--add-repo") || process.argv.includes("--remove-repo") || process.argv.includes("--list-repos")) {
+	const config = require("./lib/config");
+	if (process.argv.includes("--list-repos")) {
+		const repos = config.getMavenRepos();
+		if (!repos.length) {
+			console.log(chalk.gray("No custom Maven repos configured (Maven Central is always used as fallback)."));
+		} else {
+			console.log(chalk.bold("Configured Maven repos (tried in order, then Central):"));
+			for (const r of repos) {
+				const authMark = r.auth ? chalk.yellow(" [auth]") : "";
+				console.log(`  • ${chalk.cyan(r.name)} → ${r.url}${authMark}`);
+			}
+		}
+		process.exit(0);
+	}
+	if (process.argv.includes("--add-repo")) {
+		const idx = process.argv.indexOf("--add-repo");
+		const name = process.argv[idx + 1];
+		const url = process.argv[idx + 2];
+		if (!name || name.startsWith("-") || !url || url.startsWith("-")) {
+			console.error(chalk.red("❌  --add-repo requires <name> <url>"));
+			console.error("   Example: fad-check --add-repo nexus https://nexus.acme.com/repository/maven-public/");
+			console.error("   Optional auth: --add-repo nexus https://nexus.acme.com/repository/maven-public/ --auth user:pass");
+			process.exit(1);
+		}
+		const authIdx = process.argv.indexOf("--auth");
+		const auth = authIdx > -1 ? process.argv[authIdx + 1] : null;
+		config.addMavenRepo(name, url, auth);
+		console.log(chalk.green(`✅ Added Maven repo "${name}" → ${url}${auth ? " (with auth)" : ""}`));
+		process.exit(0);
+	}
+	if (process.argv.includes("--remove-repo")) {
+		const idx = process.argv.indexOf("--remove-repo");
+		const name = process.argv[idx + 1];
+		if (!name || name.startsWith("-")) {
+			console.error(chalk.red("❌  --remove-repo requires <name>"));
+			process.exit(1);
+		}
+		const removed = config.removeMavenRepo(name);
+		console.log(removed ? chalk.green(`✅ Removed Maven repo "${name}"`) : chalk.yellow(`⚠️  No Maven repo named "${name}"`));
+		process.exit(removed ? 0 : 1);
+	}
 }
 
 // -------- --export-cache / --import-cache (handled before program.parse) --------
@@ -141,6 +189,10 @@ program
 	.option("--transitive-depth <n>", "max transitive depth", "6")
 	.option("--ecosystem <eco>", "force ecosystem: auto|maven|npm|both (default: auto)", "auto")
 	.option("--no-js", "skip JS/npm/yarn manifests even if present (Maven-only)")
+	.option("--repo <url...>", "extra Maven repository URL(s) to try before Maven Central. Supports https://user:pass@host/path/. Repeatable.")
+	.option("--add-repo <name>", "persist a Maven repo: --add-repo <name> <url> [--auth user:pass]")
+	.option("--remove-repo <name>", "remove a persisted Maven repo by name")
+	.option("--list-repos", "list configured Maven repos and exit")
 	.option("--completion <shell>", "print shell completion script (bash|zsh)");
 program.parse(process.argv);
 
@@ -159,33 +211,36 @@ if (options.src && options.target) {
 	}
 }
 
-async function checkMavenLibExist(groupId, artifactId, retry = 0) {
+async function checkMavenLibExist(groupId, artifactId, repos) {
 	const g = core.coord(groupId);
 	const a = core.coord(artifactId);
 	if (!g || !a) return false;
 	const p = `${g.replace(/\./g, "/")}/${a}/maven-metadata.xml`;
-	const url = `https://repo1.maven.org/maven2/${p}`;
+	const { existsInAny } = require("./lib/maven-repo");
 	try {
-		const res = await fetch(url, { method: "HEAD" });
-		if (res.ok) return true;
-		if (res.status === 404) {
-			console.log(`❌  NOT found on Maven Central: ${g}:${a}`);
-			return false;
-		}
-		console.warn(`⚠️  unexpected status ${res.status} for ${g}:${a}`);
+		const hit = await existsInAny(repos, p, { userAgent: "fad-check-existence" });
+		if (hit) return true;
+		console.log(`❌  NOT found on any repo: ${g}:${a}`);
 		return false;
-	} catch (_) {
-		if (retry < 10) {
-			await new Promise(r => setTimeout(r, 100));
-			return checkMavenLibExist(g, a, retry + 1);
-		}
-		console.info(`error querying Maven Central: ${g}:${a}`);
+	} catch (err) {
+		console.info(`error querying repos: ${g}:${a} — ${err.message}`);
 		return false;
 	}
 }
 
 (async function main() {
 	console.log(chalk.bold.cyan("\n🚀 Fucking Autonomous Dependency Checker\n") + chalk.gray("─────────────────────────────"));
+
+	// Build the Maven repo list once: persisted repos (from ~/.fad-check/config.json)
+	// + ad-hoc --repo URLs + Maven Central as final fallback. Used by transitive
+	// resolution, outdated-version check, and existence check.
+	const { getMavenRepos } = require("./lib/config");
+	const { buildRepoList } = require("./lib/maven-repo");
+	const extraRepos = (options.repo || []).map(url => ({ url }));
+	const mavenRepos = buildRepoList(getMavenRepos(), extraRepos);
+	if (mavenRepos.length > 1) {
+		console.log(chalk.gray(`📦 Maven repos: ${mavenRepos.map(r => r.name).join(" → ")}`));
+	}
 
 	const pomFiles = core.findPomFiles(options.src);
 	const allPomMetadata = core.newMetadataStore();
@@ -264,7 +319,7 @@ async function checkMavenLibExist(groupId, artifactId, retry = 0) {
 		console.log(chalk.magentaBright("\n🚫 Libs absentes de Maven Central :"));
 		const results = await Promise.all(anyMissingLibs.map(id => {
 			const [g, a] = id.split(":");
-			return limit(async () => ({ id, found: await checkMavenLibExist(g, a) }));
+			return limit(async () => ({ id, found: await checkMavenLibExist(g, a, mavenRepos) }));
 		}));
 		for (const r of results) if (r && r.found === false) privateLibIds.push(r.id);
 	}
@@ -295,7 +350,7 @@ async function checkMavenLibExist(groupId, artifactId, retry = 0) {
 
 	// ---------- Report flow (CVE / EOL / Obsolete) ----------
 	if (options.report) {
-		await runReportFlow(allPomMetadata, allPropsByPom, { runMaven, runNpm, privateLibIds });
+		await runReportFlow(allPomMetadata, allPropsByPom, { runMaven, runNpm, privateLibIds, mavenRepos });
 	} else if (!readOnly) {
 		const target = options.target;
 		console.log(chalk.gray(`💡 Pour lancer Snyk depuis ${target} :`));
@@ -304,7 +359,7 @@ async function checkMavenLibExist(groupId, artifactId, retry = 0) {
 })();
 
 async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
-	const { runMaven = true, runNpm = false, privateLibIds = [] } = ecoFlags;
+	const { runMaven = true, runNpm = false, privateLibIds = [], mavenRepos = [] } = ecoFlags;
 	const { collectResolvedDeps, expandWithTransitives, matchDepsAgainstCves } = require("./lib/cve-match");
 	const { ensureCveIndex } = require("./lib/cve-download");
 	const { writeReports, computeStats } = require("./lib/cve-report");
@@ -370,6 +425,7 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 			offline,
 			maxDepth: parseInt(options.transitiveDepth, 10) || 6,
 			includeTestDeps: !options.ignoreTest,
+			repos: mavenRepos,
 		});
 		console.log(chalk.blue(`🌳 ${resolved.size - directCount} dépendances transitives ajoutées (total: ${resolved.size})`));
 	}
@@ -404,7 +460,7 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 	// 4. Outdated (latest Maven Central)
 	let outdatedResults = [];
 	if (options.allLibs) {
-		try { outdatedResults = await outdated.checkOutdatedDeps(resolved, { verbose, offline }); }
+		try { outdatedResults = await outdated.checkOutdatedDeps(resolved, { verbose, offline, repos: mavenRepos }); }
 		catch (err) { console.warn(chalk.yellow("⚠️  Outdated check skipped:"), err.message); }
 	}
 

@@ -1,8 +1,6 @@
 # fad-check
 
 > **F**ucking **A**utonomous **D**ependency **C**hecker
->
-> One CLI, every ecosystem, zero build tools required.
 
 `fad-check` scans **Maven**, **npm**, **Yarn** and **vendored JavaScript** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE, EOL, obsolete and outdated findings, plus per-ecosystem fix recipes.
 
@@ -202,6 +200,46 @@ fad-check --import-cache fad-cache.tar.gz
 ```
 
 `--include-config` ships the NVD API key too (off by default).
+
+---
+
+## Custom Maven repositories
+
+Out of the box `fad-check` queries Maven Central for transitive POMs and latest versions. If your project depends on artifacts that live on a private Nexus / Artifactory / JBoss repo, add them so transitive resolution and outdated checks work end-to-end.
+
+```bash
+# Persist a repo (lives in ~/.fad-check/config.json)
+fad-check --add-repo nexus       https://nexus.acme.com/repository/maven-public/
+fad-check --add-repo nexus-priv  https://nexus.acme.com/repository/maven-private/  --auth alice:s3cr3t
+fad-check --list-repos
+fad-check --remove-repo nexus-priv
+
+# One-off (not persisted) — repeatable
+fad-check -s ./proj --repo https://nexus.acme.com/repository/maven-public/
+# Inline auth in the URL also works:
+fad-check -s ./proj --repo https://alice:s3cr3t@nexus.acme.com/repository/maven-public/
+```
+
+Repos are tried **in declared order, Maven Central last**. Auth is sent as a `Basic <base64>` header. POMs and `maven-metadata.xml` are cached per coord, so subsequent runs are free even against a private repo.
+
+---
+
+## Data sources & acknowledgments
+
+`fad-check` is glue around several outstanding public datasets. Each is used per its license terms.
+
+| Source | What we use | License | API / endpoint |
+| --- | --- | --- | --- |
+| [CVEProject `cvelistV5`](https://github.com/CVEProject/cvelistV5) | Daily bulk CVE bundle, filtered to Maven-relevant entries | CC0-1.0 | GitHub release asset (zip) |
+| [OSV.dev](https://osv.dev/) (Google + GitHub Security Lab) | Per-dep vulnerability lookup (Maven + npm + many more ecosystems) | CC-BY 4.0 | `POST api.osv.dev/v1/querybatch`, `GET api.osv.dev/v1/vulns/{id}` |
+| [NIST NVD](https://nvd.nist.gov/) | Canonical CVE description + CVSS vectors + CPE configurations + CWE | US-gov public domain | `GET services.nvd.nist.gov/rest/json/cves/2.0?cveId=…` — free [API key](https://nvd.nist.gov/developers/request-an-api-key) bumps the rate limit 10× |
+| [endoflife.date](https://endoflife.date/) | Framework / runtime EOL cycle data | MIT | `GET endoflife.date/api/{product}.json` |
+| [Maven Central](https://search.maven.org/) | Latest-version lookups + transitive POM fetches | Free public service | Solr `search.maven.org/solrsearch/select?q=…` + `repo1.maven.org/maven2/<coord>` |
+| [retire.js](https://retirejs.github.io/retire.js/) | Vendored-JS signature DB + scanner | Apache-2.0 | npm package `retire`, executed locally |
+| [Snyk](https://snyk.io/) (optional) | Additional CVE source via `snyk test --all-projects --json` | Per Snyk EULA; needs a Snyk account | Local CLI `snyk` |
+| [MITRE CWE](https://cwe.mitre.org/) | Weakness category links in the report | Free public reference | Linked by URL only, no API call |
+
+Persistent caches mean each source is hit at most once per its TTL (see [Caching](#caching) table). No telemetry, no third-party analytics — every request listed above is made directly to the named endpoint with a `User-Agent: fad-check-*` header.
 
 ---
 
