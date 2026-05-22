@@ -1,0 +1,9 @@
+{
+	"name": "@acme/no-lock",
+	"version": "0.1.0",
+	"private": true,
+	"dependencies": {
+		"left-pad": "^1.0.0",
+		"chalk": "^4.0.0"
+	}
+}

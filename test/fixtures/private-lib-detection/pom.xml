@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.megacorp.parents</groupId>
+		<artifactId>megacorp-super-parent</artifactId>
+		<version>9.9.9-PRIVATE</version>
+	</parent>
+	<groupId>com.client.app</groupId>
+	<artifactId>secret-monolith</artifactId>
+	<version>1.0.0</version>
+	<packaging>pom</packaging>
+	<modules>
+		<module>core</module>
+		<module>plugin</module>
+	</modules>
+	<properties>
+		<spring.version>5.3.30</spring.version>
+		<secret-lib.version>1.0.0-CLIENT</secret-lib.version>
+	</properties>
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>com.client.private</groupId>
+				<artifactId>secret-lib</artifactId>
+				<version>${secret-lib.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.springframework</groupId>
+				<artifactId>spring-context</artifactId>
+				<version>${spring.version}</version>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+</project>

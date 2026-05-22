@@ -1,0 +1,35 @@
+{
+  "name": "fad-check",
+  "version": "3.0.0",
+  "description": "Fucking Autonomous Dependency Checker — multi-ecosystem CVE / EOL / outdated / vendored-JS scanner for Maven, npm and Yarn monorepos. Self-contained HTML + Word report.",
+  "license": "MIT",
+  "author": "N8tz <n8tz.js@gmail.com>",
+  "maintainers": [
+    "Nathan Braun <n8tz.js@gmail.com>"
+  ],
+  "contributors": [
+    "N8tz (https://github.com/N8tz)"
+  ],
+  "bin": {
+    "fad-check": "fad-check.js",
+    "fad": "fad-check.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "build:linux": "bun build fad-check.js --compile --target=bun-linux-x64 --outfile=dist/fad-check-linux",
+    "build:win": "bun build fad-check.js --compile --target=bun-windows-x64 --outfile=dist/fad-check.exe",
+    "build:macos": "bun build fad-check.js --compile --target=bun-darwin-x64 --outfile=dist/fad-check-macos",
+    "build": "npm run build:linux && npm run build:win"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^14.0.1",
+    "p-limit": "^3.1.0",
+    "retire": "^5.4.2",
+    "rimraf": "^6.0.1",
+    "xml2js": "^0.6.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

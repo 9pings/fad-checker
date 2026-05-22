@@ -1,0 +1,17 @@
+{
+	"name": "@acme/web-app",
+	"version": "1.0.0",
+	"private": true,
+	"dependencies": {
+		"axios": "0.21.0",
+		"lodash": "4.17.15",
+		"express": "4.17.1"
+	},
+	"devDependencies": {
+		"jest": "27.0.0",
+		"eslint": "7.32.0"
+	},
+	"peerDependencies": {
+		"react": "17.0.2"
+	}
+}

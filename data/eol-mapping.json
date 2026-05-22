@@ -1,0 +1,34 @@
+{
+  "by_group_artifact": {
+    "org.springframework.boot:spring-boot": { "product": "spring-boot", "label": "Spring Boot" },
+    "org.springframework.boot:spring-boot-starter-parent": { "product": "spring-boot", "label": "Spring Boot" },
+    "org.springframework.boot:spring-boot-dependencies": { "product": "spring-boot", "label": "Spring Boot" },
+    "org.springframework:spring-core": { "product": "spring-framework", "label": "Spring Framework" },
+    "org.springframework:spring-context": { "product": "spring-framework", "label": "Spring Framework" },
+    "org.springframework:spring-web": { "product": "spring-framework", "label": "Spring Framework" },
+    "org.springframework:spring-webmvc": { "product": "spring-framework", "label": "Spring Framework" },
+    "org.springframework:spring-beans": { "product": "spring-framework", "label": "Spring Framework" },
+    "org.springframework.security:spring-security-core": { "product": "spring-framework", "label": "Spring Security" },
+    "org.springframework.security:spring-security-web": { "product": "spring-framework", "label": "Spring Security" },
+    "org.hibernate:hibernate-core": { "product": "hibernate", "label": "Hibernate ORM" },
+    "org.hibernate.orm:hibernate-core": { "product": "hibernate", "label": "Hibernate ORM" },
+    "org.apache.tomcat:tomcat-catalina": { "product": "tomcat", "label": "Apache Tomcat" },
+    "org.apache.tomcat.embed:tomcat-embed-core": { "product": "tomcat", "label": "Apache Tomcat" },
+    "org.eclipse.jetty:jetty-server": { "product": "jetty", "label": "Eclipse Jetty" },
+    "io.netty:netty-all": { "product": "netty", "label": "Netty" },
+    "io.netty:netty-handler": { "product": "netty", "label": "Netty" },
+    "org.apache.maven:maven-core": { "product": "maven", "label": "Apache Maven" },
+    "junit:junit": { "product": "junit", "label": "JUnit 4" },
+    "org.junit.jupiter:junit-jupiter": { "product": "junit", "label": "JUnit 5" },
+    "org.apache.logging.log4j:log4j-core": { "product": "log4j", "label": "Apache Log4j 2" },
+    "ch.qos.logback:logback-classic": { "product": "logback", "label": "Logback" },
+    "com.fasterxml.jackson.core:jackson-databind": { "product": "jackson", "label": "Jackson Databind" }
+  },
+  "by_group_prefix": {
+    "org.springframework.boot": { "product": "spring-boot", "label": "Spring Boot" },
+    "org.springframework.security": { "product": "spring-framework", "label": "Spring Security" },
+    "org.springframework": { "product": "spring-framework", "label": "Spring Framework" },
+    "org.hibernate": { "product": "hibernate", "label": "Hibernate ORM" },
+    "io.netty": { "product": "netty", "label": "Netty" }
+  }
+}

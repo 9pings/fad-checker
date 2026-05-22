@@ -1,0 +1,142 @@
+{
+  "log4j:log4j": {
+    "severity": "CRITICAL",
+    "replacement": "org.apache.logging.log4j:log4j-core (2.x)",
+    "reason": "Log4j 1.x reached EOL 2015. Multiple unpatched CVEs."
+  },
+  "commons-logging:commons-logging": {
+    "severity": "MEDIUM",
+    "replacement": "org.slf4j:slf4j-api + jcl-over-slf4j",
+    "reason": "Apache Commons Logging is largely superseded by SLF4J. Classloader leak issues."
+  },
+  "commons-io:commons-io": {
+    "severity": "MEDIUM",
+    "replacement": "org.apache.commons:commons-io (2.x+)",
+    "reason": "The pre-2.x coordinate is deprecated; use the org.apache.commons groupId."
+  },
+  "javax.servlet:servlet-api": {
+    "severity": "MEDIUM",
+    "replacement": "jakarta.servlet:jakarta.servlet-api",
+    "reason": "javax.* namespace moved to jakarta.* in Jakarta EE 9+."
+  },
+  "javax.persistence:persistence-api": {
+    "severity": "MEDIUM",
+    "replacement": "jakarta.persistence:jakarta.persistence-api",
+    "reason": "javax.* → jakarta.* migration."
+  },
+  "javax.xml.bind:jaxb-api": {
+    "severity": "MEDIUM",
+    "replacement": "jakarta.xml.bind:jakarta.xml.bind-api",
+    "reason": "Removed from the JDK in Java 11; use Jakarta XML Binding."
+  },
+  "org.codehaus.jackson:jackson-core-asl": {
+    "severity": "HIGH",
+    "replacement": "com.fasterxml.jackson.core:jackson-core",
+    "reason": "Jackson 1.x is EOL since 2014. Has known unpatched CVEs."
+  },
+  "org.codehaus.jackson:jackson-mapper-asl": {
+    "severity": "HIGH",
+    "replacement": "com.fasterxml.jackson.core:jackson-databind",
+    "reason": "Jackson 1.x is EOL. Multiple deserialization CVEs."
+  },
+  "xerces:xerces": {
+    "severity": "MEDIUM",
+    "replacement": "xerces:xercesImpl",
+    "reason": "Old Xerces coordinate; use xercesImpl."
+  },
+  "xml-apis:xml-apis": {
+    "severity": "LOW",
+    "replacement": "(part of JDK since Java 5)",
+    "reason": "XML APIs are bundled with the JDK."
+  },
+  "net.sf.json-lib:json-lib": {
+    "severity": "MEDIUM",
+    "replacement": "com.fasterxml.jackson.core:jackson-databind",
+    "reason": "json-lib hasn't been updated since 2010."
+  },
+  "org.json:json": {
+    "severity": "LOW",
+    "replacement": "com.fasterxml.jackson.core:jackson-databind",
+    "reason": "Performance issues, restrictive license. Prefer Jackson."
+  },
+  "com.googlecode.json-simple:json-simple": {
+    "severity": "MEDIUM",
+    "replacement": "com.fasterxml.jackson.core:jackson-databind",
+    "reason": "Unmaintained since 2012."
+  },
+  "joda-time:joda-time": {
+    "severity": "LOW",
+    "replacement": "java.time (JDK 8+)",
+    "reason": "Joda-Time author recommends java.time on JDK 8+."
+  },
+  "javax.mail:mail": {
+    "severity": "MEDIUM",
+    "replacement": "com.sun.mail:jakarta.mail or jakarta.mail:jakarta.mail-api",
+    "reason": "javax.mail is the old coordinate; moved to Jakarta Mail."
+  },
+  "javax.activation:activation": {
+    "severity": "MEDIUM",
+    "replacement": "jakarta.activation:jakarta.activation-api",
+    "reason": "javax.* → jakarta.* migration; also removed from JDK in 11."
+  },
+  "javax.annotation:javax.annotation-api": {
+    "severity": "MEDIUM",
+    "replacement": "jakarta.annotation:jakarta.annotation-api",
+    "reason": "javax.* → jakarta.* migration."
+  },
+  "struts:struts": {
+    "severity": "CRITICAL",
+    "replacement": "(framework rewrite recommended; Struts 1.x is EOL with critical CVEs)",
+    "reason": "Apache Struts 1.x reached EOL April 2013."
+  },
+  "org.apache.struts:struts2-core": {
+    "severity": "HIGH",
+    "replacement": "(audit version: many critical RCEs in Struts 2.x)",
+    "reason": "Many versions of Struts 2 have critical RCE CVEs (CVE-2017-5638 etc). Verify version is patched."
+  },
+  "axis:axis": {
+    "severity": "MEDIUM",
+    "replacement": "org.apache.cxf:cxf-rt-frontend-jaxws",
+    "reason": "Apache Axis 1.x is EOL since 2006. Apache CXF is the modern alternative."
+  },
+  "net.sf.ehcache:ehcache": {
+    "severity": "LOW",
+    "replacement": "org.ehcache:ehcache (3.x)",
+    "reason": "Ehcache 2.x is in maintenance only; use Ehcache 3.x."
+  },
+  "c3p0:c3p0": {
+    "severity": "LOW",
+    "replacement": "com.zaxxer:HikariCP",
+    "reason": "c3p0 maintained but HikariCP is the recommended modern connection pool."
+  },
+  "commons-httpclient:commons-httpclient": {
+    "severity": "MEDIUM",
+    "replacement": "org.apache.httpcomponents.client5:httpclient5",
+    "reason": "Apache Commons HttpClient 3.x is EOL since 2011."
+  },
+  "org.apache.httpcomponents:httpclient": {
+    "severity": "MEDIUM",
+    "replacement": "org.apache.httpcomponents.client5:httpclient5",
+    "reason": "HttpClient 4.x in maintenance; HttpClient 5.x is the active line."
+  },
+  "junit:junit": {
+    "severity": "LOW",
+    "replacement": "org.junit.jupiter:junit-jupiter (JUnit 5)",
+    "reason": "JUnit 4 is in maintenance; JUnit 5 is the modern line."
+  },
+  "org.hamcrest:hamcrest-all": {
+    "severity": "LOW",
+    "replacement": "org.hamcrest:hamcrest",
+    "reason": "hamcrest-all is deprecated; use the single 'hamcrest' artifact."
+  },
+  "org.springframework:spring-asm": {
+    "severity": "LOW",
+    "replacement": "(merged into spring-core)",
+    "reason": "Removed in Spring 3.2+."
+  },
+  "asm:asm": {
+    "severity": "LOW",
+    "replacement": "org.ow2.asm:asm",
+    "reason": "Old asm coordinate; use org.ow2.asm."
+  }
+}
