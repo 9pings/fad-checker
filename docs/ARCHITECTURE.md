@@ -21,6 +21,7 @@ lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + n
 lib/scan-completeness.js     Warnings for deps we couldn't fully resolve.
 lib/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 parsers.
 lib/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
+lib/npm/registry.js          npm registry packument query → per-version deprecation + dist-tags.latest.
 lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/.
 lib/config.js                Persistent user config in ~/.fad-checker/config.json (mode 0600).
 data/                        Curated JSON: known-obsolete, eol-mapping, cpe-coord-map, known-public-namespaces.
@@ -77,10 +78,10 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
    - Confirms the dep version actually falls in the vulnerable range (else `cpeFiltered: true` — likely false positive).
    - Upgrades match `confidence` from `possible` → `probable` → `exact` when a curated `cpe-coord-map.json` entry confirms vendor:product → dep coord.
 8. **retire.js** (default on) — shells out to `retire --outputformat json --jspath <src>`. Output normalised to fad-checker match shape, with the vendored file path attached so the report can show where the offending `.js` lives. Cache: `~/.fad-checker/retire-cache/<md5(src)>.json`, 24h TTL.
-9. **EOL / Obsolete / Outdated** — `lib/outdated.js`:
-   - **EOL**: matches dep coord against `data/eol-mapping.json`, fetches the cycle list from endoflife.date (cached 7d), flags cycles past their EOL date.
-   - **Obsolete**: lookup in `data/known-obsolete.json` (curated: log4j 1.x, jackson-mapper-asl, joda-time, commons-httpclient 3.x, …).
-   - **Outdated**: Maven Central Solr query for the latest version. Cache 24h. Concurrency 8.
+9. **EOL / Obsolete / Outdated** — `lib/outdated.js` (Maven) + `lib/npm/registry.js` (npm):
+   - **EOL**: matches dep coord against `data/eol-mapping.json`, fetches the cycle list from endoflife.date (cached 7d), flags cycles past their EOL date. npm packages match via `by_npm_name` / `by_npm_scope` (e.g. npm `angular` → AngularJS 1.x, `@angular/*` → Angular, `react`/`react-dom`/`jquery`/`vue`/`bootstrap`).
+   - **Obsolete**: Maven via curated `data/known-obsolete.json` (log4j 1.x, jackson-mapper-asl, joda-time, commons-httpclient 3.x, …); npm via the registry's per-version `deprecated` field (authoritative maintainer data — every npm dep is checked, nothing curated, nothing skipped).
+   - **Outdated**: Maven Central Solr query; npm registry `dist-tags.latest`. Both gated by `--no-all-libs`. Cache 24h. Concurrency 8.
 10. **Snyk** (optional, `--snyk`) — runs `snyk test --all-projects --json` against the cleaned target dir. Normalised + merged. Findings in both sources tagged `source: "both"`.
 11. **Render** — `writeReports()` produces `cve-report.html` (self-contained, inline CSS, no external assets) and `cve-report.doc` (same HTML with Office XML namespace meta tags so Word opens it natively). Default output dir: `./fad-checker-report/`.
 
@@ -129,9 +130,9 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 
 - The CVE bundle from CVEProject is ~500 MB unpacked. We shell out to `curl + unzip` (Node built-in fallback to `fetch()` + system `unzip` / PowerShell `Expand-Archive`). The extracted JSON is deleted after the index is built.
 - The bundle ships as `cves.zip.zip` (a zip whose sole content is another zip). `extractZip()` recurses up to 3 levels.
-- `endoflife.date` API responses are cached locally for 7 days; Maven Central version lookups for 24 hours.
+- `endoflife.date` API responses are cached locally for 7 days; Maven Central and npm registry version lookups for 24 hours.
 - **Persistent config**: `~/.fad-checker/config.json` (mode 0600) stores per-user state, currently the NVD API key. Set via `fad-checker --set-nvd-key <KEY>`.
-- **`--offline` umbrella flag**: skips every network call (CVE index download, OSV queries, NVD enrichment, endoflife.date lookups, Maven Central version queries, transitive POM fetches, retire.js scans). Falls back to whatever is already cached. Per-source variants (`--cve-offline`, `--no-osv`, `--no-nvd`, `--no-retire`) still work independently.
+- **`--offline` umbrella flag**: skips every network call (CVE index download, OSV queries, NVD enrichment, endoflife.date lookups, Maven Central version queries, npm registry queries, transitive POM fetches, retire.js scans). Falls back to whatever is already cached. Per-source variants (`--cve-offline`, `--no-osv`, `--no-nvd`, `--no-retire`, `--no-js`) still work independently.
 - `snyk` is not a dependency — we shell out via `execFile`. `snyk` exits 1 when it finds vulnerabilities, which is expected (the JSON is still on stdout).
 - The cleaned POM is the union of every profile's deps. Counts will therefore be larger than the source POM. This is intentional — verify your reasoning before "reducing" them.
 - Unresolved `${…}` Maven variables are kept verbatim in the rewritten POM. `lib/cve-match.js` resolves them lazily via `resolveDepVersion()` when collecting deps for the scan. Deps that *still* can't be resolved (external BOM) are surfaced in chapter 0 as `unresolved-versions` warnings.

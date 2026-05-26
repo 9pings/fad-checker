@@ -30,5 +30,16 @@
     "org.springframework": { "product": "spring-framework", "label": "Spring Framework" },
     "org.hibernate": { "product": "hibernate", "label": "Hibernate ORM" },
     "io.netty": { "product": "netty", "label": "Netty" }
+  },
+  "by_npm_name": {
+    "angular": { "product": "angularjs", "label": "AngularJS" },
+    "vue": { "product": "vue", "label": "Vue" },
+    "react": { "product": "react", "label": "React" },
+    "react-dom": { "product": "react", "label": "React" },
+    "jquery": { "product": "jquery", "label": "jQuery" },
+    "bootstrap": { "product": "bootstrap", "label": "Bootstrap" }
+  },
+  "by_npm_scope": {
+    "@angular/": { "product": "angular", "label": "Angular" }
   }
 }
