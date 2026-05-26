@@ -464,6 +464,17 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 		catch (err) { console.warn(chalk.yellow("⚠️  Outdated check skipped:"), err.message); }
 	}
 
+	// 4a. npm registry — deprecation (always, authoritative maintainer data) and
+	// outdated (gated by --all-libs like Maven Central). Covers npm deps and
+	// WebJars (Maven artifacts wrapping npm/bower libs), so it runs even in
+	// Maven-only mode. One fetch per package; no-ops when there are no targets.
+	try {
+		const { checkNpmRegistryDeps } = require("./lib/npm/registry");
+		const npmReg = await checkNpmRegistryDeps(resolved, { verbose, offline, allLibs: options.allLibs });
+		obsoleteResults = obsoleteResults.concat(npmReg.deprecated);
+		outdatedResults = outdatedResults.concat(npmReg.outdated);
+	} catch (err) { console.warn(chalk.yellow("⚠️  npm registry check skipped:"), err.message); }
+
 	// Cross-section dedup: drop entries from outdated that already appear in EOL/Obsolete
 	const eolKeys = new Set(eolResults.map(r => `${r.dep.groupId}:${r.dep.artifactId}`));
 	const obsKeys = new Set(obsoleteResults.map(r => `${r.dep.groupId}:${r.dep.artifactId}`));
@@ -574,16 +585,19 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 		if (retireMatches.length > 10) console.log(`       ... and ${retireMatches.length - 10} more (see report)`);
 	}
 
+	// npm deps have no groupId; show them as "npm:name" rather than ":name".
+	const coordOf = d => d.ecosystem === "npm" ? `npm:${d.artifactId}` : `${d.groupId}:${d.artifactId}`;
+
 	console.log(chalk.bold.cyan("\n  2. End-of-Life Frameworks"));
-	for (const e of eolResults) console.log(`     ${e.product.padEnd(20)} ${e.dep.groupId}:${e.dep.artifactId}:${e.dep.version}  ${e.eol}`);
+	for (const e of eolResults) console.log(`     ${e.product.padEnd(20)} ${coordOf(e.dep)}:${e.dep.version}  ${e.eol}`);
 	if (!eolResults.length) console.log(chalk.gray("     (none)"));
 
 	console.log(chalk.bold.cyan("\n  3. Obsolete / Deprecated Libraries"));
-	for (const o of obsoleteResults) console.log(`     ${(o.severity || "info").padEnd(8)} ${o.dep.groupId}:${o.dep.artifactId}:${o.dep.version}  → ${o.replacement || "n/a"}`);
+	for (const o of obsoleteResults) console.log(`     ${(o.severity || "info").padEnd(8)} ${coordOf(o.dep)}:${o.dep.version}  → ${o.replacement || "n/a"}`);
 	if (!obsoleteResults.length) console.log(chalk.gray("     (none)"));
 
 	console.log(chalk.bold.cyan("\n  4. Outdated Libraries"));
-	for (const o of outdatedResults.slice(0, 20)) console.log(`     ${o.dep.groupId}:${o.dep.artifactId}  ${o.dep.version} → ${o.latest}`);
+	for (const o of outdatedResults.slice(0, 20)) console.log(`     ${coordOf(o.dep)}  ${o.dep.version} → ${o.latest}`);
 	if (outdatedResults.length > 20) console.log(`       ... and ${outdatedResults.length - 20} more`);
 	if (!outdatedResults.length && options.allLibs) console.log(chalk.gray("     (none)"));
 	if (!options.allLibs) console.log(chalk.gray("     (re-run with -a/--allLibs to query Maven Central)"));

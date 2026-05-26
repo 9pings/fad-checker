@@ -15,7 +15,7 @@ Code-level orientation for contributors and Claude Code sessions on this repo.
    - retire.js (vendored JS signatures),
    - optionally Snyk (`--snyk`).
 4. Cross-checks every match's NVD CPE configurations against the dep version (`lib/cpe.js`) to filter false positives.
-5. Reports EOL frameworks (endoflife.date), obsolete libs (curated), outdated libs (Maven Central).
+5. Reports EOL frameworks (endoflife.date — Maven & npm), obsolete libs (curated Maven + npm-registry per-version `deprecated` field — authoritative, skips nothing), outdated libs (Maven Central + npm registry `dist-tags.latest`). **WebJars** (`org.webjars*`) are reduced to their npm coordinate by `webjarToNpm()` and run through the npm EOL/deprecation/outdated paths — so e.g. `org.webjars:angularjs:1.8.3` is flagged EOL.
 6. Produces a self-contained HTML report + Word-compatible `.doc`, organised by ecosystem and by defining manifest, with per-tool fix recipes and an executive summary.
 
 No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` / `package-lock.json` / `yarn.lock` are parsed directly.
@@ -67,6 +67,7 @@ lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + n
 lib/scan-completeness.js     Warnings for deps fad-checker couldn't fully resolve.
 lib/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 parsers.
 lib/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
+lib/npm/registry.js          npm registry packument query → per-version deprecation + dist-tags.latest (npm EOL feeds via lib/outdated.js).
 lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/.
 lib/config.js                Persistent user config in ~/.fad-checker/config.json (mode 0600).
 data/                        known-obsolete.json, eol-mapping.json, cpe-coord-map.json, known-public-namespaces.json
@@ -106,7 +107,7 @@ Test fixtures live in `test/fixtures/`:
 - CVE bundle from CVEProject is ~500 MB unpacked. Shells out to `curl + unzip` (fallback to `fetch()` + `unzip` / `Expand-Archive`). Extracted JSON deleted after index build. Ships as `cves.zip.zip` (nested zip) — `extractZip()` recurses up to 3 levels.
 - `endoflife.date` API responses cached 7 days; Maven Central version lookups cached 24 hours. Cache lives in `~/.fad-checker/`.
 - **Persistent config**: `~/.fad-checker/config.json` (mode 0600). Set NVD key via `fad-checker --set-nvd-key <KEY>` (free, instant from <https://nvd.nist.gov/developers/request-an-api-key> — bumps rate limit from 5/30s to 50/30s).
-- **`--offline` umbrella flag**: skips every network call (CVE/OSV/NVD/Maven Central/endoflife/retire). Falls back to whatever is already cached. Per-source variants (`--cve-offline`, `--no-osv`, `--no-nvd`, `--no-retire`, `--no-transitive`) still work independently.
+- **`--offline` umbrella flag**: skips every network call (CVE/OSV/NVD/Maven Central/endoflife/npm-registry/retire). Falls back to whatever is already cached. Per-source variants (`--cve-offline`, `--no-osv`, `--no-nvd`, `--no-retire`, `--no-transitive`, `--no-js`) still work independently. npm registry deprecation always runs when online; npm (and Maven) outdated is gated by `--no-all-libs`.
 - `snyk` is not a hard dep — shells out via `execFile`. `snyk` exits 1 on findings; the JSON is still on stdout.
 - The cleaned POM is the union of every profile's deps. Counts will be larger than the source POM. Intentional — don't "fix" that.
 - Unresolved `${…}` Maven variables stay verbatim in the rewritten POM. `lib/cve-match.js` resolves them lazily via `resolveDepVersion()` when scanning. Deps that *still* can't be resolved (external BOM not in source tree) surface in chapter 0 as `unresolved-versions` warnings.
@@ -122,5 +123,6 @@ Test fixtures live in `test/fixtures/`:
 | NVD CVE record | `~/.fad-checker/nvd-cache/<cveId>.json` | 7 d |
 | endoflife.date cycles | `~/.fad-checker/eol-cache.json` | 7 d |
 | Maven Central latest | `~/.fad-checker/version-cache.json` | 24 h |
+| npm registry (deprecation + latest) | `~/.fad-checker/npm-registry-cache.json` | 24 h |
 | Transitive POM | `~/.fad-checker/poms-cache/<g>__<a>__<v>.pom` | ∞ (immutable on Maven Central) |
 | retire.js findings | `~/.fad-checker/retire-cache/<md5(src)>.json` | 24 h |
