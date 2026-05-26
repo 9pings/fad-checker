@@ -85,6 +85,7 @@ For the deep dive — pipeline stages, the resolved-deps Map shape, report struc
 - **No `process.exit(1)` mid-pipeline**: a parse/rewrite failure for one POM logs and continues so the summary still prints.
 - **HTML report is self-contained**: inline CSS, no external assets. The `.doc` variant is the same HTML with Office XML namespace meta tags — Word opens it natively.
 - **Map keys are ecosystem-namespaced**: Maven uses `g:a`, npm uses `npm:name`. They never collide so they share one resolved-deps Map.
+- **Every distinct version is scanned, not just the highest**: when profiles/modules pin the same `g:a` to different versions, the resolved-dep entry keeps `version` = highest (representative for display/EOL/outdated) but `versions` = all distinct concrete versions. CVE matching (`matchOne`) and OSV (`queryOsvForDeps`) iterate `versions` so a vuln affecting only a lower-versioned profile variant isn't missed. Match dedup keys are `g:a:version|cve.id` (version included) to preserve per-version findings.
 - **Lockfile-only npm**: `package.json` without sibling `package-lock.json`/`yarn.lock` is intentionally skipped (its ranges aren't queryable) and reported in chapter 0.
 - **Source identifiers**: every match carries `source: "fad" | "osv" | "nvd" | "snyk" | "retire"` (or a `+`-joined combination).
 

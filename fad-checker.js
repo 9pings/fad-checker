@@ -648,7 +648,7 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
  */
 function mergeBySource(existing, additions) {
 	const byKey = new Map();
-	const k = m => `${m.dep.groupId}:${m.dep.artifactId}|${m.cve.id}`;
+	const k = m => `${m.dep.groupId}:${m.dep.artifactId}:${m.dep.version}|${m.cve.id}`;
 	for (const m of existing || []) byKey.set(k(m), { ...m, source: m.source || "fad" });
 	for (const m of additions || []) {
 		const key = k(m);
