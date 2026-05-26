@@ -465,15 +465,15 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 	}
 
 	// 4a. npm registry — deprecation (always, authoritative maintainer data) and
-	// outdated (gated by --all-libs like Maven Central). One fetch per package.
-	if (options.js !== false) {
-		try {
-			const { checkNpmRegistryDeps } = require("./lib/npm/registry");
-			const npmReg = await checkNpmRegistryDeps(resolved, { verbose, offline, allLibs: options.allLibs });
-			obsoleteResults = obsoleteResults.concat(npmReg.deprecated);
-			outdatedResults = outdatedResults.concat(npmReg.outdated);
-		} catch (err) { console.warn(chalk.yellow("⚠️  npm registry check skipped:"), err.message); }
-	}
+	// outdated (gated by --all-libs like Maven Central). Covers npm deps and
+	// WebJars (Maven artifacts wrapping npm/bower libs), so it runs even in
+	// Maven-only mode. One fetch per package; no-ops when there are no targets.
+	try {
+		const { checkNpmRegistryDeps } = require("./lib/npm/registry");
+		const npmReg = await checkNpmRegistryDeps(resolved, { verbose, offline, allLibs: options.allLibs });
+		obsoleteResults = obsoleteResults.concat(npmReg.deprecated);
+		outdatedResults = outdatedResults.concat(npmReg.outdated);
+	} catch (err) { console.warn(chalk.yellow("⚠️  npm registry check skipped:"), err.message); }
 
 	// Cross-section dedup: drop entries from outdated that already appear in EOL/Obsolete
 	const eolKeys = new Set(eolResults.map(r => `${r.dep.groupId}:${r.dep.artifactId}`));

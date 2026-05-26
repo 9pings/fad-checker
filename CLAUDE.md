@@ -15,7 +15,7 @@ Code-level orientation for contributors and Claude Code sessions on this repo.
    - retire.js (vendored JS signatures),
    - optionally Snyk (`--snyk`).
 4. Cross-checks every match's NVD CPE configurations against the dep version (`lib/cpe.js`) to filter false positives.
-5. Reports EOL frameworks (endoflife.date — Maven, npm, **and WebJars** `org.webjars*`: jQuery/Angular/AngularJS/Vue/React/Bootstrap), obsolete libs (curated Maven + npm-registry per-version `deprecated` field — authoritative, skips nothing), outdated libs (Maven Central + npm registry `dist-tags.latest`).
+5. Reports EOL frameworks (endoflife.date — Maven & npm), obsolete libs (curated Maven + npm-registry per-version `deprecated` field — authoritative, skips nothing), outdated libs (Maven Central + npm registry `dist-tags.latest`). **WebJars** (`org.webjars*`) are reduced to their npm coordinate by `webjarToNpm()` and run through the npm EOL/deprecation/outdated paths — so e.g. `org.webjars:angularjs:1.8.3` is flagged EOL.
 6. Produces a self-contained HTML report + Word-compatible `.doc`, organised by ecosystem and by defining manifest, with per-tool fix recipes and an executive summary.
 
 No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` / `package-lock.json` / `yarn.lock` are parsed directly.

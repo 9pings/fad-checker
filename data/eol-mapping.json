@@ -41,7 +41,6 @@
     "bootstrap": { "product": "bootstrap", "label": "Bootstrap" }
   },
   "by_npm_scope": {
-    "@angular/": { "product": "angular", "label": "Angular" },
-    "angular/": { "product": "angular", "label": "Angular" }
+    "@angular/": { "product": "angular", "label": "Angular" }
   }
 }
