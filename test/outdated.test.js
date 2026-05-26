@@ -82,3 +82,20 @@ test("findEolProduct returns null for an unmapped npm package", () => {
 	// A Maven groupId must never leak into the npm lookup.
 	assert.equal(findEolProduct({ ecosystem: "npm", artifactId: "org.springframework" }), null);
 });
+
+test("findEolProduct maps WebJars (client-side JS shipped as Maven artifacts)", () => {
+	// org.webjars:angularjs:1.8.3 — AngularJS 1.x, EOL since 2021.
+	const ajs = findEolProduct({ groupId: "org.webjars", artifactId: "angularjs", version: "1.8.3" });
+	assert.ok(ajs, "org.webjars:angularjs must map");
+	assert.equal(ajs.product, "angularjs");
+
+	assert.equal(findEolProduct({ groupId: "org.webjars", artifactId: "jquery" }).product, "jquery");
+	assert.equal(findEolProduct({ groupId: "org.webjars", artifactId: "bootstrap" }).product, "bootstrap");
+	// org.webjars.npm mirrors npm names; scope slash is encoded as "__".
+	assert.equal(findEolProduct({ groupId: "org.webjars.npm", artifactId: "vue" }).product, "vue");
+	assert.equal(findEolProduct({ groupId: "org.webjars.npm", artifactId: "angular__core" }).product, "angular");
+});
+
+test("findEolProduct returns null for an unmapped WebJar artifact", () => {
+	assert.equal(findEolProduct({ groupId: "org.webjars", artifactId: "datatables" }), null);
+});

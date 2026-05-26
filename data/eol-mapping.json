@@ -33,6 +33,7 @@
   },
   "by_npm_name": {
     "angular": { "product": "angularjs", "label": "AngularJS" },
+    "angularjs": { "product": "angularjs", "label": "AngularJS" },
     "vue": { "product": "vue", "label": "Vue" },
     "react": { "product": "react", "label": "React" },
     "react-dom": { "product": "react", "label": "React" },
@@ -40,6 +41,7 @@
     "bootstrap": { "product": "bootstrap", "label": "Bootstrap" }
   },
   "by_npm_scope": {
-    "@angular/": { "product": "angular", "label": "Angular" }
+    "@angular/": { "product": "angular", "label": "Angular" },
+    "angular/": { "product": "angular", "label": "Angular" }
   }
 }
