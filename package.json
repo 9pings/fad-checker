@@ -1,7 +1,7 @@
 {
   "name": "fad-checker",
-  "version": "1.0.6",
-  "description": "Fucking Autonomous Dependency Checker — Scans ALL pom/bom, npm/Yarn stuff and vendored JavaScript in a source tree, deal with private deps, multi modules & produces 1 HTML/DOC report with CVE, EOL, obsolete, outdated deps & fix recos",
+  "version": "2.0.0",
+  "description": "Fucking Autonomous Dependency Checker — Scans Maven, npm/Yarn, Composer (PHP), PyPI (Python), NuGet (C#/.NET) and vendored JavaScript in a source tree, deals with private deps & multi-modules, and produces 1 HTML/DOC report with CVE, EOL, obsolete, outdated deps & fix recos",
   "license": "MIT",
   "repository": "https://github.com/n8tz/fad-checker",
   "author": "pp9Ping <pp9Ping@gmail.com>",
