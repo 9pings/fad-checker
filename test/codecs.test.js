@@ -24,3 +24,17 @@ test("assertCodecShape accepts a complete codec stub", () => {
 test("assertCodecShape rejects a codec missing a required method", () => {
 	assert.throws(() => assertCodecShape({ id: "y" }), /missing|y/i);
 });
+
+const maven = require("../lib/codecs/maven.codec");
+
+test("maven codec detects the simple fixture and collects deps with bare g:a coordKeys", async () => {
+	const dir = path.join(__dirname, "fixtures", "simple");
+	assert.strictEqual(maven.detect(dir), true);
+	const { deps } = await maven.collect(dir, {});
+	assert.ok(deps.size > 0);
+	for (const [k, d] of deps) {
+		assert.strictEqual(d.ecosystem, "maven");
+		assert.strictEqual(d.coordKey, k);
+		assert.ok(!k.startsWith("npm:") && !k.startsWith("nuget:"), `maven key ${k} must stay bare`);
+	}
+});
