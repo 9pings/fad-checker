@@ -77,3 +77,16 @@ test("detectCodecs finds maven+npm on monorepo-mixed, not yarn duplicate", () =>
 	assert.ok(detected.includes("npm"));
 	assert.ok(!detected.includes("yarn"));
 });
+
+const recipes = require("../lib/codecs/recipes");
+
+test("each codec recipe exposes label + snippet function", () => {
+	for (const c of allCodecs()) {
+		assert.strictEqual(typeof c.recipe.label, "string");
+		assert.strictEqual(typeof c.recipe.snippet, "function");
+	}
+	// snippet output matches the legacy format
+	const xml = recipes.maven.snippet([{ groupId: "g", artifactId: "a", fixVersion: "1.0" }]);
+	assert.match(xml, /<dependencyManagement>/);
+	assert.match(xml, /<artifactId>a<\/artifactId>/);
+});
