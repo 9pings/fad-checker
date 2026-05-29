@@ -48,7 +48,9 @@ const { makeDepRecord, coordKeyFor } = require("../lib/dep-record");
 
 test("maven depRecord builds namespaced coordKey and keeps groupId/artifactId aliases", () => {
   const d = makeDepRecord({ ecosystem: "maven", namespace: "org.apache", name: "log4j", version: "2.14.0", manifestPath: "/p/pom.xml", scope: "compile" });
-  assert.strictEqual(d.coordKey, "maven:org.apache:log4j");
+  // DÉVIATION ACTÉE : clé Maven BRUTE "g:a" (pas "maven:g:a") — garde transitive.js
+  // et ~12 tests existants intacts ; collision-free face aux préfixes des autres eco.
+  assert.strictEqual(d.coordKey, "org.apache:log4j");
   assert.strictEqual(d.groupId, "org.apache");   // alias rétro-compat
   assert.strictEqual(d.artifactId, "log4j");      // alias rétro-compat
   assert.deepStrictEqual(d.versions, ["2.14.0"]);
@@ -108,6 +110,7 @@ function coordKeyFor(ecosystem, namespace, name) {
 function makeDepRecord(input) {
   const { ecosystem, namespace = "", name, version = null, manifestPath, scope = "compile", isDev = false, ecosystemType } = input;
   const concrete = version && !/\$\{/.test(version) ? version : null;
+  const manifestPaths = manifestPath ? [manifestPath] : [];
   return {
     ecosystem,
     ecosystemType: ecosystemType || ecosystem,
@@ -118,11 +121,15 @@ function makeDepRecord(input) {
     coordKey: coordKeyFor(ecosystem, namespace, name),
     scope,
     isDev: !!isDev,
-    manifestPaths: manifestPath ? [manifestPath] : [],
-    // alias rétro-compat (à retirer une fois tous les conscommateurs migrés)
-    get groupId() { return this.namespace; },
-    get artifactId() { return this.name; },
-    get pomPaths() { return this.manifestPaths; },
+    manifestPaths,
+    // Alias rétro-compat : CHAMPS DUPLIQUÉS RÉELS (pas des getters — les depRecords
+    // sont spreadés dans des chemins chauds : cve-match.js:175, scan-completeness.js,
+    // cve-report.js:1036, snyk.js:105 — un getter serait perdu au spread).
+    // groupId/artifactId sont des strings jamais réassignées → pas de dérive.
+    // pomPaths PARTAGE la référence de manifestPaths → les push restent synchrones.
+    groupId: namespace || "",
+    artifactId: name,
+    pomPaths: manifestPaths,
   };
 }
 
@@ -141,7 +148,10 @@ git add lib/dep-record.js test/dep-record.test.js
 git commit -m "Add generalized depRecord builder (codec foundation)"
 ```
 
-> ⚠️ Note d'implémentation : les getters `groupId`/`artifactId`/`pomPaths` ne survivent pas à `JSON.parse(JSON.stringify(...))` ni à `{...spread}`. Vérifier en Task 2/3 qu'aucun chemin chaud ne clone le record avant lecture de ces alias ; si oui, les migrer vers les vrais champs `namespace`/`name`/`manifestPaths` dans ce chemin précis.
+> ✓ Décision : alias = champs dupliqués réels (vérifié : 4 sites spreadent les depRecords).
+> `pomPaths` partage la référence de `manifestPaths`. Un `JSON.parse(JSON.stringify(dep))`
+> casserait ce partage de référence, mais aucun chemin chaud ne sérialise/désérialise un
+> depRecord (vérifié : aucun `JSON.parse(JSON.stringify(dep))` dans le code).
 
 ---
 

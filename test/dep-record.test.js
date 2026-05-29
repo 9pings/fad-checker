@@ -2,9 +2,9 @@ const test = require("node:test");
 const assert = require("node:assert");
 const { makeDepRecord, coordKeyFor } = require("../lib/dep-record");
 
-test("maven depRecord builds namespaced coordKey and keeps groupId/artifactId aliases", () => {
+test("maven depRecord builds bare g:a coordKey and keeps groupId/artifactId aliases", () => {
 	const d = makeDepRecord({ ecosystem: "maven", namespace: "org.apache", name: "log4j", version: "2.14.0", manifestPath: "/p/pom.xml", scope: "compile" });
-	assert.strictEqual(d.coordKey, "maven:org.apache:log4j");
+	assert.strictEqual(d.coordKey, "org.apache:log4j");   // clé Maven brute (pas de préfixe)
 	assert.strictEqual(d.groupId, "org.apache");   // alias rétro-compat
 	assert.strictEqual(d.artifactId, "log4j");      // alias rétro-compat
 	assert.deepStrictEqual(d.versions, ["2.14.0"]);
