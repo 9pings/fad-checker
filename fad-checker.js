@@ -389,6 +389,11 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	for (const d of resolved.values()) byEcoCount[d.ecosystem] = (byEcoCount[d.ecosystem] || 0) + 1;
 	if (runMaven) console.log(chalk.blue(`📚 ${byEcoCount.maven || 0} dépendances Maven directes (incl. parent POMs)`));
 	if (runNpm)   console.log(chalk.blue(`📦 ${byEcoCount.npm || 0} dépendances npm/yarn`));
+	for (const [ecoId, n] of Object.entries(byEcoCount)) {
+		if (ecoId === "maven" || ecoId === "npm") continue;
+		const label = (require("./lib/codecs").getCodec(ecoId)?.label) || ecoId;
+		console.log(chalk.blue(`📦 ${n} dépendances ${label}`));
+	}
 
 	// Warnings surfaced during collection (e.g. npm no-lockfile fallback).
 	const npmWarnings = collectWarnings || [];
@@ -474,6 +479,20 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		obsoleteResults = obsoleteResults.concat(npmReg.deprecated);
 		outdatedResults = outdatedResults.concat(npmReg.outdated);
 	} catch (err) { console.warn(chalk.yellow("⚠️  npm registry check skipped:"), err.message); }
+
+	// 4b. Per-codec registry for ecosystems beyond maven/npm (composer/pypi/nuget).
+	// maven (Maven Central) + npm (registry) are already covered above; this loop
+	// drives each remaining active codec's own registry (Packagist abandoned, etc.).
+	for (const id of activeIds) {
+		if (id === "maven" || id === "npm" || id === "yarn") continue;
+		const codec = getCodec(id);
+		if (!codec?.checkRegistry) continue;
+		try {
+			const reg = await codec.checkRegistry(resolved, { verbose, offline, allLibs: options.allLibs });
+			obsoleteResults = obsoleteResults.concat(reg.deprecated || []);
+			outdatedResults = outdatedResults.concat(reg.outdated || []);
+		} catch (err) { console.warn(chalk.yellow(`⚠️  ${id} registry check skipped:`), err.message); }
+	}
 
 	// Cross-section dedup: drop entries from outdated that already appear in EOL/Obsolete
 	const eolKeys = new Set(eolResults.map(r => `${r.dep.groupId}:${r.dep.artifactId}`));
