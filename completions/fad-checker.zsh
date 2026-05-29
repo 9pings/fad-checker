@@ -20,6 +20,15 @@ _fad_check() {
 		'--cve-refresh[force CVE re-download]'
 		'--cve-offline[use cached CVE only]'
 		'--snyk[run snyk and merge]'
+		'--ecosystem[codecs to run]:list:(auto all maven npm yarn nuget composer pypi)'
+		'--no-maven[skip the Maven codec]'
+		'--no-npm[skip the npm codec]'
+		'--no-yarn[skip the Yarn codec]'
+		'--no-nuget[skip the NuGet codec]'
+		'--no-composer[skip the Composer codec]'
+		'--no-pypi[skip the PyPI codec]'
+		'--no-js[alias: skip JS/npm/yarn]'
+		'--no-retire[skip retire.js vendored-JS scan]'
 		'--completion[print shell completion]:shell:(bash zsh)'
 	)
 	_arguments $opts

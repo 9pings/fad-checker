@@ -5,7 +5,9 @@ This is the deep-dive for anyone modifying `fad-checker`'s internals or wonderin
 ## Module map
 
 ```
-fad-checker.js                 Thin CLI: commander parsing, orchestration only.
+fad-checker.js                 Thin CLI: commander parsing + orchestration (loops over active codecs).
+lib/codecs/                  Per-ecosystem codecs + registry + select + recipes (see "Codecs" below).
+lib/dep-record.js            makeDepRecord(): the generalized depRecord shared by all codecs.
 lib/core.js                  POM parsing, parent resolution, all-profile merge, rewrite.
 lib/maven-version.js         Maven version parsing + range comparison (no external deps).
 lib/cve-download.js          Bulk download of CVEProject/cvelistV5 + Maven-relevant index build.
@@ -28,6 +30,29 @@ data/                        Curated JSON: known-obsolete, eol-mapping, cpe-coor
 completions/                 fad-checker.bash, fad-checker.zsh
 test/                        node:test suite + fixtures (simple, complex-enterprise, monorepo-mixed, …).
 ```
+
+## Codecs
+
+Every ecosystem-specific behaviour lives behind a **codec** (`lib/codecs/*.codec.js`)
+implementing one interface (`lib/codecs/codec.interface.js`):
+
+```
+id, label, osvEcosystem, manifestNames,
+detect(dir), collect(dir,opts) → {deps, warnings},
+coordKey(dep), formatCoord(dep), osvPackageName(dep),
+checkRegistry(deps,opts) → {outdated, deprecated},
+resolveEolProduct(dep), recipe, nativeScanners
+```
+
+- `lib/codecs/index.js` is the registry: `getCodec(id)`, `allCodecs()`, `detectCodecs(dir)`.
+- `lib/codecs/select.js` turns `--ecosystem <list>` + `--no-<id>` into the active codec ids.
+- The orchestrator collects deps by looping the active codecs, then runs the **shared,
+  ecosystem-agnostic** services (OSV, NVD, CPE refinement, endoflife.date) which ask the
+  codec only for a package/product name. `nativeScanners` are extra scanners a codec owns
+  and the orchestrator runs at their pipeline position by `kind`: `cve` (maven → local
+  cvelistV5 index, merged into the CVE chapter) and `vendored` (npm → retire.js, its own
+  chapter). New ecosystems (NuGet/Composer/PyPI) ship as codecs with no native scanners —
+  OSV + NVD cover them — so no orchestrator changes are needed to add one.
 
 ## The resolved-deps Map
 
@@ -142,7 +167,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 ## Testing
 
 ```bash
-npm test                          # full suite (96 tests)
+npm test                          # full suite (156 tests)
 node --test test/core.test.js     # one file
 ```
 

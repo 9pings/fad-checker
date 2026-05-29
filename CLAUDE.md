@@ -24,7 +24,7 @@ No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` /
 
 ```bash
 npm install
-npm test                  # 96 unit tests via node --test
+npm test                  # 156 unit tests via node --test
 
 # basic cleanup workflow
 node fad-checker.js -s ./proj                                        # read-only, full report
@@ -51,7 +51,14 @@ Guardrails enforced at startup:
 ## Architecture (one-liner per file)
 
 ```
-fad-checker.js                 Thin CLI: commander parsing, orchestration only.
+fad-checker.js                 Thin CLI: commander parsing, orchestration only (loops over active codecs).
+lib/codecs/index.js          Codec registry: getCodec / allCodecs / detectCodecs.
+lib/codecs/codec.interface.js  Codec contract + assertCodecShape() validator.
+lib/codecs/maven.codec.js    Maven codec (wraps core.js + transitive.js + CVE-index scanner).
+lib/codecs/npm.codec.js      npm codec (wraps lib/npm/* + retire.js scanner). yarn.codec.js shares it.
+lib/codecs/select.js         resolveActiveCodecs(): --ecosystem list + --no-<id> → active codec ids.
+lib/codecs/recipes.js        Per-ecosystem fix-recipe specs (pin snippet + direct-update wording).
+lib/dep-record.js            makeDepRecord(): generalized depRecord ({ ecosystem, namespace, name, coordKey, … }).
 lib/core.js                  POM parsing, parent resolution, all-profile merge, rewrite.
 lib/maven-version.js         Maven version parsing + range comparison (no external deps).
 lib/cve-download.js          Bulk download of CVEProject/cvelistV5 + Maven-relevant index build.
@@ -84,9 +91,11 @@ For the deep dive — pipeline stages, the resolved-deps Map shape, report struc
 - **All profiles are merged, never prompted for**: every profile's deps are unioned so Snyk sees every dep any profile could pull in. `activeByDefault` wins only for property value conflicts.
 - **No `process.exit(1)` mid-pipeline**: a parse/rewrite failure for one POM logs and continues so the summary still prints.
 - **HTML report is self-contained**: inline CSS, no external assets. The `.doc` variant is the same HTML with Office XML namespace meta tags — Word opens it natively.
-- **Map keys are ecosystem-namespaced**: Maven uses `g:a`, npm uses `npm:name`. They never collide so they share one resolved-deps Map.
+- **Codec abstraction**: every ecosystem lives behind a codec (`lib/codecs/*`) implementing one interface (`detect`/`collect`/`coordKey`/`formatCoord`/`osvPackageName`/`checkRegistry`/`resolveEolProduct`/`recipe`/`nativeScanners`). The orchestrator loops over the codecs `detectCodecs()` returns. OSV/NVD/CPE and the endoflife.date fetch are **shared, ecosystem-agnostic** services that ask the codec for a package/product name. CVE-index (maven) and retire.js (npm) are `nativeScanners` owned by their codec. Adding an ecosystem = adding a codec, no orchestrator edits.
+- **Map keys are ecosystem-namespaced** (`dep.coordKey`): Maven uses a **bare** `g:a` (kept prefix-free so `transitive.js` internals and existing tests are untouched); npm uses `npm:name`; new ecosystems use `nuget:`/`composer:vendor/pkg`/`pypi:`. Bare `g:a` is collision-free against those prefixes. Built by `makeDepRecord()`; `groupId`/`artifactId`/`pomPaths` are kept as real duplicated alias fields (not getters — depRecords are spread in hot paths).
 - **Every distinct version is scanned, not just the highest**: when profiles/modules pin the same `g:a` to different versions, the resolved-dep entry keeps `version` = highest (representative for display/EOL/outdated) but `versions` = all distinct concrete versions. CVE matching (`matchOne`) and OSV (`queryOsvForDeps`) iterate `versions` so a vuln affecting only a lower-versioned profile variant isn't missed. Match dedup keys are `g:a:version|cve.id` (version included) to preserve per-version findings.
-- **Lockfile-only npm**: `package.json` without sibling `package-lock.json`/`yarn.lock` is intentionally skipped (its ranges aren't queryable) and reported in chapter 0.
+- **npm no-lockfile = best-effort (not skipped)**: `package.json` without a sibling `package-lock.json`/`yarn.lock` is parsed best-effort — pinned exact versions (`"1.2.3"`) are scanned, ranges (`"^1.0.0"`) are skipped, and a `no-lockfile` warning (chapter 0) flags the partial coverage. (Earlier versions skipped such manifests entirely.)
+- **`--ecosystem` is a list**: `auto` (default = `detectCodecs()`) | `all` | comma list `maven,npm,nuget,composer,pypi` (legacy `both`/`maven`/`npm` still parse). Per-codec opt-out via `--no-maven`/`--no-npm`/`--no-yarn`/`--no-nuget`/`--no-composer`/`--no-pypi`; `--no-js` is an alias for `--no-npm`+`--no-yarn`.
 - **Source identifiers**: every match carries `source: "fad" | "osv" | "nvd" | "snyk" | "retire"` (or a `+`-joined combination).
 
 ## Testing
@@ -108,7 +117,7 @@ Test fixtures live in `test/fixtures/`:
 - CVE bundle from CVEProject is ~500 MB unpacked. Shells out to `curl + unzip` (fallback to `fetch()` + `unzip` / `Expand-Archive`). Extracted JSON deleted after index build. Ships as `cves.zip.zip` (nested zip) — `extractZip()` recurses up to 3 levels.
 - `endoflife.date` API responses cached 7 days; Maven Central version lookups cached 24 hours. Cache lives in `~/.fad-checker/`.
 - **Persistent config**: `~/.fad-checker/config.json` (mode 0600). Set NVD key via `fad-checker --set-nvd-key <KEY>` (free, instant from <https://nvd.nist.gov/developers/request-an-api-key> — bumps rate limit from 5/30s to 50/30s).
-- **`--offline` umbrella flag**: skips every network call (CVE/OSV/NVD/Maven Central/endoflife/npm-registry/retire). Falls back to whatever is already cached. Per-source variants (`--cve-offline`, `--no-osv`, `--no-nvd`, `--no-retire`, `--no-transitive`, `--no-js`) still work independently. npm registry deprecation always runs when online; npm (and Maven) outdated is gated by `--no-all-libs`.
+- **`--offline` umbrella flag**: skips every network call (CVE/OSV/NVD/Maven Central/endoflife/npm-registry/retire). Falls back to whatever is already cached. Per-source variants (`--cve-offline`, `--no-osv`, `--no-nvd`, `--no-retire`, `--no-transitive`) and per-codec toggles (`--no-maven`/`--no-npm`/`--no-yarn`/`--no-nuget`/`--no-composer`/`--no-pypi`, `--no-js`) still work independently. npm registry deprecation always runs when online; npm (and Maven) outdated is gated by `--no-all-libs`.
 - `snyk` is not a hard dep — shells out via `execFile`. `snyk` exits 1 on findings; the JSON is still on stdout.
 - The cleaned POM is the union of every profile's deps. Counts will be larger than the source POM. Intentional — don't "fix" that.
 - Unresolved `${…}` Maven variables stay verbatim in the rewritten POM. `lib/cve-match.js` resolves them lazily via `resolveDepVersion()` when scanning. Deps that *still* can't be resolved (external BOM not in source tree) surface in chapter 0 as `unresolved-versions` warnings.

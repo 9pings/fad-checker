@@ -21,14 +21,22 @@ By default the HTML + Word reports land in `./fad-checker-report/`. Override wit
 # Auto-detect (default): scan whatever pom.xml / package(-lock).json / yarn.lock exists
 fad-checker -s .
 
-# Force one ecosystem
-fad-checker -s . --ecosystem maven
-fad-checker -s . --ecosystem npm
-fad-checker -s . --ecosystem both     # scan both even if only one is auto-detected
+# Pick ecosystems (codecs). --ecosystem is a list: auto (default) | all | comma list.
+fad-checker -s . --ecosystem maven            # Maven only
+fad-checker -s . --ecosystem maven,npm        # both, even if only one is auto-detected
+fad-checker -s . --ecosystem all              # every supported codec
+fad-checker -s . --ecosystem both             # legacy alias for maven,npm
 
-# Disable JS scanning entirely (Maven-only)
-fad-checker -s . --no-js
+# Opt out of specific codecs (combine freely)
+fad-checker -s . --no-npm                     # skip npm
+fad-checker -s . --no-js                      # alias: skip npm + yarn (Maven-only)
+fad-checker -s . --no-pypi --no-nuget         # skip Python + C#
 ```
+
+> **npm without a lockfile**: a `package.json` lacking a sibling
+> `package-lock.json`/`yarn.lock` is now scanned **best-effort** — pinned exact
+> versions are checked, ranges (`^1.0.0`) are skipped, and a `no-lockfile` warning
+> flags the partial coverage. Run `npm install`/`yarn install` for full coverage.
 
 ## Filtering deps
 
