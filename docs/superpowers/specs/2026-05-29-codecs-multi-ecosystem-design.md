@@ -193,6 +193,10 @@ et le préfixe coordKey `npm:` ; `ecosystemType` distingue pour report/recette.
 ## Données
 
 - `data/eol-mapping.json` gagne `by_nuget_name`, `by_composer_name`, `by_pypi_name`.
+  Ce fichier ne contient **que l'association coord → nom de produit endoflife.date** ;
+  les dates de cycle/EOL sont **récupérées en ligne** (endoflife.date) et **mises en
+  cache 7 jours**. Le mapping peut donc démarrer **minimal** (dotnet/php/python + quelques
+  frameworks) et s'enrichir au fil de l'eau par simple édition JSON, sans toucher au code.
 - `data/known-obsolete.json` reste Maven-only : les autres écosystèmes ont des champs
   registre authoritatifs (`deprecation` NuGet, `abandoned` Packagist, `yanked` PyPI).
 
