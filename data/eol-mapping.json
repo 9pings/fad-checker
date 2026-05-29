@@ -54,5 +54,10 @@
     "django": { "product": "django", "label": "Django" },
     "numpy": { "product": "numpy", "label": "NumPy" },
     "fastapi": { "product": "fastapi", "label": "FastAPI" }
+  },
+  "by_nuget_name": {
+    "microsoft.aspnetcore.app": { "product": "aspnetcore", "label": "ASP.NET Core" },
+    "microsoft.entityframeworkcore": { "product": "efcore", "label": "EF Core" },
+    "microsoft.net.sdk": { "product": "dotnet", "label": ".NET" }
   }
 }

@@ -45,3 +45,22 @@ test("nugetRegistrationToFindings extracts latest stable + deprecation for versi
 	assert.strictEqual(f2.deprecated, null);
 	assert.strictEqual(f2.outdated, null);
 });
+
+const nuget = require("../lib/codecs/nuget.codec");
+const { assertCodecShape } = require("../lib/codecs/codec.interface");
+test("nuget codec: shape, detect, collect lockfile, case-insensitive key", async () => {
+	assertCodecShape(nuget);
+	assert.strictEqual(nuget.detect(F("csharp-lock")), true);
+	const { deps } = await nuget.collect(F("csharp-lock"), {});
+	const j = deps.get("nuget:newtonsoft.json");     // key lowercased
+	assert.ok(j);
+	assert.strictEqual(j.name, "Newtonsoft.Json");   // display keeps original case
+	assert.strictEqual(nuget.osvPackageName(j), "Newtonsoft.Json");
+});
+test("nuget codec: csproj uses CPM + skips floating with warning", async () => {
+	const { deps, warnings } = await nuget.collect(F("csharp-csproj"), {});
+	assert.ok(deps.has("nuget:newtonsoft.json"));
+	assert.ok(deps.has("nuget:managed"));            // resolved via Directory.Packages.props
+	assert.ok(!deps.has("nuget:floating"));
+	assert.ok(warnings.find(w => w.type === "no-lockfile"));
+});
