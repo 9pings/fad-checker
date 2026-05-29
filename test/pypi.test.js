@@ -37,3 +37,18 @@ test("parseRequirementsTxt keeps == pins, skips ranges/flags/comments", () => {
 	assert.deepStrictEqual(names, ["fastapi", "urllib3"]);
 	assert.strictEqual(r.skipped, 1);   // flask>=2.0
 });
+
+const { pypiToFindings } = require("../lib/python/registry");
+test("pypiToFindings extracts latest, yanked-for-version, inactive classifier", () => {
+	const data = {
+		info: { version: "2.1.0", classifiers: ["Development Status :: 7 - Inactive"] },
+		releases: { "2.0.4": [{ yanked: true, yanked_reason: "security" }], "2.1.0": [{ yanked: false }] },
+	};
+	const f = pypiToFindings(data, { version: "2.0.4" });
+	assert.strictEqual(f.outdated.latest, "2.1.0");
+	assert.strictEqual(f.yanked.reason, "security");
+	assert.strictEqual(f.inactive, true);
+	const f2 = pypiToFindings(data, { version: "2.1.0" });
+	assert.strictEqual(f2.yanked, null);
+	assert.strictEqual(f2.outdated, null);
+});
