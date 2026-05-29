@@ -30,3 +30,18 @@ test("parsePackagesConfig reads legacy id/version", async () => {
 	const r = await parsePackagesConfig(F("csharp-config/packages.config"));
 	assert.strictEqual(r.deps.find(d => d.name === "EntityFramework").version, "6.4.4");
 });
+
+const { nugetRegistrationToFindings } = require("../lib/nuget/registry");
+test("nugetRegistrationToFindings extracts latest stable + deprecation for version", () => {
+	const reg = { items: [ { items: [
+		{ catalogEntry: { version: "13.0.1", deprecation: { reasons: ["Legacy"], alternatePackage: { id: "NewPkg" } } } },
+		{ catalogEntry: { version: "13.0.3" } },
+		{ catalogEntry: { version: "14.0.0-preview" } },
+	] } ] };
+	const f = nugetRegistrationToFindings(reg, { version: "13.0.1" });
+	assert.strictEqual(f.outdated.latest, "13.0.3");
+	assert.deepStrictEqual(f.deprecated, { reason: "Legacy", replacement: "NewPkg" });
+	const f2 = nugetRegistrationToFindings(reg, { version: "13.0.3" });
+	assert.strictEqual(f2.deprecated, null);
+	assert.strictEqual(f2.outdated, null);
+});
