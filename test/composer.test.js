@@ -22,3 +22,24 @@ test("parseComposerJson reads require + require-dev with pinned-vs-range info", 
 	assert.strictEqual(byName["guzzlehttp/guzzle"].version, "^7.0");
 	assert.strictEqual(byName["phpunit/phpunit"].scope, "dev");
 });
+
+const { packagistToFindings } = require("../lib/composer/registry");
+
+test("packagistToFindings extracts latest stable + abandoned flag", () => {
+	const pkg = {
+		"abandoned": "psr/log",
+		"versions": {
+			"2.9.1": { "version": "2.9.1" },
+			"3.0.0": { "version": "3.0.0" },
+			"dev-main": { "version": "dev-main" },
+			"2.8.0": { "version": "2.8.0" },
+		},
+	};
+	const f = packagistToFindings(pkg, { version: "2.9.1" });
+	assert.strictEqual(f.outdated.latest, "3.0.0");
+	assert.deepStrictEqual(f.abandoned, { replacement: "psr/log" });
+
+	const f2 = packagistToFindings({ "abandoned": true, "versions": { "1.0.0": {} } }, { version: "1.0.0" });
+	assert.deepStrictEqual(f2.abandoned, { replacement: null });
+	assert.strictEqual(f2.outdated, null);
+});
