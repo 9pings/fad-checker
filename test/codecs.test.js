@@ -38,3 +38,24 @@ test("maven codec detects the simple fixture and collects deps with bare g:a coo
 		assert.ok(!k.startsWith("npm:") && !k.startsWith("nuget:"), `maven key ${k} must stay bare`);
 	}
 });
+
+const npm = require("../lib/codecs/npm.codec");
+
+test("npm codec collects from monorepo-mixed with npm: coordKeys", async () => {
+	const dir = path.join(__dirname, "fixtures", "monorepo-mixed");
+	assert.strictEqual(npm.detect(dir), true);
+	const { deps } = await npm.collect(dir, {});
+	assert.ok(deps.size > 0);
+	for (const [k, d] of deps) {
+		assert.ok(k.startsWith("npm:"), `key ${k} should be npm-namespaced`);
+		assert.strictEqual(d.ecosystem, "npm");
+		assert.strictEqual(d.coordKey, k);
+	}
+});
+
+test("yarn codec is a no-op collector (npm codec does the JS scan)", async () => {
+	const yarn = require("../lib/codecs/yarn.codec");
+	assert.strictEqual(yarn.id, "yarn");
+	const { deps } = await yarn.collect("/whatever", {});
+	assert.strictEqual(deps.size, 0);
+});
