@@ -7,7 +7,7 @@ Code-level orientation for contributors and Claude Code sessions on this repo.
 `fad-checker` — **Fucking Autonomous Dependency Checker**. Node.js CLI (`fad-checker`, or short alias `fad`) that:
 
 1. Walks a multi-module Maven tree, removes private/excluded dependencies (regex on groupId), writes a parallel directory of "cleaned" POMs that can be fed to Snyk.
-2. Walks every JS package (`package.json` + `package-lock.json` v1/v2/v3 or `yarn.lock` v1), every PHP package (`composer.lock`, or `composer.json` best-effort), and every Python project (`poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`, or `requirements.txt` best-effort) in the same source tree. Each ecosystem is a **codec** (`lib/codecs/`); adding one (NuGet next) is adding a codec.
+2. Walks every JS package (`package.json` + `package-lock.json` v1/v2/v3 or `yarn.lock` v1), every PHP package (`composer.lock`, or `composer.json` best-effort), and every Python project (`poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`, or `requirements.txt` best-effort), and every .NET project (`packages.lock.json`, or `*.csproj`+`Directory.Packages.props`/`packages.config` best-effort) in the same source tree. Each ecosystem is a **codec** (`lib/codecs/`): maven, npm, yarn, composer, pypi, nuget. Adding one is adding a codec.
 3. Scans the union against:
    - the CVEProject `cvelistV5` Maven-relevant index (built locally),
    - OSV.dev (multi-ecosystem),
@@ -64,6 +64,9 @@ lib/composer/registry.js     Packagist query → latest stable + `abandoned` fla
 lib/codecs/pypi.codec.js     PyPI (Python) codec.
 lib/python/parse.js          poetry.lock/Pipfile.lock/uv.lock/pdm.lock (smol-toml) + requirements.txt parsers (PEP 503).
 lib/python/registry.js       PyPI JSON query → latest + yanked + inactive classifier.
+lib/codecs/nuget.codec.js    NuGet (C#/.NET) codec.
+lib/nuget/parse.js           packages.lock.json + *.csproj (+CPM Directory.Packages.props) + packages.config parsers.
+lib/nuget/registry.js        NuGet registration query → latest stable + per-version deprecation.
 lib/dep-record.js            makeDepRecord(): generalized depRecord ({ ecosystem, namespace, name, coordKey, … }).
 lib/core.js                  POM parsing, parent resolution, all-profile merge, rewrite.
 lib/maven-version.js         Maven version parsing + range comparison (no external deps).

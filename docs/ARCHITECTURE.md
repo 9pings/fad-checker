@@ -6,9 +6,10 @@ This is the deep-dive for anyone modifying `fad-checker`'s internals or wonderin
 
 ```
 fad-checker.js                 Thin CLI: commander parsing + orchestration (loops over active codecs).
-lib/codecs/                  Per-ecosystem codecs (maven, npm, yarn, composer, pypi) + registry + select + recipes (see "Codecs" below).
+lib/codecs/                  Per-ecosystem codecs (maven, npm, yarn, composer, pypi, nuget) + registry + select + recipes (see "Codecs" below).
 lib/composer/                composer.lock/composer.json parsers + Packagist registry (PHP codec internals).
 lib/python/                  poetry/pipfile/uv/pdm/requirements parsers + PyPI registry (Python codec internals).
+lib/nuget/                   packages.lock.json/csproj/packages.config parsers + NuGet registry (.NET codec internals).
 lib/dep-record.js            makeDepRecord(): the generalized depRecord shared by all codecs.
 lib/core.js                  POM parsing, parent resolution, all-profile merge, rewrite.
 lib/maven-version.js         Maven version parsing + range comparison (no external deps).
