@@ -1,0 +1,5 @@
+# comment
+fastapi==0.103.0
+flask>=2.0          # range -> skipped
+-e .
+urllib3==2.0.4
