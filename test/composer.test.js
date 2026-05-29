@@ -43,3 +43,29 @@ test("packagistToFindings extracts latest stable + abandoned flag", () => {
 	assert.deepStrictEqual(f2.abandoned, { replacement: null });
 	assert.strictEqual(f2.outdated, null);
 });
+
+const composer = require("../lib/codecs/composer.codec");
+const { assertCodecShape } = require("../lib/codecs/codec.interface");
+
+test("composer codec: shape, detect, collect with composer:vendor/pkg coordKeys", async () => {
+	assertCodecShape(composer);
+	assert.strictEqual(composer.detect(FIX), true);
+	const { deps } = await composer.collect(FIX, {});
+	const g = deps.get("composer:guzzlehttp/guzzle");
+	assert.ok(g, "guzzle should be collected under composer:guzzlehttp/guzzle");
+	assert.strictEqual(g.ecosystem, "composer");
+	assert.strictEqual(g.namespace, "guzzlehttp");
+	assert.strictEqual(g.name, "guzzle");
+	assert.strictEqual(composer.osvPackageName(g), "guzzlehttp/guzzle");
+	assert.strictEqual(composer.formatCoord(g), "guzzlehttp/guzzle");
+});
+
+test("composer collect falls back to composer.json (pinned only) with warning when no lock", async () => {
+	const os2 = require("os"); const fs2 = require("fs"); const p2 = require("path");
+	const dir = fs2.mkdtempSync(p2.join(os2.tmpdir(), "composer-nolock-"));
+	fs2.writeFileSync(p2.join(dir, "composer.json"), JSON.stringify({ name: "x/y", require: { "a/pinned": "1.2.3", "b/range": "^2.0" } }));
+	const { deps, warnings } = await composer.collect(dir, {});
+	assert.ok(deps.has("composer:a/pinned"));
+	assert.ok(!deps.has("composer:b/range"));
+	assert.ok(warnings.find(w => w.type === "no-lockfile"));
+});

@@ -42,5 +42,12 @@
   },
   "by_npm_scope": {
     "@angular/": { "product": "angular", "label": "Angular" }
+  },
+  "by_composer_name": {
+    "laravel/framework": { "product": "laravel", "label": "Laravel" },
+    "symfony/symfony": { "product": "symfony", "label": "Symfony" },
+    "symfony/console": { "product": "symfony", "label": "Symfony" },
+    "symfony/http-kernel": { "product": "symfony", "label": "Symfony" },
+    "drupal/core": { "product": "drupal", "label": "Drupal" }
   }
 }
