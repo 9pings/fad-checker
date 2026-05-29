@@ -6,8 +6,8 @@ const {
 	parsePackageLock,
 	parseYarnLockV1,
 	findJsManifests,
-} = require("../lib/npm/parse");
-const { collectNpmDeps } = require("../lib/npm/collect");
+} = require("../lib/codecs/npm/parse");
+const { collectNpmDeps } = require("../lib/codecs/npm/collect");
 
 const FIX = path.join(__dirname, "fixtures", "monorepo-mixed");
 

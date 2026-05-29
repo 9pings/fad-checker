@@ -474,7 +474,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// WebJars (Maven artifacts wrapping npm/bower libs), so it runs even in
 	// Maven-only mode. One fetch per package; no-ops when there are no targets.
 	try {
-		const { checkNpmRegistryDeps } = require("./lib/npm/registry");
+		const { checkNpmRegistryDeps } = require("./lib/codecs/npm/registry");
 		const npmReg = await checkNpmRegistryDeps(resolved, { verbose, offline, allLibs: options.allLibs });
 		obsoleteResults = obsoleteResults.concat(npmReg.deprecated);
 		outdatedResults = outdatedResults.concat(npmReg.outdated);

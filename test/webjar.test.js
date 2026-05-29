@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { webjarToNpm } = require("../lib/npm/collect");
+const { webjarToNpm } = require("../lib/codecs/npm/collect");
 
 test("webjarToNpm derives the npm name from org.webjars.npm (deterministic mirror)", () => {
 	assert.deepEqual(

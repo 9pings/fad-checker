@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const path = require("path");
-const { parseComposerLock, parseComposerJson } = require("../lib/composer/parse");
+const { parseComposerLock, parseComposerJson } = require("../lib/codecs/composer/parse");
 
 const FIX = path.join(__dirname, "fixtures", "php-app");
 
@@ -23,7 +23,7 @@ test("parseComposerJson reads require + require-dev with pinned-vs-range info", 
 	assert.strictEqual(byName["phpunit/phpunit"].scope, "dev");
 });
 
-const { packagistToFindings } = require("../lib/composer/registry");
+const { packagistToFindings } = require("../lib/codecs/composer/registry");
 
 test("packagistToFindings extracts latest stable + abandoned flag", () => {
 	const pkg = {

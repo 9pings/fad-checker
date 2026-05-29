@@ -7,9 +7,9 @@ This is the deep-dive for anyone modifying `fad-checker`'s internals or wonderin
 ```
 fad-checker.js                 Thin CLI: commander parsing + orchestration (loops over active codecs).
 lib/codecs/                  Per-ecosystem codecs (maven, npm, yarn, composer, pypi, nuget) + registry + select + recipes (see "Codecs" below).
-lib/composer/                composer.lock/composer.json parsers + Packagist registry (PHP codec internals).
-lib/python/                  poetry/pipfile/uv/pdm/requirements parsers + PyPI registry (Python codec internals).
-lib/nuget/                   packages.lock.json/csproj/packages.config parsers + NuGet registry (.NET codec internals).
+lib/codecs/composer/                composer.lock/composer.json parsers + Packagist registry (PHP codec internals).
+lib/codecs/pypi/                  poetry/pipfile/uv/pdm/requirements parsers + PyPI registry (Python codec internals).
+lib/codecs/nuget/                   packages.lock.json/csproj/packages.config parsers + NuGet registry (.NET codec internals).
 lib/dep-record.js            makeDepRecord(): the generalized depRecord shared by all codecs.
 lib/core.js                  POM parsing, parent resolution, all-profile merge, rewrite.
 lib/maven-version.js         Maven version parsing + range comparison (no external deps).
@@ -24,9 +24,9 @@ lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configur
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
 lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser.
 lib/scan-completeness.js     Warnings for deps we couldn't fully resolve.
-lib/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 parsers.
-lib/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
-lib/npm/registry.js          npm registry packument query → per-version deprecation + dist-tags.latest.
+lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 parsers.
+lib/codecs/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
+lib/codecs/npm/registry.js          npm registry packument query → per-version deprecation + dist-tags.latest.
 lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/.
 lib/config.js                Persistent user config in ~/.fad-checker/config.json (mode 0600).
 data/                        Curated JSON: known-obsolete, eol-mapping, cpe-coord-map, known-public-namespaces.
@@ -106,8 +106,8 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
    - Confirms the dep version actually falls in the vulnerable range (else `cpeFiltered: true` — likely false positive).
    - Upgrades match `confidence` from `possible` → `probable` → `exact` when a curated `cpe-coord-map.json` entry confirms vendor:product → dep coord.
 8. **retire.js** (default on) — shells out to `retire --outputformat json --jspath <src>`. Output normalised to fad-checker match shape, with the vendored file path attached so the report can show where the offending `.js` lives. Cache: `~/.fad-checker/retire-cache/<md5(src)>.json`, 24h TTL.
-9. **EOL / Obsolete / Outdated** — `lib/outdated.js` (Maven) + `lib/npm/registry.js` (npm):
-   - **WebJars** (`org.webjars*` — client-side JS shipped as Maven artifacts) are reduced to their npm-equivalent coordinate by `webjarToNpm()` (`lib/npm/collect.js`): `org.webjars.npm` is a deterministic npm mirror (`angular__core` → `@angular/core`); classic `org.webjars`/bower names pass through. They then flow through the **same npm paths** below — no WebJar-specific data.
+9. **EOL / Obsolete / Outdated** — `lib/outdated.js` (Maven) + `lib/codecs/npm/registry.js` (npm):
+   - **WebJars** (`org.webjars*` — client-side JS shipped as Maven artifacts) are reduced to their npm-equivalent coordinate by `webjarToNpm()` (`lib/codecs/npm/collect.js`): `org.webjars.npm` is a deterministic npm mirror (`angular__core` → `@angular/core`); classic `org.webjars`/bower names pass through. They then flow through the **same npm paths** below — no WebJar-specific data.
    - **EOL**: matches dep coord against `data/eol-mapping.json`, fetches the cycle list from endoflife.date (cached 7d), flags cycles past their EOL date. npm packages and WebJars resolve by JS library name via `by_npm_name` / `by_npm_scope` (e.g. npm `angular`/webjar `angularjs` → AngularJS 1.x, `@angular/*` → Angular, `react`/`jquery`/`vue`/`bootstrap`).
    - **Obsolete**: Maven via curated `data/known-obsolete.json` (log4j 1.x, jackson-mapper-asl, joda-time, commons-httpclient 3.x, …); npm **and WebJars** via the registry's per-version `deprecated` field (authoritative maintainer data — every dep is checked, nothing curated, nothing skipped).
    - **Outdated**: Maven Central Solr query; npm registry `dist-tags.latest` (npm deps and WebJars). Both gated by `--no-all-libs`. Cache 24h. Concurrency 8.
@@ -170,7 +170,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 ## Testing
 
 ```bash
-npm test                          # full suite (156 tests)
+npm test                          # full suite (194 tests)
 node --test test/core.test.js     # one file
 ```
 

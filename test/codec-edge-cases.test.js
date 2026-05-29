@@ -11,7 +11,7 @@ const path = require("path");
 const composer = require("../lib/codecs/composer.codec");
 const pypi = require("../lib/codecs/pypi.codec");
 const nuget = require("../lib/codecs/nuget.codec");
-const { parseRequirementsTxt, pep503 } = require("../lib/python/parse");
+const { parseRequirementsTxt, pep503 } = require("../lib/codecs/pypi/parse");
 
 function tmp(prefix, files) {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));

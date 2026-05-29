@@ -11,7 +11,7 @@ const assert = require("node:assert/strict");
 const path = require("path");
 const core = require("../lib/core");
 const { collectResolvedDeps } = require("../lib/cve-match");
-const { collectNpmDeps, hasJsManifests } = require("../lib/npm/collect");
+const { collectNpmDeps, hasJsManifests } = require("../lib/codecs/npm/collect");
 
 const FIX = path.join(__dirname, "fixtures", "monorepo-mixed");
 

@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const path = require("path");
-const { pep503, parsePoetryLock, parsePipfileLock, parseUvLock, parseRequirementsTxt } = require("../lib/python/parse");
+const { pep503, parsePoetryLock, parsePipfileLock, parseUvLock, parseRequirementsTxt } = require("../lib/codecs/pypi/parse");
 
 const F = n => path.join(__dirname, "fixtures", n);
 
@@ -38,7 +38,7 @@ test("parseRequirementsTxt keeps == pins, skips ranges/flags/comments", () => {
 	assert.strictEqual(r.skipped, 1);   // flask>=2.0
 });
 
-const { pypiToFindings } = require("../lib/python/registry");
+const { pypiToFindings } = require("../lib/codecs/pypi/registry");
 test("pypiToFindings extracts latest, yanked-for-version, inactive classifier", () => {
 	const data = {
 		info: { version: "2.1.0", classifiers: ["Development Status :: 7 - Inactive"] },

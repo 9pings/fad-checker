@@ -24,7 +24,7 @@ No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` /
 
 ```bash
 npm install
-npm test                  # 156 unit tests via node --test
+npm test                  # 194 unit tests via node --test
 
 # basic cleanup workflow
 node fad-checker.js -s ./proj                                        # read-only, full report
@@ -55,18 +55,18 @@ fad-checker.js                 Thin CLI: commander parsing, orchestration only (
 lib/codecs/index.js          Codec registry: getCodec / allCodecs / detectCodecs.
 lib/codecs/codec.interface.js  Codec contract + assertCodecShape() validator.
 lib/codecs/maven.codec.js    Maven codec (wraps core.js + transitive.js + CVE-index scanner).
-lib/codecs/npm.codec.js      npm codec (wraps lib/npm/* + retire.js scanner). yarn.codec.js shares it.
+lib/codecs/npm.codec.js      npm codec (wraps lib/codecs/npm/* + retire.js scanner). yarn.codec.js shares it.
 lib/codecs/select.js         resolveActiveCodecs(): --ecosystem list + --no-<id> → active codec ids.
 lib/codecs/recipes.js        Per-ecosystem fix-recipe specs (pin snippet + direct-update wording).
 lib/codecs/composer.codec.js   Composer (PHP) codec.
-lib/composer/parse.js        composer.lock + composer.json parsers.
-lib/composer/registry.js     Packagist query → latest stable + `abandoned` flag.
+lib/codecs/composer/parse.js        composer.lock + composer.json parsers.
+lib/codecs/composer/registry.js     Packagist query → latest stable + `abandoned` flag.
 lib/codecs/pypi.codec.js     PyPI (Python) codec.
-lib/python/parse.js          poetry.lock/Pipfile.lock/uv.lock/pdm.lock (smol-toml) + requirements.txt parsers (PEP 503).
-lib/python/registry.js       PyPI JSON query → latest + yanked + inactive classifier.
+lib/codecs/pypi/parse.js          poetry.lock/Pipfile.lock/uv.lock/pdm.lock (smol-toml) + requirements.txt parsers (PEP 503).
+lib/codecs/pypi/registry.js       PyPI JSON query → latest + yanked + inactive classifier.
 lib/codecs/nuget.codec.js    NuGet (C#/.NET) codec.
-lib/nuget/parse.js           packages.lock.json + *.csproj (+CPM Directory.Packages.props) + packages.config parsers.
-lib/nuget/registry.js        NuGet registration query → latest stable + per-version deprecation.
+lib/codecs/nuget/parse.js           packages.lock.json + *.csproj (+CPM Directory.Packages.props) + packages.config parsers.
+lib/codecs/nuget/registry.js        NuGet registration query → latest stable + per-version deprecation.
 lib/dep-record.js            makeDepRecord(): generalized depRecord ({ ecosystem, namespace, name, coordKey, … }).
 lib/core.js                  POM parsing, parent resolution, all-profile merge, rewrite.
 lib/maven-version.js         Maven version parsing + range comparison (no external deps).
@@ -81,9 +81,9 @@ lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configur
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
 lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser.
 lib/scan-completeness.js     Warnings for deps fad-checker couldn't fully resolve.
-lib/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 parsers.
-lib/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
-lib/npm/registry.js          npm registry packument query → per-version deprecation + dist-tags.latest (npm EOL feeds via lib/outdated.js).
+lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 parsers.
+lib/codecs/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
+lib/codecs/npm/registry.js          npm registry packument query → per-version deprecation + dist-tags.latest (npm EOL feeds via lib/outdated.js).
 lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/.
 lib/config.js                Persistent user config in ~/.fad-checker/config.json (mode 0600).
 data/                        known-obsolete.json, eol-mapping.json, cpe-coord-map.json, known-public-namespaces.json

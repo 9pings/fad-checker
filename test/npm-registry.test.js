@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { packumentToFindings } = require("../lib/npm/registry");
+const { packumentToFindings } = require("../lib/codecs/npm/registry");
 
 const dep = (name, version) => ({ ecosystem: "npm", groupId: "", artifactId: name, version });
 

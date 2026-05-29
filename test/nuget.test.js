@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const path = require("path");
-const { parsePackagesLockJson, parseCsproj, parsePackagesConfig, parseDirectoryPackagesProps } = require("../lib/nuget/parse");
+const { parsePackagesLockJson, parseCsproj, parsePackagesConfig, parseDirectoryPackagesProps } = require("../lib/codecs/nuget/parse");
 const F = n => path.join(__dirname, "fixtures", n);
 
 test("parsePackagesLockJson reads resolved versions + Direct/Transitive scope", async () => {
@@ -31,7 +31,7 @@ test("parsePackagesConfig reads legacy id/version", async () => {
 	assert.strictEqual(r.deps.find(d => d.name === "EntityFramework").version, "6.4.4");
 });
 
-const { nugetRegistrationToFindings } = require("../lib/nuget/registry");
+const { nugetRegistrationToFindings } = require("../lib/codecs/nuget/registry");
 test("nugetRegistrationToFindings extracts latest stable + deprecation for version", () => {
 	const reg = { items: [ { items: [
 		{ catalogEntry: { version: "13.0.1", deprecation: { reasons: ["Legacy"], alternatePackage: { id: "NewPkg" } } } },
