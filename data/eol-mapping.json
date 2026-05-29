@@ -49,5 +49,10 @@
     "symfony/console": { "product": "symfony", "label": "Symfony" },
     "symfony/http-kernel": { "product": "symfony", "label": "Symfony" },
     "drupal/core": { "product": "drupal", "label": "Drupal" }
+  },
+  "by_pypi_name": {
+    "django": { "product": "django", "label": "Django" },
+    "numpy": { "product": "numpy", "label": "NumPy" },
+    "fastapi": { "product": "fastapi", "label": "FastAPI" }
   }
 }

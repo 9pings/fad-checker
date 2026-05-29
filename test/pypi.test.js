@@ -52,3 +52,21 @@ test("pypiToFindings extracts latest, yanked-for-version, inactive classifier", 
 	assert.strictEqual(f2.yanked, null);
 	assert.strictEqual(f2.outdated, null);
 });
+
+const pypi = require("../lib/codecs/pypi.codec");
+const { assertCodecShape } = require("../lib/codecs/codec.interface");
+test("pypi codec: shape, detect, collect, coordKey pypi:<name>", async () => {
+	assertCodecShape(pypi);
+	assert.strictEqual(pypi.detect(F("python-poetry")), true);
+	const { deps } = await pypi.collect(F("python-poetry"), {});
+	const r = deps.get("pypi:requests");
+	assert.ok(r);
+	assert.strictEqual(r.ecosystem, "pypi");
+	assert.strictEqual(pypi.osvPackageName(r), "requests");
+});
+test("pypi collect: requirements.txt fallback warns + scans pins only", async () => {
+	const { deps, warnings } = await pypi.collect(F("python-reqs"), {});
+	assert.ok(deps.has("pypi:fastapi"));
+	assert.ok(!deps.has("pypi:flask"));
+	assert.ok(warnings.find(w => w.type === "no-lockfile"));
+});
