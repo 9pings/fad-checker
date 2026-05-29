@@ -2,11 +2,11 @@
 
 > **F**ucking **A**utonomous **D**ependency **C**hecker
 
-`fad-checker` scans **Maven**, **npm**, **Yarn** and **vendored JavaScript** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE, EOL, obsolete and outdated findings, plus per-ecosystem fix recipes.
+`fad-checker` scans **Maven**, **npm**, **Yarn**, **Composer (PHP)**, **PyPI (Python)**, **NuGet (C#/.NET)** and **vendored JavaScript** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE, EOL, obsolete and outdated findings, plus per-ecosystem fix recipes.
 
-It runs against the source files alone. **No `mvn`, no `npm install`, no `yarn`, no Docker.** It reads `pom.xml`, `package-lock.json` and `yarn.lock` directly.
+It runs against the source files alone. **No `mvn`, no `npm install`, no `composer install`, no `pip`, no `dotnet restore`, no Docker.** It reads `pom.xml`, `package-lock.json`, `yarn.lock`, `composer.lock`, `poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`/`requirements.txt`, and `packages.lock.json`/`*.csproj`/`packages.config` directly.
 
-> **Currently supported ecosystems: Maven, npm, Yarn (v1).** Vendored JS (jQuery, Bootstrap, PDF.js, etc.) is also scanned via retire.js. Yarn v2/Berry and pnpm are not yet supported — they're surfaced as warnings in chapter 0 so you know they were skipped.
+> **Supported ecosystems: Maven, npm, Yarn (v1), Composer, PyPI, NuGet.** Each is a self-contained **codec** (`lib/codecs/`) — adding another is adding a codec, no orchestrator surgery. Vendored JS (jQuery, Bootstrap, PDF.js, etc.) is also scanned via retire.js. Yarn v2/Berry and pnpm are not yet supported — they're surfaced as warnings in chapter 0 so you know they were skipped.
 
 ---
 
@@ -20,6 +20,9 @@ Because it doesn't need anything you don't already have on disk:
 | `mvn dependency:tree` | Same as above. We walk the tree ourselves. |
 | `npm install` / a `node_modules/` | `package-lock.json` (v1/v2/v3) and `yarn.lock` v1 are parsed as text/JSON. Versions come from the lockfile — no installation. |
 | `yarn install` | Same. We read `yarn.lock` v1. |
+| `composer install` | `composer.lock` is parsed directly (concrete versions + transitive). `composer.json` alone → best-effort on pinned versions + warning. |
+| `pip` / `poetry` / a venv | `poetry.lock`, `Pipfile.lock`, `uv.lock`, `pdm.lock` are parsed for concrete versions; `requirements.txt` is best-effort on `==` pins. Names normalised per PEP 503. |
+| `dotnet restore` | `packages.lock.json` is parsed; otherwise `*.csproj` (+ `Directory.Packages.props` Central Package Management) and legacy `packages.config`, best-effort on pinned versions. |
 | `snyk` binary | Built-in CVE matching via 4 independent sources (see below). Snyk is *optional* (`--snyk`). |
 | A network connection | First run downloads CVE / OSV / EOL data; subsequent runs use cached copies (`--offline` to force). |
 
@@ -35,10 +38,10 @@ Exactly **two** runtime dependencies must be on PATH (or installed automatically
 | **1. CVE (production)** | CVEProject + OSV.dev + NVD + CPE | Public CVE / GHSA in production deps, per ecosystem, per manifest file |
 | **2. CVE in dev deps** | same | Same, but for `test`/`provided` (Maven) and `dev`/`optional`/`peer` (npm) |
 | **3. Vendored JS** | [retire.js](https://retirejs.github.io/) | Old jQuery/Bootstrap/Angular/PDF.js copies sitting in `static/` or `webapp/` with no lockfile |
-| **4. EOL frameworks** | endoflife.date | Spring Boot 2.5, Hibernate 4.x, EOL JDKs, etc. |
-| **5. Obsolete libraries** | curated list (`data/known-obsolete.json`) | log4j 1.x, jackson-mapper-asl, joda-time, commons-httpclient 3.x, … |
-| **6. Outdated libraries** | Maven Central Solr API | Available newer versions, with release dates |
-| **7. Fix Recommendations** | computed | Per-ecosystem pin recipes: Maven `<dependencyManagement>`, npm `overrides`, yarn `resolutions` |
+| **4. EOL frameworks** | endoflife.date | Spring Boot 2.5, Hibernate 4.x, EOL JDKs, AngularJS, Laravel/Symfony, Django, .NET, etc. |
+| **5. Obsolete libraries** | curated list (Maven) + registry maintainer flags | log4j 1.x, jackson-mapper-asl, joda-time, …; npm `deprecated`, Composer `abandoned`, PyPI `yanked`/inactive, NuGet `deprecation` |
+| **6. Outdated libraries** | Maven Central + npm / Packagist / PyPI / NuGet registries | Available newer versions, with release dates |
+| **7. Fix Recommendations** | computed | Per-ecosystem pin recipes: Maven `<dependencyManagement>`, npm `overrides`, yarn `resolutions`, `composer require`, `pip install`, `dotnet add package` |
 
 The HTML report opens in any browser, contains every detail (CVSS vectors, references, full descriptions, CPE configurations, via-paths for transitives) and ships a Word-compatible `.doc` twin.
 
@@ -82,8 +85,10 @@ fad-checker -s ./proj --no-all-libs --no-transitive
 # Fully offline (uses cached data only)
 fad-checker -s ./proj --offline
 
-# Only one ecosystem
-fad-checker -s ./proj --ecosystem maven   # or npm | both | auto (default)
+# Pick ecosystems — --ecosystem is a list: auto (default) | all | comma list
+fad-checker -s ./proj --ecosystem maven            # Maven only
+fad-checker -s ./proj --ecosystem maven,npm,pypi   # several
+fad-checker -s ./proj --no-nuget --no-composer     # or opt out per codec
 ```
 
 Run `fad-checker --help` for the full flag list.
@@ -165,7 +170,11 @@ fad-checker --completion zsh  > ~/.zsh/completions/_fad-checker
 This is the surprising bit. The whole point is that you can run `fad-checker` against a *checkout* with no build environment.
 
 - **Maven** — `pom.xml` files are parsed with xml2js. Property substitution (`${jackson.version}`), parent inheritance, local BOM imports (`<scope>import</scope>`) and every profile are resolved in-process. Transitive deps are walked by fetching child POMs from Maven Central (cached forever — POMs are immutable). When the project uses an **external BOM** (`spring-boot-dependencies` etc.), the deps whose version comes from that BOM can't be resolved without `mvn` itself — those are surfaced in chapter 0 as "unresolved-versions" so you know what's missing.
-- **npm / Yarn** — `package-lock.json` (v1, v2, v3) and `yarn.lock` v1 are parsed directly. Lockfiles already contain every transitive version. No `node_modules/` traversal, no `npm install`. A package.json *without* a sibling lockfile is intentionally skipped (its ranges aren't queryable) and reported in chapter 0.
+- **npm / Yarn** — `package-lock.json` (v1, v2, v3) and `yarn.lock` v1 are parsed directly. Lockfiles already contain every transitive version. No `node_modules/` traversal, no `npm install`.
+- **Composer (PHP)** — `composer.lock` (`packages` + `packages-dev`) gives concrete + transitive versions; `composer.json` alone is best-effort.
+- **PyPI (Python)** — `poetry.lock` / `Pipfile.lock` / `uv.lock` / `pdm.lock` are parsed (TOML via `smol-toml`, or JSON); `requirements.txt` is best-effort on `==` pins. Package names are PEP 503-normalised (`Flask-SQLAlchemy` → `flask-sqlalchemy`).
+- **NuGet (C#/.NET)** — `packages.lock.json` is authoritative; otherwise `*.csproj` `<PackageReference>` (resolving Central Package Management against `Directory.Packages.props`) and legacy `packages.config`. Ids are case-insensitive.
+- **Lockfile-first, best-effort fallback** — when a lockfile is present it wins. When it's absent, the loose manifest (`package.json` / `composer.json` / `requirements.txt` / `*.csproj`) is still parsed for its **pinned exact versions**, with ranges skipped and a `no-lockfile` warning in chapter 0 flagging the partial coverage.
 - **Vendored JavaScript** — `retire.js` shells out and scans `.js` / `.min.js` files by signature, catching old jQuery / Bootstrap / Angular / PDF.js copies that no lockfile knows about.
 - **CVE data** — three independent sources merged:
   - **CVEProject** (the canonical `cvelistV5` bundle, filtered to Maven-relevant entries)
@@ -231,10 +240,14 @@ Repos are tried **in declared order, Maven Central last**. Auth is sent as a `Ba
 | Source | What we use | License | API / endpoint |
 | --- | --- | --- | --- |
 | [CVEProject `cvelistV5`](https://github.com/CVEProject/cvelistV5) | Daily bulk CVE bundle, filtered to Maven-relevant entries | CC0-1.0 | GitHub release asset (zip) |
-| [OSV.dev](https://osv.dev/) (Google + GitHub Security Lab) | Per-dep vulnerability lookup (Maven + npm + many more ecosystems) | CC-BY 4.0 | `POST api.osv.dev/v1/querybatch`, `GET api.osv.dev/v1/vulns/{id}` |
+| [OSV.dev](https://osv.dev/) (Google + GitHub Security Lab) | Per-dep vulnerability lookup (Maven, npm, Packagist, PyPI, NuGet, …) | CC-BY 4.0 | `POST api.osv.dev/v1/querybatch`, `GET api.osv.dev/v1/vulns/{id}` |
 | [NIST NVD](https://nvd.nist.gov/) | Canonical CVE description + CVSS vectors + CPE configurations + CWE | US-gov public domain | `GET services.nvd.nist.gov/rest/json/cves/2.0?cveId=…` — free [API key](https://nvd.nist.gov/developers/request-an-api-key) bumps the rate limit 10× |
 | [endoflife.date](https://endoflife.date/) | Framework / runtime EOL cycle data | MIT | `GET endoflife.date/api/{product}.json` |
 | [Maven Central](https://search.maven.org/) | Latest-version lookups + transitive POM fetches | Free public service | Solr `search.maven.org/solrsearch/select?q=…` + `repo1.maven.org/maven2/<coord>` |
+| [npm registry](https://registry.npmjs.org/) | Per-version `deprecated` + `dist-tags.latest` | Free public service | `GET registry.npmjs.org/<pkg>` |
+| [Packagist](https://packagist.org/) | Latest stable + `abandoned` flag | Free public service | `GET packagist.org/packages/<vendor>/<pkg>.json` |
+| [PyPI](https://pypi.org/) | Latest + `yanked` + "Inactive" classifier | Free public service | `GET pypi.org/pypi/<pkg>/json` |
+| [NuGet](https://www.nuget.org/) | Latest stable + per-version `deprecation` | Free public service | `GET api.nuget.org/v3/registration5-gz-semver2/<id>/index.json` |
 | [retire.js](https://retirejs.github.io/retire.js/) | Vendored-JS signature DB + scanner | Apache-2.0 | npm package `retire`, executed locally |
 | [Snyk](https://snyk.io/) (optional) | Additional CVE source via `snyk test --all-projects --json` | Per Snyk EULA; needs a Snyk account | Local CLI `snyk` |
 | [MITRE CWE](https://cwe.mitre.org/) | Weakness category links in the report | Free public reference | Linked by URL only, no API call |
@@ -258,7 +271,7 @@ Built-in guardrails that fire **before** any disk write:
 | Tool | What `fad-checker` adds |
 | --- | --- |
 | `mvn dependency:tree` | No Maven needed; multi-source CVE scan; HTML report |
-| `npm audit` | Polyglot (Maven + npm + vendored JS in one report); EOL & obsolete checks; works without `npm install` |
+| `npm audit` | Polyglot (Maven + npm + Composer + PyPI + NuGet + vendored JS in one report); EOL & obsolete checks; works without installing anything |
 | Snyk CLI | Free; offline-capable; integrates Snyk's results if you have it |
 | OWASP DC | Faster (cached); cleaner UI; multi-source dedup |
 
@@ -269,7 +282,8 @@ You don't have to choose — `fad-checker` will use any of them as input (`--sny
 ## Docs
 
 - [`docs/USAGE.md`](docs/USAGE.md) — every flag, every workflow, examples.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — internals: collection, matching, report pipeline.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — internals: codecs, collection, matching, report pipeline.
+- [`CHANGELOG.md`](CHANGELOG.md) — release history.
 - [`CLAUDE.md`](CLAUDE.md) — code-level orientation for contributors.
 
 ---
