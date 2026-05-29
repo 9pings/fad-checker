@@ -4,6 +4,7 @@
 	"private": true,
 	"dependencies": {
 		"left-pad": "^1.0.0",
-		"chalk": "^4.0.0"
+		"chalk": "^4.0.0",
+		"semver": "7.5.0"
 	}
 }

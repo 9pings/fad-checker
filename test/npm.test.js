@@ -110,13 +110,17 @@ test("collectNpmDeps skips package.json when a lockfile is present in the same d
 	}
 });
 
-test("collectNpmDeps emits a 'no-lockfile' warning for package.json without sibling lock", () => {
+test("collectNpmDeps no-lockfile fallback: warns + scans pinned, skips ranges", () => {
 	const map = collectNpmDeps(FIX, { verbose: false });
 	assert.ok(Array.isArray(map.warnings), "warnings array should be present");
 	const w = map.warnings.find(x => x.type === "no-lockfile" && x.manifestPath.includes("no-lock"));
 	assert.ok(w, "expected a no-lockfile warning for packages/no-lock/package.json");
-	// And no left-pad / no @acme/no-lock dep should leak into the Map (range-only)
+	assert.match(w.message, /best-effort/, "warning should mention best-effort/partial results");
+	// Range-only deps must NOT leak into the Map (can't query OSV with "^1.0.0").
 	assert.equal(map.has("npm:left-pad"), false, "left-pad ^1.0.0 must not be collected (unresolved range)");
+	// Pinned exact versions ARE now collected best-effort (changed contract).
+	assert.ok(map.has("npm:semver"), "semver 7.5.0 (pinned) should be collected from no-lock package.json");
+	assert.equal(map.get("npm:semver").version, "7.5.0");
 });
 
 test("parsePackageLock tags flattened-transitive entries as scope='transitive'", () => {

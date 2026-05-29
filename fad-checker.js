@@ -187,8 +187,14 @@ program
 	.option("--no-retire", "skip retire.js vendored-JS scan")
 	.option("--retire-refresh", "ignore retire cache and re-scan")
 	.option("--transitive-depth <n>", "max transitive depth", "6")
-	.option("--ecosystem <eco>", "force ecosystem: auto|maven|npm|both (default: auto)", "auto")
-	.option("--no-js", "skip JS/npm/yarn manifests even if present (Maven-only)")
+	.option("--ecosystem <list>", "codecs to run: auto|all|<comma list> e.g. maven,npm,nuget,composer,pypi (default: auto = detected)", "auto")
+	.option("--no-maven", "skip the Maven codec")
+	.option("--no-npm", "skip the npm codec")
+	.option("--no-yarn", "skip the Yarn codec")
+	.option("--no-nuget", "skip the NuGet (C#/.NET) codec")
+	.option("--no-composer", "skip the Composer (PHP) codec")
+	.option("--no-pypi", "skip the PyPI (Python) codec")
+	.option("--no-js", "alias: skip JS/npm/yarn manifests even if present (Maven-only)")
 	.option("--repo <url...>", "extra Maven repository URL(s) to try before Maven Central. Supports https://user:pass@host/path/. Repeatable.")
 	.option("--add-repo <name>", "persist a Maven repo: --add-repo <name> <url> [--auth user:pass]")
 	.option("--remove-repo <name>", "remove a persisted Maven repo by name")
@@ -242,45 +248,53 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 		console.log(chalk.gray(`📦 Maven repos: ${mavenRepos.map(r => r.name).join(" → ")}`));
 	}
 
-	const pomFiles = core.findPomFiles(options.src);
-	const allPomMetadata = core.newMetadataStore();
-	const allPropsByPom = {};
 	let wrotePom = 0;
 
-	// Ecosystem detection. --ecosystem flag overrides auto-detect.
-	const { hasJsManifests } = require("./lib/npm/collect");
+	// --- Codec detection + selection ---
+	const { detectCodecs, allCodecs, getCodec } = require("./lib/codecs");
+	const { resolveActiveCodecs } = require("./lib/codecs/select");
 	const eco = (options.ecosystem || "auto").toLowerCase();
-	const hasMaven = pomFiles.length > 0;
-	const hasJs = !options.js ? false : (eco === "npm" || eco === "both" || (eco === "auto" && hasJsManifests(options.src)));
-	const runMaven = (eco === "maven" || eco === "both" || (eco === "auto" && hasMaven));
-	const runNpm = hasJs && eco !== "maven";
+	const detected = (eco === "auto") ? detectCodecs(options.src).map(c => c.id) : allCodecs().map(c => c.id);
+	const noCodecs = ["maven", "npm", "yarn", "nuget", "composer", "pypi"].filter(id => options[id] === false);
+	const activeIds = resolveActiveCodecs(eco, detected, { noCodecs, noJs: !options.js });
+	const runMaven = activeIds.includes("maven");
+	const runNpm = activeIds.includes("npm") || activeIds.includes("yarn");
+
+	// --- Collect deps from every active codec into one Map (coordKeys never collide) ---
+	const resolved = new Map();
+	let mavenCtx = null;
+	const collectWarnings = [];
+	for (const id of activeIds) {
+		if (id === "yarn") continue;   // the npm codec already collects yarn.lock
+		const codec = getCodec(id);
+		let res;
+		try {
+			res = await codec.collect(options.src, { ignoreTest: !!options.ignoreTest, deps2Exclude, verbose });
+		} catch (err) {
+			console.warn(chalk.red(`❌  ${id} collect failed:`), chalk.dim(err.message));
+			continue;
+		}
+		for (const [k, v] of res.deps) resolved.set(k, v);
+		if (res.warnings?.length) collectWarnings.push(...res.warnings);
+		if (id === "maven") mavenCtx = res._maven;
+	}
 
 	if (!readOnly) {
 		try { await rimraf(options.target); } catch (_) { /* fresh dir */ }
 	}
 
-	if (runMaven) console.log(chalk.blue(`🔍 Found ${pomFiles.length} pom.xml files`));
+	if (runMaven && mavenCtx) console.log(chalk.blue(`🔍 Found ${mavenCtx.pomFiles.length} pom.xml files`));
 	if (runNpm)   console.log(chalk.blue(`🔍 JS manifests detected — npm/yarn pipeline enabled`));
 	console.log();
 
-	if (runMaven) {
-		// Phase 1: parse every pom
-		for (const pom of pomFiles) {
-			try { await core.parsePom(pom, allPomMetadata); }
-			catch (err) { console.warn(chalk.red("❌  parse failed:"), chalk.gray(pom), chalk.dim(err.message)); }
-		}
-
-		// Phase 2: resolve inheritance & merge profile deps
-		for (const pom of Object.keys(allPomMetadata.byPath)) {
-			try { await core.getAllInheritedProps(pom, allPomMetadata, allPropsByPom); }
-			catch (err) { console.error(`❌  inheritance failed for ${pom}:`, err.message); }
-		}
-
-		// Phase 3: rewrite cleaned POMs (or simulate, in --test mode)
+	// Maven POM rewrite (cleanup feature). Parse + inheritance already happened
+	// inside the maven codec's collect(); we reuse its metadata store here.
+	if (runMaven && mavenCtx) {
+		const { store, propsByPom, pomFiles } = mavenCtx;
 		const rewriteOpts = { srcRoot: options.src, targetRoot: options.target, deps2Exclude, verbose, readOnly };
 		for (const pom of pomFiles) {
 			try {
-				if (await core.rewritePoms(pom, allPomMetadata, allPropsByPom, rewriteOpts)) wrotePom++;
+				if (await core.rewritePoms(pom, store, propsByPom, rewriteOpts)) wrotePom++;
 			} catch (err) {
 				console.error(chalk.red(`❌  rewrite failed for ${pom}:`), err.message);
 			}
@@ -289,7 +303,8 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 
 	// ---------- Summary: parents missing / excluded ----------
 	let privateLibIds = [];
-	if (runMaven) {
+	if (runMaven && mavenCtx) {
+	const allPomMetadata = mavenCtx.store;   // reuse the codec's parsed metadata
 	console.log(chalk.cyanBright("\n─────────────────────────────────────────────"));
 	console.log(chalk.cyanBright("📦 Résumé des POM analysés :"));
 	console.log(chalk.cyanBright("─────────────────────────────────────────────\n"));
@@ -350,7 +365,7 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 
 	// ---------- Report flow (CVE / EOL / Obsolete) ----------
 	if (options.report) {
-		await runReportFlow(allPomMetadata, allPropsByPom, { runMaven, runNpm, privateLibIds, mavenRepos });
+		await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds, mavenRepos, collectWarnings });
 	} else if (!readOnly) {
 		const target = options.target;
 		console.log(chalk.gray(`💡 Pour lancer Snyk depuis ${target} :`));
@@ -358,45 +373,30 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 	}
 })();
 
-async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
-	const { runMaven = true, runNpm = false, privateLibIds = [], mavenRepos = [] } = ecoFlags;
-	const { collectResolvedDeps, expandWithTransitives, matchDepsAgainstCves } = require("./lib/cve-match");
-	const { ensureCveIndex } = require("./lib/cve-download");
+async function runReportFlow(resolved, ecoFlags = {}) {
+	const { activeIds = [], runMaven = true, runNpm = false, privateLibIds = [], mavenRepos = [], collectWarnings = [] } = ecoFlags;
+	const { expandWithTransitives } = require("./lib/cve-match");
 	const { writeReports, computeStats } = require("./lib/cve-report");
+	const { getCodec } = require("./lib/codecs");
 	const outdated = require("./lib/outdated");
 	const offline = !!options.offline;
 	if (offline) console.log(chalk.gray("   (--offline: cached data only, no network)"));
 
 	console.log(chalk.bold.cyan("\n📋 Rapport CVE / EOL / Obsolète\n") + chalk.gray("─────────────────────────────"));
 
-	// Collect deps + parent POMs
-	const resolved = runMaven
-		? collectResolvedDeps(allPomMetadata, allPropsByPom, {
-			ignoreTest: !!options.ignoreTest,
-			deps2Exclude,
-		})
-		: new Map();
-	const mavenCount = resolved.size;
-	if (runMaven) console.log(chalk.blue(`📚 ${mavenCount} dépendances Maven directes (incl. parent POMs)`));
+	// Deps were already collected per-codec by main(). Just report the counts.
+	const byEcoCount = {};
+	for (const d of resolved.values()) byEcoCount[d.ecosystem] = (byEcoCount[d.ecosystem] || 0) + 1;
+	if (runMaven) console.log(chalk.blue(`📚 ${byEcoCount.maven || 0} dépendances Maven directes (incl. parent POMs)`));
+	if (runNpm)   console.log(chalk.blue(`📦 ${byEcoCount.npm || 0} dépendances npm/yarn`));
 
-	// Merge npm/yarn deps into the same Map (keys are "npm:name", no collision with "g:a")
-	let npmWarnings = [];
+	// Warnings surfaced during collection (e.g. npm no-lockfile fallback).
+	const npmWarnings = collectWarnings || [];
 	let scanWarnings = [];
-	if (runNpm) {
-		const { collectNpmDeps } = require("./lib/npm/collect");
-		const npmDeps = collectNpmDeps(options.src, {
-			ignoreTest: !!options.ignoreTest,
-			deps2Exclude,
-			verbose,
-		});
-		for (const [k, v] of npmDeps) resolved.set(k, v);
-		console.log(chalk.blue(`📦 ${npmDeps.size} dépendances npm/yarn ajoutées (total: ${resolved.size})`));
-		npmWarnings = npmDeps.warnings || [];
-		if (npmWarnings.length) {
-			console.log(chalk.yellow(`⚠️  ${npmWarnings.length} JS manifest(s) sans lockfile — non scannés :`));
-			for (const w of npmWarnings) {
-				console.log(chalk.yellow(`     • ${w.manifestPath} — ${w.message}`));
-			}
+	if (npmWarnings.length) {
+		console.log(chalk.yellow(`⚠️  ${npmWarnings.length} manifest warning(s) :`));
+		for (const w of npmWarnings) {
+			console.log(chalk.yellow(`     • ${w.manifestPath} — ${w.message}`));
 		}
 	}
 	const directCount = resolved.size;
@@ -419,7 +419,7 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 		}
 	}
 
-	if (options.transitive) {
+	if (options.transitive && runMaven) {
 		await expandWithTransitives(resolved, {
 			verbose,
 			offline,
@@ -430,20 +430,20 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 		console.log(chalk.blue(`🌳 ${resolved.size - directCount} dépendances transitives ajoutées (total: ${resolved.size})`));
 	}
 
-	// 1. CVE
+	// 1. CVE — native scanner contributed by the maven codec (local cvelistV5 index).
 	let cveMatches = [];
 	let cveDataDate = null;
-	if (!(options.cveOffline || offline) || fs.existsSync(require("./lib/cve-download").CVE_INDEX_PATH)) {
-		try {
-			const idx = await ensureCveIndex({
-				force: !!options.cveRefresh && !offline,
-				offline: !!options.cveOffline || offline,
-				verbose,
-			});
-			cveDataDate = idx?.meta?.builtAt || null;
-			cveMatches = matchDepsAgainstCves(resolved, idx);
-		} catch (err) {
-			console.warn(chalk.yellow("⚠️  CVE scan skipped:"), err.message);
+	if (runMaven) {
+		const sc = (getCodec("maven").nativeScanners || []).find(s => s.kind === "cve");
+		const indexExists = fs.existsSync(require("./lib/cve-download").CVE_INDEX_PATH);
+		if (sc && (!(options.cveOffline || offline) || indexExists)) {
+			try {
+				const r = await sc.scan(resolved, { cveRefresh: !!options.cveRefresh, cveOffline: !!options.cveOffline, offline, verbose });
+				cveMatches = r.matches || [];
+				cveDataDate = r.meta?.cveDataDate || null;
+			} catch (err) {
+				console.warn(chalk.yellow("⚠️  CVE scan skipped:"), err.message);
+			}
 		}
 	}
 
@@ -519,16 +519,23 @@ async function runReportFlow(allPomMetadata, allPropsByPom, ecoFlags = {}) {
 		}
 	}
 
-	// 5. retire.js — scans vendored JS files (jquery copies, bootstrap, pdf.js, …)
-	//    that live in the source tree without any lockfile to back them.
+	// 5. retire.js — native "vendored" scanner contributed by the npm codec. Scans
+	//    vendored JS files (jquery copies, bootstrap, pdf.js, …) that live in the
+	//    source tree without any lockfile to back them.
+	// Not gated by an active npm ecosystem: retire scans the source tree for
+	// vendored .js (which can live in a Maven project's resources too). The
+	// scanner is owned by the npm codec but runs whenever --retire is on.
 	let retireMatches = [];
 	if (options.retire) {
-		try {
-			const { scanWithRetire } = require("./lib/retire");
-			retireMatches = await scanWithRetire(options.src, { verbose, force: !!options.retireRefresh, offline });
-			console.log(chalk.blue(`🔎 retire.js: ${retireMatches.length} vendored-JS finding(s)`));
-		} catch (err) {
-			console.warn(chalk.yellow("⚠️  retire.js skipped:"), err.message);
+		const sc = (getCodec("npm").nativeScanners || []).find(s => s.kind === "vendored");
+		if (sc) {
+			try {
+				const r = await sc.scan(resolved, { src: options.src, verbose, retireRefresh: !!options.retireRefresh, offline });
+				retireMatches = r.matches || [];
+				console.log(chalk.blue(`🔎 retire.js: ${retireMatches.length} vendored-JS finding(s)`));
+			} catch (err) {
+				console.warn(chalk.yellow("⚠️  retire.js skipped:"), err.message);
+			}
 		}
 	}
 
