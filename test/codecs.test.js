@@ -59,3 +59,21 @@ test("yarn codec is a no-op collector (npm codec does the JS scan)", async () =>
 	const { deps } = await yarn.collect("/whatever", {});
 	assert.strictEqual(deps.size, 0);
 });
+
+const { getCodec, allCodecs, detectCodecs } = require("../lib/codecs");
+
+test("registry exposes maven/npm/yarn and validates their shape", () => {
+	const ids = allCodecs().map(c => c.id).sort();
+	assert.deepStrictEqual(ids, ["maven", "npm", "yarn"]);
+	for (const c of allCodecs()) assertCodecShape(c);
+	assert.strictEqual(getCodec("maven").id, "maven");
+	assert.strictEqual(getCodec("nope"), null);
+});
+
+test("detectCodecs finds maven+npm on monorepo-mixed, not yarn duplicate", () => {
+	const dir = path.join(__dirname, "fixtures", "monorepo-mixed");
+	const detected = detectCodecs(dir).map(c => c.id);
+	assert.ok(detected.includes("maven"));
+	assert.ok(detected.includes("npm"));
+	assert.ok(!detected.includes("yarn"));
+});
