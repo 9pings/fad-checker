@@ -1,0 +1,32 @@
+const test = require("node:test");
+const assert = require("node:assert");
+const path = require("path");
+const { parsePackagesLockJson, parseCsproj, parsePackagesConfig, parseDirectoryPackagesProps } = require("../lib/nuget/parse");
+const F = n => path.join(__dirname, "fixtures", n);
+
+test("parsePackagesLockJson reads resolved versions + Direct/Transitive scope", async () => {
+	const r = await parsePackagesLockJson(F("csharp-lock/packages.lock.json"));
+	const m = Object.fromEntries(r.deps.map(d => [d.name, d]));
+	assert.strictEqual(m["Newtonsoft.Json"].version, "13.0.1");
+	assert.strictEqual(m["System.Buffers"].scope, "transitive");
+});
+
+test("parseDirectoryPackagesProps returns a name→version map (CPM)", async () => {
+	const m = await parseDirectoryPackagesProps(F("csharp-csproj/Directory.Packages.props"));
+	assert.strictEqual(m["managed"], "6.0.0");   // keyed lowercase
+});
+
+test("parseCsproj: pinned scanned, floating skipped, CPM resolved against props", async () => {
+	const cpm = await parseDirectoryPackagesProps(F("csharp-csproj/Directory.Packages.props"));
+	const r = await parseCsproj(F("csharp-csproj/app.csproj"), cpm);
+	const m = Object.fromEntries(r.deps.map(d => [d.name, d.version]));
+	assert.strictEqual(m["Newtonsoft.Json"], "13.0.1");
+	assert.strictEqual(m["Managed"], "6.0.0");      // resolved via CPM
+	assert.ok(!("Floating" in m));                   // "1.*" skipped
+	assert.strictEqual(r.skipped, 1);
+});
+
+test("parsePackagesConfig reads legacy id/version", async () => {
+	const r = await parsePackagesConfig(F("csharp-config/packages.config"));
+	assert.strictEqual(r.deps.find(d => d.name === "EntityFramework").version, "6.4.4");
+});

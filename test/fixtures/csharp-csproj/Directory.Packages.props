@@ -1,0 +1,5 @@
+<Project>
+  <ItemGroup>
+    <PackageVersion Include="Managed" Version="6.0.0" />
+  </ItemGroup>
+</Project>
