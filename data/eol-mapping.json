@@ -52,12 +52,12 @@
   },
   "by_pypi_name": {
     "django": { "product": "django", "label": "Django" },
-    "numpy": { "product": "numpy", "label": "NumPy" },
-    "fastapi": { "product": "fastapi", "label": "FastAPI" }
+    "numpy": { "product": "numpy", "label": "NumPy" }
   },
   "by_nuget_name": {
-    "microsoft.aspnetcore.app": { "product": "aspnetcore", "label": "ASP.NET Core" },
-    "microsoft.entityframeworkcore": { "product": "efcore", "label": "EF Core" },
-    "microsoft.net.sdk": { "product": "dotnet", "label": ".NET" }
+    "microsoft.aspnetcore.app": { "product": "dotnet", "label": "ASP.NET Core (.NET)" },
+    "microsoft.aspnetcore.all": { "product": "dotnet", "label": "ASP.NET Core (.NET)" },
+    "microsoft.netcore.app": { "product": "dotnet", "label": ".NET" },
+    "microsoft.entityframeworkcore": { "product": "dotnet", "label": "EF Core (.NET)" }
   }
 }

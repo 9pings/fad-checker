@@ -85,7 +85,7 @@ test("findEolProduct dispatches per ecosystem to the right product", () => {
 	assert.strictEqual(findEolProduct({ ecosystem: "npm", artifactId: "angular", name: "angular" })?.product, "angularjs");
 	assert.strictEqual(findEolProduct({ ecosystem: "composer", namespace: "symfony", name: "console" })?.product, "symfony");
 	assert.strictEqual(findEolProduct({ ecosystem: "pypi", name: "django" })?.product, "django");
-	assert.strictEqual(findEolProduct({ ecosystem: "nuget", name: "Microsoft.EntityFrameworkCore" })?.product, "efcore");
+	assert.strictEqual(findEolProduct({ ecosystem: "nuget", name: "Microsoft.EntityFrameworkCore" })?.product, "dotnet");
 	// unknown → null
 	assert.strictEqual(findEolProduct({ ecosystem: "pypi", name: "totally-unknown-pkg" }), null);
 });

@@ -1,7 +1,7 @@
 {
   "name": "fad-checker",
-  "version": "2.0.0",
-  "description": "Scans ALL Maven, npm, Yarn, Composer, Python, C#/.NET in a source tree ONE SHOT Alone like a big boy, deal with private deps, multi mvn modules, EOL, obsolete, outdated deps & give fix recos",
+  "version": "2.0.1",
+  "description": "Scan ALL Maven, npm, Yarn, Composer, Python & C#/.NET dependencies in a source tree ONE SHOT without mvn/python/etc, deal with private deps, multi mvn modules, EOL, obsolete, outdated deps & give fix recos",
   "license": "MIT",
   "repository": "https://github.com/n8tz/fad-checker",
   "author": "pp9Ping <pp9Ping@gmail.com>",

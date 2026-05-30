@@ -3,6 +3,21 @@
 All notable changes to `fad-checker` are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.1]
+
+### Fixed
+- **EOL detection for PyPI / NuGet** used dead endoflife.date product slugs
+  (`fastapi`, `aspnetcore`, `efcore` → HTTP 404), so no .NET / FastAPI EOL was ever
+  flagged. NuGet ASP.NET Core / EF Core packages now map to the `dotnet` product
+  (their versions track .NET cycles); `fastapi` removed (no endoflife.date source).
+
+### Added
+- Detailed capability test suite (`test/codec-capabilities.test.js`): end-to-end EOL
+  per ecosystem (seeded cycles), registry findings (abandoned / yanked / inactive /
+  deprecation) + outdated gating, cycle-matching logic, fix recipes, and report
+  rendering of EOL/Obsolete/Outdated. Plus a guard asserting every eol-mapping product
+  slug is a known-valid endoflife.date product.
+
 ## [2.0.0]
 
 Major release: **codec architecture** + three new ecosystems.
