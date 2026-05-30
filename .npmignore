@@ -1,0 +1,20 @@
+# Tests & fixtures
+test/
+
+# Documentation (README.md + CHANGELOG.md are still published)
+docs/
+CLAUDE.md
+
+# Compiled single-file binaries — shipped as GitHub release assets, not on npm
+dist/
+
+# Dev / editor / agent state
+.idea/
+.vscode/
+.claude/
+.github/
+
+# Misc
+*.tgz
+.DS_Store
+Thumbs.db
