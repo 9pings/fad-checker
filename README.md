@@ -9,6 +9,10 @@
 
 `fad-checker` scans **Maven**, **npm**, **Yarn**, **Composer (PHP)**, **PyPI (Python)**, **NuGet (C#/.NET)** and **vendored JavaScript** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE, EOL, obsolete and outdated findings, plus per-ecosystem fix recipes.
 
+🌐 **[Project site & docs →](https://n8tz.github.io/fad-checker/)**
+
+<p align="center"><img src="docs/assets/cli.png" alt="fad-checker terminal output — a [n/8] checklist warming each vulnerability database, then CVE findings coloured by severity" width="760"></p>
+
 It runs against the source files alone. **No `mvn`, no `npm install`, no `composer install`, no `pip`, no `dotnet restore`, no Docker.** It reads `pom.xml`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `composer.lock`, `poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`/`pyproject.toml`/`requirements.txt`, and `packages.lock.json`/`*.csproj`/`*.fsproj`/`*.vbproj`/`packages.config` directly.
 
 > **Supported ecosystems: Maven, npm, Yarn (v1 + Berry/v2+), pnpm, Composer, PyPI, NuGet.** Each is a self-contained **codec** (`lib/codecs/`) — adding another is adding a codec, no orchestrator surgery. Vendored JS (jQuery, Bootstrap, PDF.js, etc.) is also scanned via retire.js.
@@ -101,6 +105,10 @@ Run `fad-checker --help` for the full flag list.
 ---
 
 ## What a report looks like
+
+<p align="center"><img src="docs/assets/report.png" alt="fad-checker HTML report — executive summary with severity tiles and a detailed CVE table with CWE, descriptions and fix versions" width="900"></p>
+
+The console prints a summary; the full detail lives in the self-contained HTML/`.doc`:
 
 ```
 Executive Summary [CRITICAL] — 1708 dependencies scanned
