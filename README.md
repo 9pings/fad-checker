@@ -1,5 +1,10 @@
 # fad-checker
 
+[![npm version](https://img.shields.io/npm/v/fad-checker.svg)](https://www.npmjs.com/package/fad-checker)
+[![npm downloads](https://img.shields.io/npm/dm/fad-checker.svg)](https://www.npmjs.com/package/fad-checker)
+[![license](https://img.shields.io/npm/l/fad-checker.svg)](https://github.com/n8tz/fad-checker/blob/main/package.json)
+[![node](https://img.shields.io/node/v/fad-checker.svg)](https://nodejs.org)
+
 > **F**ucking **A**utonomous **D**ependency **C**hecker
 
 `fad-checker` scans **Maven**, **npm**, **Yarn**, **Composer (PHP)**, **PyPI (Python)**, **NuGet (C#/.NET)** and **vendored JavaScript** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE, EOL, obsolete and outdated findings, plus per-ecosystem fix recipes.
