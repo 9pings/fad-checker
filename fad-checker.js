@@ -16,6 +16,7 @@ const { rimraf } = require("rimraf");
 const chalk = require("chalk");
 const pLimit = require("p-limit");
 const { program } = require("commander");
+const ui = require("./lib/ui");
 
 const core = require("./lib/core");
 
@@ -163,7 +164,8 @@ program
 	.showHelpAfterError()
 	.usage(USAGE)
 	.option("-t, --target <target>", "output directory (will be rm before written). If omitted, the run is read-only.")
-	.requiredOption("-s, --src <src>", "root directory containing pom.xml files")
+	// Not a requiredOption: --import-anonymized scans a descriptor with no source tree.
+	.option("-s, --src <src>", "root directory containing pom.xml files")
 	.option("-e, --exclude <exclude>", "regex of groupId to exclude, e.g. '^(client|private)\\.'")
 	.option("-v, --verbose", "verbose")
 	// Defaults: report + transitive + allLibs all ON. Use --no-* to disable.
@@ -178,6 +180,8 @@ program
 	.option("--export-cache <file>", "tar.gz/zip the ~/.fad-checker/ caches to <file> (excludes config.json by default)")
 	.option("--import-cache <file>", "restore ~/.fad-checker/ from a previously exported archive (existing dir is moved to .bak unless --force)")
 	.option("--include-config", "with --export-cache: also bundle config.json (contains the NVD API key)")
+	.option("--export-anonymized <file>", "offline: write an anonymized dependency descriptor (public coordinates only, no paths/URLs) for PASSI audits, then exit")
+	.option("--import-anonymized <file>", "online: scan an anonymized descriptor (no --src) to warm the caches; pair with --export-cache for offline reporting")
 	.option("--force", "with --import-cache: replace ~/.fad-checker/ without backup")
 	.option("--report-output <dir>", "report output directory", "./fad-checker-report")
 	.option("--ignore-test", "skip test-scoped dependencies in report")
@@ -208,6 +212,16 @@ const verbose = !!options.verbose;
 // Read-only when no target is given. No need for an explicit --test flag.
 const readOnly = !options.target;
 
+// --src is required for every mode except --import-anonymized (which scans a
+// descriptor and has no source tree).
+if (!options.src && !options.importAnonymized) {
+	console.error(chalk.red("❌  required option '-s, --src <src>' not specified"));
+	process.exit(1);
+}
+if (options.src && options.importAnonymized) {
+	console.warn(chalk.yellow("⚠️  --import-anonymized ignores --src (the descriptor is the source of deps)"));
+}
+
 if (options.src && options.target) {
 	const rel = path.relative(path.resolve(options.src), path.resolve(options.target));
 	const isSubdir = !rel || (!rel.startsWith("..") && !path.isAbsolute(rel));
@@ -226,16 +240,16 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 	try {
 		const hit = await existsInAny(repos, p, { userAgent: "fad-checker-existence" });
 		if (hit) return true;
-		console.log(`❌  NOT found on any repo: ${g}:${a}`);
+		if (verbose) console.log(chalk.dim(`   not on any repo: ${g}:${a}`));
 		return false;
 	} catch (err) {
-		console.info(`error querying repos: ${g}:${a} — ${err.message}`);
+		if (verbose) console.info(chalk.dim(`   error querying repos: ${g}:${a} — ${err.message}`));
 		return false;
 	}
 }
 
 (async function main() {
-	console.log(chalk.bold.cyan("\n🚀 Fucking Autonomous Dependency Checker\n") + chalk.gray("─────────────────────────────"));
+	ui.banner();
 
 	// Build the Maven repo list once: persisted repos (from ~/.fad-checker/config.json)
 	// + ad-hoc --repo URLs + Maven Central as final fallback. Used by transitive
@@ -244,11 +258,37 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 	const { buildRepoList } = require("./lib/maven-repo");
 	const extraRepos = (options.repo || []).map(url => ({ url }));
 	const mavenRepos = buildRepoList(getMavenRepos(), extraRepos);
-	if (mavenRepos.length > 1) {
-		console.log(chalk.gray(`📦 Maven repos: ${mavenRepos.map(r => r.name).join(" → ")}`));
-	}
+	const runMode = options.importAnonymized ? "import descriptor" : (options.offline ? "offline" : "online");
+	if (options.src) ui.kv("source", chalk.white(options.src));
+	if (mavenRepos.length > 1) ui.kv("repos", chalk.white(mavenRepos.map(r => r.name).join(chalk.dim(" → "))));
+	ui.kv("mode", chalk.white(runMode));
 
 	let wrotePom = 0;
+
+	// --- PASSI phase 2: import an anonymized descriptor instead of collecting ---
+	// Scans the descriptor's public coordinates online to WARM the coordinate-keyed
+	// caches (OSV/NVD/CVE/registry/EOL) + retire signatures. Pair with --export-cache.
+	if (options.importAnonymized) {
+		const { deserializeDeps } = require("./lib/deps-descriptor");
+		let descriptor;
+		try { descriptor = JSON.parse(fs.readFileSync(options.importAnonymized, "utf8")); }
+		catch (e) { console.error(chalk.red(`❌  could not read --import-anonymized file: ${e.message}`)); process.exit(1); }
+		let imported;
+		try { imported = deserializeDeps(descriptor); }
+		catch (e) { console.error(chalk.red(`❌  invalid descriptor: ${e.message}`)); process.exit(1); }
+		const { resolved, activeIds, runMaven, runNpm } = imported;
+		ui.section("Anonymized descriptor");
+		ui.ok(`imported ${chalk.bold(resolved.size)} dep(s) across ${activeIds.join(", ") || "—"}`);
+		if (options.offline) ui.warn("--offline: caches won't warm; only useful to re-render from an already-warm cache");
+		if (!resolved.size) { ui.warn("descriptor has no dependencies — nothing to scan"); process.exit(0); }
+		// Warm retire signatures (online) so --export-cache carries them for offline JS scanning.
+		if (runNpm && !options.offline && options.retire !== false) {
+			const { warmRetireSignatures } = require("./lib/retire");
+			await warmRetireSignatures({ verbose });
+		}
+		await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds: [], mavenRepos, collectWarnings: [] });
+		return;
+	}
 
 	// --- Codec detection + selection ---
 	const { detectCodecs, allCodecs, getCodec } = require("./lib/codecs");
@@ -279,13 +319,41 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 		if (id === "maven") mavenCtx = res._maven;
 	}
 
+	// --- Collection summary ---
+	ui.section("Collection");
+	const ecoCount = {};
+	for (const d of resolved.values()) ecoCount[d.ecosystem] = (ecoCount[d.ecosystem] || 0) + 1;
+	if (runMaven) ui.ok(`${chalk.bold("Maven".padEnd(8))} ${mavenCtx ? mavenCtx.pomFiles.length + " module(s) · " : ""}${ecoCount.maven || 0} direct dep(s)`);
+	if (runNpm)   ui.ok(`${chalk.bold("npm/yarn".padEnd(8))} ${ecoCount.npm || 0} dep(s)`);
+	for (const [id, n] of Object.entries(ecoCount)) {
+		if (id === "maven" || id === "npm") continue;
+		ui.ok(`${chalk.bold(((getCodec(id)?.label) || id).padEnd(8))} ${n} dep(s)`);
+	}
+	if (!ecoCount.maven && !ecoCount.npm && !Object.keys(ecoCount).length) ui.warn("no dependencies found in the source tree");
+	if (collectWarnings.length) {
+		ui.warn(`${collectWarnings.length} manifest warning(s) — best-effort / no lockfile:`);
+		for (const w of collectWarnings.slice(0, 5)) ui.info(chalk.dim(w.message));
+		if (collectWarnings.length > 5) ui.info(chalk.dim(`…and ${collectWarnings.length - 5} more`));
+	}
+
+	// --- PASSI phase 1: export an anonymized descriptor and exit (no network, no report) ---
+	if (options.exportAnonymized) {
+		const { serializeDeps } = require("./lib/deps-descriptor");
+		const pkgVersion = require("./package.json").version;
+		const descriptor = serializeDeps(resolved, { generator: `fad-checker ${pkgVersion}` });
+		try { fs.writeFileSync(options.exportAnonymized, JSON.stringify(descriptor, null, 2) + "\n"); }
+		catch (e) { console.error(chalk.red(`❌  could not write --export-anonymized file: ${e.message}`)); process.exit(1); }
+		const ecoSummary = Object.entries(descriptor.summary.byEcosystem).map(([k, v]) => `${k}:${v}`).join(", ");
+		ui.section("Anonymized export");
+		ui.ok(`${chalk.bold(descriptor.summary.total)} dep(s) (${ecoSummary || "none"}) → ${chalk.white(options.exportAnonymized)}`);
+		ui.info(chalk.dim("public coordinates only — no paths/URLs/host info. Review before transfer."));
+		if (!descriptor.summary.total) ui.warn("no dependencies collected — descriptor is empty");
+		return;
+	}
+
 	if (!readOnly) {
 		try { await rimraf(options.target); } catch (_) { /* fresh dir */ }
 	}
-
-	if (runMaven && mavenCtx) console.log(chalk.blue(`🔍 Found ${mavenCtx.pomFiles.length} pom.xml files`));
-	if (runNpm)   console.log(chalk.blue(`🔍 JS manifests detected — npm/yarn pipeline enabled`));
-	console.log();
 
 	// Maven POM rewrite (cleanup feature). Parse + inheritance already happened
 	// inside the maven codec's collect(); we reuse its metadata store here.
@@ -296,80 +364,78 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 			try {
 				if (await core.rewritePoms(pom, store, propsByPom, rewriteOpts)) wrotePom++;
 			} catch (err) {
-				console.error(chalk.red(`❌  rewrite failed for ${pom}:`), err.message);
+				console.error(chalk.red(`  ✗ rewrite failed for ${pom}:`), err.message);
 			}
 		}
 	}
 
-	// ---------- Summary: parents missing / excluded ----------
+	// ---------- Maven POM analysis summary (parents missing / excluded) ----------
 	let privateLibIds = [];
 	if (runMaven && mavenCtx) {
-	const allPomMetadata = mavenCtx.store;   // reuse the codec's parsed metadata
-	console.log(chalk.cyanBright("\n─────────────────────────────────────────────"));
-	console.log(chalk.cyanBright("📦 Résumé des POM analysés :"));
-	console.log(chalk.cyanBright("─────────────────────────────────────────────\n"));
+		const allPomMetadata = mavenCtx.store;   // reuse the codec's parsed metadata
+		ui.section("Maven POM analysis");
 
-	const missingParents = Object.keys(allPomMetadata.missingById)
-		.filter(id => {
-			const parts = id.split(":");
-			if (parts.length === 2) return false;
-			return !(allPomMetadata.byId[id] || allPomMetadata.byId[`${parts[0]}:${parts[1]}`]);
-		});
-
-	if (missingParents.length) {
-		console.log(chalk.yellowBright("⚠️ Parents libs Maven manquants ( si ces lib sont privées snyk plantera ) :"));
-		console.log(missingParents.map(id => chalk.yellow("  • ") + id).join("\n"));
-	} else {
-		console.log(chalk.greenBright("✅ Aucun parent Maven manquant."));
-	}
-
-	if (options.allLibs) {
-		const anyMissingLibs = Object.keys(allPomMetadata.anyMissingById)
-			.filter(id => {
-				const parts = id.split(":");
-				if (parts.length === 3) return false;
-				return !(allPomMetadata.byId[id] || allPomMetadata.byId[`${parts[0]}:${parts[1]}`]);
-			});
-		const limit = pLimit(10);
-		console.log(chalk.magentaBright("\n🚫 Libs absentes de Maven Central :"));
-		const results = await Promise.all(anyMissingLibs.map(id => {
-			const [g, a] = id.split(":");
-			return limit(async () => ({ id, found: await checkMavenLibExist(g, a, mavenRepos) }));
-		}));
-		for (const r of results) if (r && r.found === false) privateLibIds.push(r.id);
-	}
-
-	if (deps2Exclude) {
-		const excludedLibs = Object.keys(allPomMetadata.excludedById)
+		const missingParents = Object.keys(allPomMetadata.missingById)
 			.filter(id => {
 				const parts = id.split(":");
 				if (parts.length === 2) return false;
 				return !(allPomMetadata.byId[id] || allPomMetadata.byId[`${parts[0]}:${parts[1]}`]);
 			});
-		if (excludedLibs.length) {
-			console.log(chalk.magentaBright("\n🚫 Bibliothèques exclues et manquantes :"));
-			console.log(excludedLibs.map(id => chalk.magenta("  • ") + id).join("\n"));
+		if (missingParents.length) {
+			ui.warn(`${missingParents.length} missing parent POM(s) — Snyk will fail if these are private:`);
+			for (const id of missingParents.slice(0, 10)) ui.info(chalk.yellow(id));
+			if (missingParents.length > 10) ui.info(chalk.dim(`…and ${missingParents.length - 10} more`));
 		} else {
-			console.log(chalk.greenBright("\n✅ Aucune bibliothèque exclue et manquante."));
+			ui.ok("no missing Maven parent POMs");
 		}
-	} else {
-		console.log(chalk.magentaBright("\n🚫 Bibliothèques exclues ( privées ) et manquantes : "));
-		console.log(chalk.magenta("  • ") + "Pas d'exclusions ( on considère donc que toutes les deps hors parents sont publiques )");
-	}
 
-	console.log(chalk.cyanBright("\n─────────────────────────────────────────────"));
-	console.log(chalk.cyanBright(`✅  ${wrotePom} POMs nettoyés ont été obtenus`));
-	if (!readOnly) console.log(chalk.whiteBright(`  Ils ont été écrits dans : ${options.target}`));
-	console.log(chalk.cyanBright("─────────────────────────────────────────────\n"));
-	} // end runMaven
+		if (options.allLibs) {
+			const anyMissingLibs = Object.keys(allPomMetadata.anyMissingById)
+				.filter(id => {
+					const parts = id.split(":");
+					if (parts.length === 3) return false;
+					return !(allPomMetadata.byId[id] || allPomMetadata.byId[`${parts[0]}:${parts[1]}`]);
+				});
+			const limit = pLimit(10);
+			const results = await Promise.all(anyMissingLibs.map(id => {
+				const [g, a] = id.split(":");
+				return limit(async () => ({ id, found: await checkMavenLibExist(g, a, mavenRepos) }));
+			}));
+			for (const r of results) if (r && r.found === false) privateLibIds.push(r.id);
+			if (privateLibIds.length) {
+				ui.warn(`${privateLibIds.length} lib(s) absent from Maven Central (likely private):`);
+				for (const id of privateLibIds.slice(0, 10)) ui.info(chalk.magenta(id));
+				if (privateLibIds.length > 10) ui.info(chalk.dim(`…and ${privateLibIds.length - 10} more`));
+			}
+		}
+
+		if (deps2Exclude) {
+			const excludedLibs = Object.keys(allPomMetadata.excludedById)
+				.filter(id => {
+					const parts = id.split(":");
+					if (parts.length === 2) return false;
+					return !(allPomMetadata.byId[id] || allPomMetadata.byId[`${parts[0]}:${parts[1]}`]);
+				});
+			if (excludedLibs.length) {
+				ui.warn(`${excludedLibs.length} excluded-and-missing library(ies):`);
+				for (const id of excludedLibs.slice(0, 10)) ui.info(chalk.magenta(id));
+				if (excludedLibs.length > 10) ui.info(chalk.dim(`…and ${excludedLibs.length - 10} more`));
+			} else {
+				ui.ok("no excluded-and-missing libraries");
+			}
+		}
+
+		if (!readOnly) ui.ok(`${chalk.bold(wrotePom)} cleaned POM(s) written → ${chalk.white(options.target)}`);
+		else ui.info(chalk.dim(`${wrotePom} POM(s) cleanable (read-only — pass -t <dir> to write them)`));
+	}
 
 	// ---------- Report flow (CVE / EOL / Obsolete) ----------
 	if (options.report) {
 		await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds, mavenRepos, collectWarnings });
 	} else if (!readOnly) {
-		const target = options.target;
-		console.log(chalk.gray(`💡 Pour lancer Snyk depuis ${target} :`));
-		console.log(chalk.whiteBright(`   cd ${target} && snyk test --json --all-projects | snyk-to-html -o ../snyk-deps-check.html\n`));
+		ui.section("Next step");
+		ui.info(`run Snyk on the cleaned tree:`);
+		console.log("    " + chalk.white(`cd ${options.target} && snyk test --json --all-projects | snyk-to-html -o ../snyk-deps-check.html`));
 	}
 })();
 
@@ -379,31 +445,13 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const { writeReports, computeStats } = require("./lib/cve-report");
 	const { getCodec } = require("./lib/codecs");
 	const outdated = require("./lib/outdated");
+	const { getNvdApiKey } = require("./lib/config");
 	const offline = !!options.offline;
-	if (offline) console.log(chalk.gray("   (--offline: cached data only, no network)"));
 
-	console.log(chalk.bold.cyan("\n📋 Rapport CVE / EOL / Obsolète\n") + chalk.gray("─────────────────────────────"));
-
-	// Deps were already collected per-codec by main(). Just report the counts.
-	const byEcoCount = {};
-	for (const d of resolved.values()) byEcoCount[d.ecosystem] = (byEcoCount[d.ecosystem] || 0) + 1;
-	if (runMaven) console.log(chalk.blue(`📚 ${byEcoCount.maven || 0} dépendances Maven directes (incl. parent POMs)`));
-	if (runNpm)   console.log(chalk.blue(`📦 ${byEcoCount.npm || 0} dépendances npm/yarn`));
-	for (const [ecoId, n] of Object.entries(byEcoCount)) {
-		if (ecoId === "maven" || ecoId === "npm") continue;
-		const label = (require("./lib/codecs").getCodec(ecoId)?.label) || ecoId;
-		console.log(chalk.blue(`📦 ${n} dépendances ${label}`));
-	}
-
-	// Warnings surfaced during collection (e.g. npm no-lockfile fallback).
+	// Collection counts already shown in the "Collection" section by main();
+	// for --import-anonymized they were shown in the "Anonymized descriptor" section.
 	const npmWarnings = collectWarnings || [];
 	let scanWarnings = [];
-	if (npmWarnings.length) {
-		console.log(chalk.yellow(`⚠️  ${npmWarnings.length} manifest warning(s) :`));
-		for (const w of npmWarnings) {
-			console.log(chalk.yellow(`     • ${w.manifestPath} — ${w.message}`));
-		}
-	}
 	const directCount = resolved.size;
 
 	// Scan-completeness signals: BOMs and unresolved-version deps mean fad-checker
@@ -411,20 +459,34 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	if (runMaven) {
 		const { detectScanCompletenessWarnings } = require("./lib/scan-completeness");
 		scanWarnings = detectScanCompletenessWarnings(resolved, { ranSnyk: !!options.snyk, ranTransitive: !!options.transitive });
-		if (scanWarnings.length) {
-			console.log(chalk.yellow(`\n⚠️  ${scanWarnings.length} scan-completeness alert(s) — a real Maven/Snyk run may surface more findings:`));
-			for (const w of scanWarnings) {
-				console.log(chalk.yellow(`     • [${w.type}] ${w.message}`));
-				if (w.items?.length) {
-					const shown = w.items.slice(0, 6);
-					for (const it of shown) console.log(chalk.gray(`         · ${it}`));
-					if (w.items.length > shown.length) console.log(chalk.gray(`         · …and ${w.items.length - shown.length} more`));
-				}
-			}
-		}
 	}
 
-	if (options.transitive && runMaven) {
+	// ---- Vulnerability database update (global step progress) ----
+	ui.section("Vulnerability database update");
+	if (offline) ui.info(chalk.dim("--offline: cached data only, no network"));
+
+	const hasNvdKey = !!getNvdApiKey();
+	if (options.nvd && !offline && !hasNvdKey) {
+		ui.warn(chalk.yellow("No NVD API key — enrichment throttled to 5 req/30s (slow)."));
+		ui.info(chalk.dim("Free & instant key: https://nvd.nist.gov/developers/request-an-api-key"));
+		ui.info(chalk.dim("then: fad-checker --set-nvd-key <KEY>"));
+	}
+
+	// Decide which update steps will run (from flags) so the [n/N] counter is accurate.
+	const cveScanner = runMaven ? (getCodec("maven").nativeScanners || []).find(s => s.kind === "cve") : null;
+	const cveIndexExists = fs.existsSync(require("./lib/cve-download").CVE_INDEX_PATH);
+	const otherRegistryIds = activeIds.filter(id => id !== "maven" && id !== "npm" && id !== "yarn" && getCodec(id)?.checkRegistry);
+	const willCve = !!cveScanner && (!(options.cveOffline || offline) || cveIndexExists);
+	const willTransitive = !!(options.transitive && runMaven);
+	const willOsv = !!options.osv;
+	const willOutdated = !!options.allLibs;
+	const willNvd = !!options.nvd;
+	const willRetire = !!options.retire;
+	const totalSteps = [willTransitive, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willNvd, willRetire].filter(Boolean).length;
+	const progress = new ui.Progress(totalSteps);
+
+	if (willTransitive) {
+		const st = progress.start("Transitive resolution (Maven Central)");
 		await expandWithTransitives(resolved, {
 			verbose,
 			offline,
@@ -432,66 +494,70 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			includeTestDeps: !options.ignoreTest,
 			repos: mavenRepos,
 		});
-		console.log(chalk.blue(`🌳 ${resolved.size - directCount} dépendances transitives ajoutées (total: ${resolved.size})`));
+		st.done(`+${resolved.size - directCount} transitive (total ${resolved.size})`);
 	}
 
 	// 1. CVE — native scanner contributed by the maven codec (local cvelistV5 index).
 	let cveMatches = [];
 	let cveDataDate = null;
-	if (runMaven) {
-		const sc = (getCodec("maven").nativeScanners || []).find(s => s.kind === "cve");
-		const indexExists = fs.existsSync(require("./lib/cve-download").CVE_INDEX_PATH);
-		if (sc && (!(options.cveOffline || offline) || indexExists)) {
-			try {
-				const r = await sc.scan(resolved, { cveRefresh: !!options.cveRefresh, cveOffline: !!options.cveOffline, offline, verbose });
-				cveMatches = r.matches || [];
-				cveDataDate = r.meta?.cveDataDate || null;
-			} catch (err) {
-				console.warn(chalk.yellow("⚠️  CVE scan skipped:"), err.message);
-			}
+	if (willCve) {
+		const st = progress.start("CVE index (CVEProject)");
+		try {
+			const r = await cveScanner.scan(resolved, { cveRefresh: !!options.cveRefresh, cveOffline: !!options.cveOffline, offline, verbose });
+			cveMatches = r.matches || [];
+			cveDataDate = r.meta?.cveDataDate || null;
+			st.done(`${cveMatches.length} match(es)${cveDataDate ? ` · ${String(cveDataDate).slice(0, 10)}` : ""}`);
+		} catch (err) {
+			st.fail(err.message);
 		}
 	}
 
-	// 2. EOL frameworks
+	// 2. EOL frameworks (endoflife.date) — always a step.
 	let eolResults = [];
-	try { eolResults = await outdated.checkEolDeps(resolved, { verbose, offline }); }
-	catch (err) { console.warn(chalk.yellow("⚠️  EOL check skipped:"), err.message); }
-
-	// 3. Obsolete / deprecated
-	let obsoleteResults = [];
-	try { obsoleteResults = outdated.checkObsoleteDeps(resolved); }
-	catch (err) { console.warn(chalk.yellow("⚠️  Obsolete check skipped:"), err.message); }
-
-	// 4. Outdated (latest Maven Central)
-	let outdatedResults = [];
-	if (options.allLibs) {
-		try { outdatedResults = await outdated.checkOutdatedDeps(resolved, { verbose, offline, repos: mavenRepos }); }
-		catch (err) { console.warn(chalk.yellow("⚠️  Outdated check skipped:"), err.message); }
+	{
+		const st = progress.start("EOL frameworks (endoflife.date)");
+		try { eolResults = await outdated.checkEolDeps(resolved, { verbose, offline }); st.done(`${eolResults.length} EOL`); }
+		catch (err) { st.fail(err.message); }
 	}
 
-	// 4a. npm registry — deprecation (always, authoritative maintainer data) and
-	// outdated (gated by --all-libs like Maven Central). Covers npm deps and
-	// WebJars (Maven artifacts wrapping npm/bower libs), so it runs even in
-	// Maven-only mode. One fetch per package; no-ops when there are no targets.
-	try {
-		const { checkNpmRegistryDeps } = require("./lib/codecs/npm/registry");
-		const npmReg = await checkNpmRegistryDeps(resolved, { verbose, offline, allLibs: options.allLibs });
-		obsoleteResults = obsoleteResults.concat(npmReg.deprecated);
-		outdatedResults = outdatedResults.concat(npmReg.outdated);
-	} catch (err) { console.warn(chalk.yellow("⚠️  npm registry check skipped:"), err.message); }
+	// 3. Obsolete / deprecated — local curated list, instant (no network step).
+	let obsoleteResults = [];
+	try { obsoleteResults = outdated.checkObsoleteDeps(resolved); }
+	catch (err) { ui.warn(`obsolete check skipped: ${err.message}`); }
+
+	// 4. Outdated (latest Maven Central) — gated by --all-libs.
+	let outdatedResults = [];
+	if (willOutdated) {
+		const st = progress.start("Maven Central (outdated)");
+		try {
+			outdatedResults = await outdated.checkOutdatedDeps(resolved, { verbose, offline, repos: mavenRepos, onProgress: (p, t) => st.tick(p, t) });
+			st.done(`${outdatedResults.length} outdated`);
+		} catch (err) { st.fail(err.message); }
+	}
+
+	// 4a. npm registry — deprecation (always, authoritative) + outdated (with --all-libs).
+	// Covers npm deps and WebJars, so it runs even in Maven-only mode.
+	{
+		const st = progress.start("npm registry");
+		try {
+			const { checkNpmRegistryDeps } = require("./lib/codecs/npm/registry");
+			const npmReg = await checkNpmRegistryDeps(resolved, { verbose, offline, allLibs: options.allLibs, onProgress: (p, t) => st.tick(p, t) });
+			obsoleteResults = obsoleteResults.concat(npmReg.deprecated);
+			outdatedResults = outdatedResults.concat(npmReg.outdated);
+			st.done(`${npmReg.deprecated.length} deprecated, ${npmReg.outdated.length} outdated`);
+		} catch (err) { st.fail(err.message); }
+	}
 
 	// 4b. Per-codec registry for ecosystems beyond maven/npm (composer/pypi/nuget).
-	// maven (Maven Central) + npm (registry) are already covered above; this loop
-	// drives each remaining active codec's own registry (Packagist abandoned, etc.).
-	for (const id of activeIds) {
-		if (id === "maven" || id === "npm" || id === "yarn") continue;
+	for (const id of otherRegistryIds) {
 		const codec = getCodec(id);
-		if (!codec?.checkRegistry) continue;
+		const st = progress.start(`${codec.label || id} registry`);
 		try {
-			const reg = await codec.checkRegistry(resolved, { verbose, offline, allLibs: options.allLibs });
+			const reg = await codec.checkRegistry(resolved, { verbose, offline, allLibs: options.allLibs, onProgress: (p, t) => st.tick(p, t) });
 			obsoleteResults = obsoleteResults.concat(reg.deprecated || []);
 			outdatedResults = outdatedResults.concat(reg.outdated || []);
-		} catch (err) { console.warn(chalk.yellow(`⚠️  ${id} registry check skipped:`), err.message); }
+			st.done(`${(reg.deprecated || []).length} deprecated, ${(reg.outdated || []).length} outdated`);
+		} catch (err) { st.fail(err.message); }
 	}
 
 	// Cross-section dedup: drop entries from outdated that already appear in EOL/Obsolete
@@ -503,38 +569,39 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	});
 
 	// 4b. OSV.dev — Maven-native CVE+GHSA feed (huge recall win over raw CVEProject)
-	if (options.osv) {
+	if (willOsv) {
+		const st = progress.start("OSV.dev");
 		try {
 			const { queryOsvForDeps } = require("./lib/osv");
-			const osvMatches = await queryOsvForDeps(resolved, { verbose, offline });
+			const osvMatches = await queryOsvForDeps(resolved, { verbose, offline, onProgress: (p, t) => st.tick(p, t) });
 			const before = cveMatches.length;
 			cveMatches = mergeBySource(cveMatches, osvMatches);
-			console.log(chalk.blue(`🌐 OSV.dev: ${osvMatches.length} vulnerabilities, +${cveMatches.length - before} new after merge`));
+			st.done(`${osvMatches.length} vulns · +${cveMatches.length - before} after merge`);
 		} catch (err) {
-			console.warn(chalk.yellow("⚠️  OSV.dev skipped:"), err.message);
+			st.fail(err.message);
 		}
 	}
 
-	// 4c. NVD enrichment — canonical description + full CVSS for matched CVEs
-	if (options.nvd && cveMatches.length) {
-		try {
-			const { enrichMatches } = require("./lib/nvd");
-			await enrichMatches(cveMatches, { verbose, offline });
-		} catch (err) {
-			console.warn(chalk.yellow("⚠️  NVD enrichment skipped:"), err.message);
-		}
-
-		// 4d. CPE refinement — use NVD's CPE configurations to upgrade match
-		// confidence and flag likely false positives (CVE matched a product
-		// name but the dep version is outside any vulnerable CPE range).
-		try {
-			const { refineMatchesWithCpe } = require("./lib/cpe");
-			refineMatchesWithCpe(cveMatches);
-			const upgraded = cveMatches.filter(m => m.cpeConfidence).length;
-			const filtered = cveMatches.filter(m => m.cpeFiltered).length;
-			if (verbose) console.log(chalk.gray(`   CPE: ${upgraded} matches with CPE confirmation, ${filtered} flagged as likely false positives`));
-		} catch (err) {
-			console.warn(chalk.yellow("⚠️  CPE refinement skipped:"), err.message);
+	// 4c. NVD enrichment — canonical description + full CVSS for matched CVEs.
+	if (willNvd) {
+		const st = progress.start("NVD enrichment");
+		if (!cveMatches.length) {
+			st.skip("no CVE to enrich");
+		} else {
+			try {
+				const { enrichMatches } = require("./lib/nvd");
+				await enrichMatches(cveMatches, { verbose, offline, onProgress: (p, t) => st.tick(p, t) });
+				// 4d. CPE refinement — use NVD's CPE configurations to upgrade match
+				// confidence and flag likely false positives (version outside CPE range).
+				let filtered = 0;
+				try {
+					const { refineMatchesWithCpe } = require("./lib/cpe");
+					refineMatchesWithCpe(cveMatches);
+					filtered = cveMatches.filter(m => m.cpeFiltered).length;
+				} catch (err) { ui.warn(`CPE refinement skipped: ${err.message}`); }
+				const uniqueCves = new Set(cveMatches.map(m => m.cve?.id)).size;
+				st.done(`${uniqueCves} CVE${filtered ? ` · ${filtered} false-positive(s) filtered` : ""}${hasNvdKey ? "" : " · no key (slow)"}`);
+			} catch (err) { st.fail(err.message); }
 		}
 	}
 
@@ -545,16 +612,17 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// vendored .js (which can live in a Maven project's resources too). The
 	// scanner is owned by the npm codec but runs whenever --retire is on.
 	let retireMatches = [];
-	if (options.retire) {
+	if (willRetire) {
+		const st = progress.start("retire.js (vendored JS)");
 		const sc = (getCodec("npm").nativeScanners || []).find(s => s.kind === "vendored");
-		if (sc) {
+		if (!sc) { st.skip("scanner unavailable"); }
+		else if (!options.src) { st.skip("no source tree (descriptor import)"); }
+		else {
 			try {
 				const r = await sc.scan(resolved, { src: options.src, verbose, retireRefresh: !!options.retireRefresh, offline });
 				retireMatches = r.matches || [];
-				console.log(chalk.blue(`🔎 retire.js: ${retireMatches.length} vendored-JS finding(s)`));
-			} catch (err) {
-				console.warn(chalk.yellow("⚠️  retire.js skipped:"), err.message);
-			}
+				st.done(`${retireMatches.length} finding(s)`);
+			} catch (err) { st.fail(err.message); }
 		}
 	}
 
@@ -562,16 +630,16 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	let snykMatches = [];
 	if (options.snyk) {
 		if (!options.target) {
-			console.warn(chalk.yellow("⚠️  --snyk requires --target (snyk runs on cleaned POMs)"));
+			ui.warn("--snyk requires --target (snyk runs on cleaned POMs)");
 		} else {
 			const snyk = require("./lib/snyk");
 			try {
 				const raw = await snyk.runSnykTest(options.target, { verbose });
 				snykMatches = snyk.parseSnykResults(raw);
 				cveMatches = snyk.mergeWithFadResults(cveMatches, snykMatches);
-				console.log(chalk.blue(`🐍 Snyk: ${snykMatches.length} findings merged`));
+				ui.ok(`Snyk: ${snykMatches.length} findings merged`);
 			} catch (err) {
-				console.warn(chalk.yellow("⚠️  Snyk run failed:"), err.message);
+				ui.warn(`Snyk run failed: ${err.message}`);
 			}
 		}
 	}
@@ -589,50 +657,65 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 
 	const stats = computeStats(prodActive);
 	const devStats = computeStats(devActive);
-	console.log(chalk.bold.cyan(`\n  1. CVE Vulnerabilities (production: ${prodActive.length})`));
-	console.log(`     critical=${stats.critical}  high=${stats.high}  medium=${stats.medium}  low=${stats.low}  unknown=${stats.unknown}`);
+	const sev = ui.sevColor;
 	const depLabel = d => d.ecosystem === "npm" ? `npm:${d.artifactId}` : `${d.groupId}:${d.artifactId}`;
-	for (const m of prodActive.slice(0, 20)) {
-		const sev = (m.cve.severity || "UNKNOWN").padEnd(8);
-		console.log(`       ${chalk.red(sev)} ${m.cve.id}  ${depLabel(m.dep)}:${m.dep.version}`);
-	}
-	if (prodActive.length > 20) console.log(`       ... and ${prodActive.length - 20} more (see report)`);
-	if (cpeFilteredCount) console.log(chalk.gray(`     (${cpeFilteredCount} likely false positives moved to report appendix)`));
+	const coordOf = depLabel;   // npm deps show as "npm:name", others as "g:a"
+	const fmtStats = s => [
+		s.critical ? sev("CRITICAL")(`${s.critical} critical`) : null,
+		s.high ? sev("HIGH")(`${s.high} high`) : null,
+		s.medium ? sev("MEDIUM")(`${s.medium} medium`) : null,
+		s.low ? sev("LOW")(`${s.low} low`) : null,
+		s.unknown ? chalk.gray(`${s.unknown} unknown`) : null,
+	].filter(Boolean).join("  ") || chalk.gray("none");
+	const heading = (label, n, extra = "") => console.log("\n  " + chalk.bold(label) + chalk.dim(`  (${n})`) + (extra ? "  " + extra : ""));
 
-	if (devActive.length) {
-		console.log(chalk.bold.cyan(`\n  2. CVE in dev dependencies (${devActive.length})`));
-		console.log(`     critical=${devStats.critical}  high=${devStats.high}  medium=${devStats.medium}  low=${devStats.low}  unknown=${devStats.unknown}`);
+	ui.section("Results");
+
+	heading("CVE · production", prodActive.length, fmtStats(stats));
+	for (const m of prodActive.slice(0, 12)) {
+		console.log("    " + sev(m.cve.severity)((m.cve.severity || "UNKNOWN").padEnd(8)) + " " + chalk.white(m.cve.id) + "  " + chalk.dim(`${depLabel(m.dep)}:${m.dep.version}`));
 	}
+	if (prodActive.length > 12) console.log(chalk.dim(`    …and ${prodActive.length - 12} more (see report)`));
+	if (cpeFilteredCount) console.log(chalk.dim(`    ${cpeFilteredCount} likely false positive(s) → report appendix`));
+
+	heading("CVE · dev", devActive.length, devActive.length ? fmtStats(devStats) : "");
+
+	heading("EOL frameworks", eolResults.length);
+	for (const e of eolResults.slice(0, 8)) console.log("    " + chalk.yellow(e.product.padEnd(18)) + " " + chalk.dim(`${coordOf(e.dep)}:${e.dep.version}`) + " " + chalk.dim(e.eol === true ? "EOL" : String(e.eol)));
+	if (eolResults.length > 8) console.log(chalk.dim(`    …and ${eolResults.length - 8} more`));
+
+	heading("Obsolete / deprecated", obsoleteResults.length);
+	for (const o of obsoleteResults.slice(0, 8)) console.log("    " + chalk.dim(`${coordOf(o.dep)}:${o.dep.version}`) + " → " + (o.replacement || chalk.dim("n/a")));
+	if (obsoleteResults.length > 8) console.log(chalk.dim(`    …and ${obsoleteResults.length - 8} more`));
+
+	heading("Outdated", outdatedResults.length, options.allLibs ? "" : chalk.dim("pass -a/--allLibs to query registries"));
+	for (const o of outdatedResults.slice(0, 8)) console.log("    " + chalk.dim(coordOf(o.dep)) + ` ${o.dep.version} → ${chalk.green(o.latest)}`);
+	if (outdatedResults.length > 8) console.log(chalk.dim(`    …and ${outdatedResults.length - 8} more`));
+
 	if (retireMatches.length) {
-		console.log(chalk.bold.cyan(`\n  3. Vendored JS (retire.js): ${retireMatches.length}`));
-		for (const m of retireMatches.slice(0, 10)) {
-			console.log(`       ${chalk.red((m.cve.severity || "?").padEnd(8))} ${m.cve.id}  ${m.dep.artifactId}@${m.dep.version}  ← ${m.dep.vendoredFile}`);
-		}
-		if (retireMatches.length > 10) console.log(`       ... and ${retireMatches.length - 10} more (see report)`);
+		heading("Vendored JS (retire.js)", retireMatches.length);
+		for (const m of retireMatches.slice(0, 8)) console.log("    " + sev(m.cve.severity)((m.cve.severity || "?").padEnd(8)) + " " + chalk.white(m.cve.id) + " " + chalk.dim(`${m.dep.artifactId}@${m.dep.version}`));
+		if (retireMatches.length > 8) console.log(chalk.dim(`    …and ${retireMatches.length - 8} more`));
 	}
 
-	// npm deps have no groupId; show them as "npm:name" rather than ":name".
-	const coordOf = d => d.ecosystem === "npm" ? `npm:${d.artifactId}` : `${d.groupId}:${d.artifactId}`;
-
-	console.log(chalk.bold.cyan("\n  2. End-of-Life Frameworks"));
-	for (const e of eolResults) console.log(`     ${e.product.padEnd(20)} ${coordOf(e.dep)}:${e.dep.version}  ${e.eol}`);
-	if (!eolResults.length) console.log(chalk.gray("     (none)"));
-
-	console.log(chalk.bold.cyan("\n  3. Obsolete / Deprecated Libraries"));
-	for (const o of obsoleteResults) console.log(`     ${(o.severity || "info").padEnd(8)} ${coordOf(o.dep)}:${o.dep.version}  → ${o.replacement || "n/a"}`);
-	if (!obsoleteResults.length) console.log(chalk.gray("     (none)"));
-
-	console.log(chalk.bold.cyan("\n  4. Outdated Libraries"));
-	for (const o of outdatedResults.slice(0, 20)) console.log(`     ${coordOf(o.dep)}  ${o.dep.version} → ${o.latest}`);
-	if (outdatedResults.length > 20) console.log(`       ... and ${outdatedResults.length - 20} more`);
-	if (!outdatedResults.length && options.allLibs) console.log(chalk.gray("     (none)"));
-	if (!options.allLibs) console.log(chalk.gray("     (re-run with -a/--allLibs to query Maven Central)"));
+	if (scanWarnings.length) {
+		console.log();
+		ui.warn(`${scanWarnings.length} scan-completeness note(s) — a real Maven/Snyk run may surface more:`);
+		for (const w of scanWarnings) {
+			ui.info(chalk.dim(`[${w.type}] ${w.message}`));
+			for (const it of (w.items || []).slice(0, 4)) console.log("      " + chalk.dim(`· ${it}`));
+			if ((w.items || []).length > 4) console.log("      " + chalk.dim(`· …and ${w.items.length - 4} more`));
+		}
+	}
 
 	const reportDir = options.reportOutput || "./fad-checker-report";
 	await fs.promises.mkdir(reportDir, { recursive: true });
+	// --import-anonymized has no source tree; keep the report path-free (consistent
+	// with the anonymized descriptor it was fed).
+	const srcResolved = options.src ? path.resolve(options.src) : null;
 	const projectInfo = {
-		name: path.basename(path.resolve(options.src)),
-		src: path.resolve(options.src),
+		name: srcResolved ? path.basename(srcResolved) : "anonymized-descriptor",
+		src: srcResolved || "(anonymized descriptor — source path withheld)",
 		generatedAt: new Date().toISOString(),
 		toolVersion: pkg.version,
 		cveDataDate,
@@ -664,7 +747,10 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			}] : []),
 		],
 	});
-	console.log(chalk.bold.green(`\n✅ Report written:\n   ${htmlPath}\n   ${docPath}\n`));
+	ui.section("Report");
+	ui.ok(chalk.white(htmlPath));
+	ui.ok(chalk.white(docPath));
+	console.log();
 }
 
 /**

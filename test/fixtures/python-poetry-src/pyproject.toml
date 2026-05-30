@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "poetry-app"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+requests = "2.28.1"            # poetry: bare version == exact -> scannable
+urllib3 = "^1.26"             # caret range -> skipped
+django = { version = "==4.1.0", optional = false }
+
+[tool.poetry.group.dev.dependencies]
+pytest = "7.2.0"             # dev, exact
+
+[tool.poetry.dev-dependencies]
+black = "23.1.0"            # legacy dev table, exact
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

@@ -5,11 +5,14 @@ const {
 	parsePackageJson,
 	parsePackageLock,
 	parseYarnLockV1,
+	parseYarnBerry,
+	parsePnpmLock,
 	findJsManifests,
 } = require("../lib/codecs/npm/parse");
 const { collectNpmDeps } = require("../lib/codecs/npm/collect");
 
 const FIX = path.join(__dirname, "fixtures", "monorepo-mixed");
+const F = n => path.join(__dirname, "fixtures", n);
 
 test("parsePackageJson extracts dependencies + dev + peer scopes", () => {
 	const res = parsePackageJson(path.join(FIX, "packages", "web-app", "package.json"));
@@ -147,4 +150,94 @@ test("collectNpmDeps captures peerDependencies (react@17 in web-app)", () => {
 	const react = map.get("npm:react");
 	assert.ok(react, "react peer dep should be present");
 	assert.equal(react.scope, "peer");
+});
+
+/* ---- pnpm-lock.yaml ---- */
+test("parsePnpmLock v9: importers + packages + snapshots, dev classification preserved", () => {
+	const r = parsePnpmLock(F("pnpm-v9/pnpm-lock.yaml"));
+	assert.equal(r.lockfileVersion, "9.0");
+	const m = Object.fromEntries(r.deps.map(d => [d.name, d]));
+	assert.equal(m["lodash"].version, "4.17.21");
+	assert.equal(m["@babel/core"].version, "7.23.0");     // scoped name parsed correctly
+	assert.equal(m["ms"].version, "2.1.3");                // transitive from snapshots
+	assert.equal(m["typescript"].scope, "dev");           // importers devDeps wins over packages
+});
+
+test("parsePnpmLock v6: /name@version(peers) keys + top-level deps, dev flag honored", () => {
+	const r = parsePnpmLock(F("pnpm-v6/pnpm-lock.yaml"));
+	assert.equal(r.lockfileVersion, "6.0");
+	const m = Object.fromEntries(r.deps.map(d => [d.name, d]));
+	assert.equal(m["axios"].version, "1.6.0");
+	assert.equal(m["follow-redirects"].version, "1.15.3");  // transitive
+	assert.equal(m["jest"].scope, "dev");                   // dev: true in packages
+	assert.equal(m["@types/node"].scope, "dev");            // scoped + dev
+});
+
+test("collectNpmDeps: pnpm-lock.yaml collected, ecosystemType stays npm, ignoreTest drops dev", () => {
+	const all = collectNpmDeps(F("pnpm-v9"), { verbose: false });
+	assert.ok(all.has("npm:lodash"));
+	assert.ok(all.has("npm:ms"));
+	assert.equal(all.get("npm:lodash").ecosystemType, "npm");   // pnpm pkgs are npm-registry
+	assert.equal(all.get("npm:lodash").lockType, "pnpm");
+	const noTest = collectNpmDeps(F("pnpm-v9"), { ignoreTest: true, verbose: false });
+	assert.equal(noTest.has("npm:typescript"), false);          // dev dropped
+});
+
+test("hasJsManifests / detect finds a pnpm-only project", () => {
+	const { hasJsManifests } = require("../lib/codecs/npm/collect");
+	assert.equal(hasJsManifests(F("pnpm-v9")), true);
+});
+
+test("parsePnpmLock v5: slash-format keys (/name/version, /@scope/name/version)", () => {
+	const r = parsePnpmLock(F("pnpm-v5/pnpm-lock.yaml"));
+	const m = Object.fromEntries(r.deps.map(d => [d.name, d.version]));
+	assert.equal(m["lodash"], "4.17.21");
+	assert.equal(m["@babel/core"], "7.0.0");      // scoped slash form parsed
+});
+
+test("parsePnpmLock: malformed YAML throws (so safeParse skips it, no crash)", () => {
+	const fs = require("fs"), os = require("os");
+	const tmp = path.join(os.tmpdir(), `fad-pnpm-bad-${process.pid}.yaml`);
+	fs.writeFileSync(tmp, "lockfileVersion: '9.0'\npackages:\n  - [unbalanced\n");
+	assert.throws(() => parsePnpmLock(tmp), /pnpm-lock parse failed/);
+	fs.unlinkSync(tmp);
+});
+
+/* ---- yarn.lock v2+ (Berry) ---- */
+test("parseYarnBerry: parses YAML, multi-descriptor keys, skips @workspace local", () => {
+	const fs = require("fs");
+	const raw = fs.readFileSync(F("yarn-berry/yarn.lock"), "utf8");
+	const r = parseYarnBerry(raw, F("yarn-berry/yarn.lock"));
+	assert.equal(r.lockfileVersion, "berry");
+	assert.ok(!r.parseError);
+	const m = Object.fromEntries(r.deps.map(d => [d.name, d.version]));
+	assert.equal(m["lodash"], "4.17.21");
+	assert.equal(m["@babel/core"], "7.23.0");      // from "@babel/core@npm:^7.0.0, @babel/core@npm:^7.23.0"
+	assert.equal(m["@babel/types"], "7.23.0");
+	assert.equal(m["jest"], "29.7.0");
+	assert.ok(!("my-app" in m), "the @workspace local package must be skipped");
+});
+
+test("parseYarnBerry: malformed YAML sets parseError instead of throwing", () => {
+	const r = parseYarnBerry("__metadata:\n  version: 8\n\"a@npm:1\":\n  - [bad\n", "/tmp/yarn.lock");
+	assert.equal(r.lockfileVersion, "berry");
+	assert.ok(r.parseError, "parseError should be set");
+	assert.deepEqual(r.deps, []);
+});
+
+test("parseYarnLockV1 dispatches Berry lockfiles to the YAML parser (no longer unsupported)", () => {
+	const r = parseYarnLockV1(F("yarn-berry/yarn.lock"));
+	assert.equal(r.lockfileVersion, "berry");
+	assert.equal(r.unsupported, undefined);        // contract changed: now parsed
+	assert.ok(r.deps.length >= 4);
+});
+
+test("collectNpmDeps: Berry yarn.lock collected with ecosystemType=yarn", () => {
+	const map = collectNpmDeps(F("yarn-berry"), { verbose: false });
+	assert.ok(map.has("npm:lodash"));
+	assert.ok(map.has("npm:@babel/core"));
+	assert.equal(map.get("npm:lodash").ecosystemType, "yarn");
+	assert.equal(map.get("npm:lodash").lockType, "yarn-berry");
+	// no "yarn-berry-unsupported" warning anymore
+	assert.ok(!(map.warnings || []).find(w => w.type === "yarn-berry-unsupported"));
 });

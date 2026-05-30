@@ -24,10 +24,11 @@ lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configur
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
 lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser.
 lib/scan-completeness.js     Warnings for deps we couldn't fully resolve.
-lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 parsers.
+lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 + Berry, pnpm-lock.yaml (v5/6/9) parsers.
 lib/codecs/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
 lib/codecs/npm/registry.js          npm registry packument query → per-version deprecation + dist-tags.latest.
-lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/.
+lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/ (incl. retire findings + signatures).
+lib/deps-descriptor.js       Anonymized dep descriptor serialize/deserialize (PASSI offline→online round-trip).
 lib/config.js                Persistent user config in ~/.fad-checker/config.json (mode 0600).
 data/                        Curated JSON: known-obsolete, eol-mapping, cpe-coord-map, known-public-namespaces.
 completions/                 fad-checker.bash, fad-checker.zsh
@@ -170,7 +171,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 ## Testing
 
 ```bash
-npm test                          # full suite (194 tests)
+npm test                          # full suite (244 tests)
 node --test test/core.test.js     # one file
 ```
 

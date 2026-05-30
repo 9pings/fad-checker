@@ -1,0 +1,29 @@
+lockfileVersion: '6.0'
+
+dependencies:
+  axios:
+    specifier: ^1.6.0
+    version: 1.6.0
+
+devDependencies:
+  jest:
+    specifier: ^29.0.0
+    version: 29.0.0
+
+packages:
+
+  /axios@1.6.0:
+    resolution: {integrity: sha512-aaa}
+    dev: false
+
+  /follow-redirects@1.15.3:
+    resolution: {integrity: sha512-bbb}
+    dev: false
+
+  /jest@29.0.0:
+    resolution: {integrity: sha512-ccc}
+    dev: true
+
+  /@types/node@20.10.0:
+    resolution: {integrity: sha512-ddd}
+    dev: true

@@ -64,3 +64,15 @@ test("nuget codec: csproj uses CPM + skips floating with warning", async () => {
 	assert.ok(!deps.has("nuget:floating"));
 	assert.ok(warnings.find(w => w.type === "no-lockfile"));
 });
+test("nuget codec: detects + collects .fsproj (F#), attr + child Version, skips floating", async () => {
+	assert.strictEqual(nuget.detect(F("csharp-fsproj")), true);
+	const { deps } = await nuget.collect(F("csharp-fsproj"), {});
+	assert.strictEqual(deps.get("nuget:fsharp.core")?.version, "8.0.100");   // attribute Version
+	assert.strictEqual(deps.get("nuget:serilog")?.version, "3.1.1");         // child <Version>
+	assert.ok(!deps.has("nuget:floatingpkg"));                                // "2.*" skipped
+});
+test("nuget codec: detects + collects .vbproj (VB.NET)", async () => {
+	assert.strictEqual(nuget.detect(F("csharp-vbproj")), true);
+	const { deps } = await nuget.collect(F("csharp-vbproj"), {});
+	assert.strictEqual(deps.get("nuget:dapper")?.version, "2.1.24");
+});

@@ -81,6 +81,38 @@ fad-checker --import-cache fad-cache.tar.gz
 fad-checker --import-cache fad-cache.tar.gz --force            # replace existing without backup
 ```
 
+The cache archive bundles everything under `~/.fad-checker/` (except `config.json`),
+including retire.js findings **and** the warmed retire.js signature DB, so an importing
+machine can scan vendored JavaScript fully offline.
+
+## Anonymized descriptor (PASSI / air-gapped audits)
+
+For an offline/confidential system that can't reach the vuln databases, split the scan
+across machines while keeping **only public coordinates** off the secure enclave — no
+paths, URLs, hostnames or usernames. The detailed report is produced **back offline**.
+
+```bash
+# Phase 1 — OFFLINE (audited machine): export the anonymized descriptor, then stop.
+#   -e excludes private/internal packages (offline we can't classify private vs public).
+fad-checker -s ./proj -e "^(client|internal)\." --export-anonymized deps.json
+#   deps.json is plain JSON (schema "fad-deps/1") — review it before transfer.
+
+# Phase 2 — ONLINE (any machine, NO --src): warm the coordinate-keyed caches.
+fad-checker --import-anonymized deps.json     # OSV/NVD/CVE/registry/EOL + retire signatures
+fad-checker --export-cache fad-cache.tar.gz   # carry the warmed caches back
+
+# Phase 3 — OFFLINE (audited machine): full report with real paths/manifests.
+fad-checker --import-cache fad-cache.tar.gz
+fad-checker -s ./proj --offline               # re-collect locally + cache hits → full report
+```
+
+Why it works: fad-checker's caches are keyed by *coordinate* / *vuln id*, never by path,
+so warming them online and replaying offline yields cache hits. The descriptor keeps
+`ecosystem`/`ecosystemType`/`namespace`/`name`/`version`/`versions`/`scope`/`isDev` and
+drops manifest paths, registry URLs, integrity hashes and parent chains. The phase-2
+report is itself path-free; vendored-JS (retire.js) findings come from phase 3 (retire
+needs the actual `.js` files), using the signature DB warmed in phase 2.
+
 ## NVD API key
 
 NVD's public rate limit is 5 requests / 30s without a key. The free key bumps it to 50 / 30s — **10× faster** for the enrichment step.
@@ -160,21 +192,26 @@ fad-checker -s . --report-output reports/$(date +%F)
 diff reports/2026-04-01/cve-report.html reports/2026-05-01/cve-report.html
 ```
 
-### Air-gapped scan
+### Air-gapped scan (anonymized descriptor — PASSI)
 
-On a connected machine:
-
-```bash
-fad-checker -s ./dummy-empty-dir       # populates ~/.fad-checker/ caches
-fad-checker --export-cache fad-cache.tar.gz --include-config
-```
-
-Move `fad-cache.tar.gz` to the air-gapped box, then:
+The robust way: export an anonymized descriptor offline, warm caches online from it,
+re-scan offline. Only public coordinates ever leave the secure machine.
 
 ```bash
+# OFFLINE (audited machine)
+fad-checker -s ./real-project -e "^(client|internal)\." --export-anonymized deps.json
+
+# ONLINE (connected machine, no source needed)
+fad-checker --import-anonymized deps.json      # warms ~/.fad-checker/ caches from the coords
+fad-checker --export-cache fad-cache.tar.gz
+
+# OFFLINE again — full report with real paths
 fad-checker --import-cache fad-cache.tar.gz
 fad-checker -s ./real-project --offline
 ```
+
+See the **Anonymized descriptor** section above for what the descriptor contains and why
+the round-trip produces a complete report without leaking environment information.
 
 ### Monorepo with Maven + JS + vendored JS
 

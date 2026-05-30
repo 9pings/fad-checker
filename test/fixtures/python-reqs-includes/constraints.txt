@@ -1,0 +1,3 @@
+# constraints only pin versions; they don't add new packages
+requests==2.31.0
+numpy==1.26.0          # not required anywhere -> must NOT appear as a dep

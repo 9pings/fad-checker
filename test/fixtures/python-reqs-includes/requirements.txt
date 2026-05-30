@@ -1,0 +1,7 @@
+# top-level requirements
+-r base.txt
+-c constraints.txt
+requests>=2.0          # range, but pinned by constraints.txt -> scannable
+django==4.2.1
+flask>=2.0             # range, no constraint -> skipped
+-e .                   # editable, ignored (not counted)

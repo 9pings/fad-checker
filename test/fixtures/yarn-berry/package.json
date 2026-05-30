@@ -1,0 +1,12 @@
+{
+  "name": "my-app",
+  "version": "1.0.0",
+  "packageManager": "yarn@4.1.0",
+  "dependencies": {
+    "lodash": "^4.17.21",
+    "@babel/core": "^7.23.0"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  }
+}

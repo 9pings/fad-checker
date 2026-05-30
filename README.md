@@ -4,9 +4,9 @@
 
 `fad-checker` scans **Maven**, **npm**, **Yarn**, **Composer (PHP)**, **PyPI (Python)**, **NuGet (C#/.NET)** and **vendored JavaScript** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE, EOL, obsolete and outdated findings, plus per-ecosystem fix recipes.
 
-It runs against the source files alone. **No `mvn`, no `npm install`, no `composer install`, no `pip`, no `dotnet restore`, no Docker.** It reads `pom.xml`, `package-lock.json`, `yarn.lock`, `composer.lock`, `poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`/`requirements.txt`, and `packages.lock.json`/`*.csproj`/`packages.config` directly.
+It runs against the source files alone. **No `mvn`, no `npm install`, no `composer install`, no `pip`, no `dotnet restore`, no Docker.** It reads `pom.xml`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `composer.lock`, `poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`/`pyproject.toml`/`requirements.txt`, and `packages.lock.json`/`*.csproj`/`*.fsproj`/`*.vbproj`/`packages.config` directly.
 
-> **Supported ecosystems: Maven, npm, Yarn (v1), Composer, PyPI, NuGet.** Each is a self-contained **codec** (`lib/codecs/`) — adding another is adding a codec, no orchestrator surgery. Vendored JS (jQuery, Bootstrap, PDF.js, etc.) is also scanned via retire.js. Yarn v2/Berry and pnpm are not yet supported — they're surfaced as warnings in chapter 0 so you know they were skipped.
+> **Supported ecosystems: Maven, npm, Yarn (v1 + Berry/v2+), pnpm, Composer, PyPI, NuGet.** Each is a self-contained **codec** (`lib/codecs/`) — adding another is adding a codec, no orchestrator surgery. Vendored JS (jQuery, Bootstrap, PDF.js, etc.) is also scanned via retire.js.
 
 ---
 
@@ -18,11 +18,11 @@ Because it doesn't need anything you don't already have on disk:
 | --- | --- |
 | Maven installed | `pom.xml` files are parsed directly with xml2js. Properties, profiles and local BOMs are resolved in-process. Transitive deps fetched from Maven Central if `--transitive` (cached forever). |
 | `mvn dependency:tree` | Same as above. We walk the tree ourselves. |
-| `npm install` / a `node_modules/` | `package-lock.json` (v1/v2/v3) and `yarn.lock` v1 are parsed as text/JSON. Versions come from the lockfile — no installation. |
-| `yarn install` | Same. We read `yarn.lock` v1. |
+| `npm install` / a `node_modules/` | `package-lock.json` (v1/v2/v3), `yarn.lock` (v1 + Berry/v2+) and `pnpm-lock.yaml` (v5/v6/v9) are parsed as text/JSON/YAML. Versions come from the lockfile — no installation. |
+| `yarn install` / `pnpm install` | Same. We read `yarn.lock` (v1 + Berry) and `pnpm-lock.yaml` directly. |
 | `composer install` | `composer.lock` is parsed directly (concrete versions + transitive). `composer.json` alone → best-effort on pinned versions + warning. |
-| `pip` / `poetry` / a venv | `poetry.lock`, `Pipfile.lock`, `uv.lock`, `pdm.lock` are parsed for concrete versions; `requirements.txt` is best-effort on `==` pins. Names normalised per PEP 503. |
-| `dotnet restore` | `packages.lock.json` is parsed; otherwise `*.csproj` (+ `Directory.Packages.props` Central Package Management) and legacy `packages.config`, best-effort on pinned versions. |
+| `pip` / `poetry` / a venv | `poetry.lock`, `Pipfile.lock`, `uv.lock`, `pdm.lock` are parsed for concrete versions; `pyproject.toml` (PEP 621 + poetry) and `requirements.txt` (following `-r`/`-c` includes) are best-effort on exact pins. Names normalised per PEP 503. |
+| `dotnet restore` | `packages.lock.json` is parsed; otherwise `*.csproj`/`*.fsproj`/`*.vbproj` (+ `Directory.Packages.props` Central Package Management) and legacy `packages.config`, best-effort on pinned versions. |
 | `snyk` binary | Built-in CVE matching via 4 independent sources (see below). Snyk is *optional* (`--snyk`). |
 | A network connection | First run downloads CVE / OSV / EOL data; subsequent runs use cached copies (`--offline` to force). |
 
@@ -170,11 +170,11 @@ fad-checker --completion zsh  > ~/.zsh/completions/_fad-checker
 This is the surprising bit. The whole point is that you can run `fad-checker` against a *checkout* with no build environment.
 
 - **Maven** — `pom.xml` files are parsed with xml2js. Property substitution (`${jackson.version}`), parent inheritance, local BOM imports (`<scope>import</scope>`) and every profile are resolved in-process. Transitive deps are walked by fetching child POMs from Maven Central (cached forever — POMs are immutable). When the project uses an **external BOM** (`spring-boot-dependencies` etc.), the deps whose version comes from that BOM can't be resolved without `mvn` itself — those are surfaced in chapter 0 as "unresolved-versions" so you know what's missing.
-- **npm / Yarn** — `package-lock.json` (v1, v2, v3) and `yarn.lock` v1 are parsed directly. Lockfiles already contain every transitive version. No `node_modules/` traversal, no `npm install`.
+- **npm / Yarn / pnpm** — `package-lock.json` (v1, v2, v3), `yarn.lock` (v1 + Berry/v2+, via `js-yaml`) and `pnpm-lock.yaml` (v5/v6/v9, via `js-yaml`) are parsed directly. Lockfiles already contain every transitive version. No `node_modules/` traversal, no `npm install`.
 - **Composer (PHP)** — `composer.lock` (`packages` + `packages-dev`) gives concrete + transitive versions; `composer.json` alone is best-effort.
-- **PyPI (Python)** — `poetry.lock` / `Pipfile.lock` / `uv.lock` / `pdm.lock` are parsed (TOML via `smol-toml`, or JSON); `requirements.txt` is best-effort on `==` pins. Package names are PEP 503-normalised (`Flask-SQLAlchemy` → `flask-sqlalchemy`).
-- **NuGet (C#/.NET)** — `packages.lock.json` is authoritative; otherwise `*.csproj` `<PackageReference>` (resolving Central Package Management against `Directory.Packages.props`) and legacy `packages.config`. Ids are case-insensitive.
-- **Lockfile-first, best-effort fallback** — when a lockfile is present it wins. When it's absent, the loose manifest (`package.json` / `composer.json` / `requirements.txt` / `*.csproj`) is still parsed for its **pinned exact versions**, with ranges skipped and a `no-lockfile` warning in chapter 0 flagging the partial coverage.
+- **PyPI (Python)** — `poetry.lock` / `Pipfile.lock` / `uv.lock` / `pdm.lock` are parsed (TOML via `smol-toml`, or JSON); `pyproject.toml` (PEP 621 `[project]` + `[tool.poetry]`) and `requirements.txt` (following `-r`/`-c` includes recursively, with `-c` constraint pins applied to ranges) are best-effort on exact pins. Package names are PEP 503-normalised (`Flask-SQLAlchemy` → `flask-sqlalchemy`).
+- **NuGet (C#/.NET)** — `packages.lock.json` is authoritative; otherwise `*.csproj` / `*.fsproj` / `*.vbproj` `<PackageReference>` (resolving Central Package Management against `Directory.Packages.props`) and legacy `packages.config`. Ids are case-insensitive.
+- **Lockfile-first, best-effort fallback** — when a lockfile is present it wins. When it's absent, the loose manifest (`package.json` / `composer.json` / `pyproject.toml` / `requirements.txt` / `*.csproj`) is still parsed for its **pinned exact versions**, with ranges skipped and a `no-lockfile` warning in chapter 0 flagging the partial coverage.
 - **Vendored JavaScript** — `retire.js` shells out and scans `.js` / `.min.js` files by signature, catching old jQuery / Bootstrap / Angular / PDF.js copies that no lockfile knows about.
 - **CVE data** — three independent sources merged:
   - **CVEProject** (the canonical `cvelistV5` bundle, filtered to Maven-relevant entries)
@@ -198,6 +198,7 @@ All cached data lives in `~/.fad-checker/`:
 | Maven Central latest versions | `version-cache.json` | 24 h |
 | Transitive POMs from Maven Central | `poms-cache/<g>__<a>__<v>.pom` | ∞ (immutable) |
 | retire.js findings | `retire-cache/<md5(src)>.json` | 24 h |
+| retire.js signature DB | `retire-signatures/jsrepository-v5.json` | warmed online, used offline |
 | User config (NVD key) | `config.json` (mode 0600) | — |
 
 Export the lot to share between machines:
@@ -209,6 +210,53 @@ fad-checker --import-cache fad-cache.tar.gz
 ```
 
 `--include-config` ships the NVD API key too (off by default).
+
+> The cache export bundles **everything** under `~/.fad-checker/` (except `config.json`),
+> including the retire.js findings **and** the warmed retire.js signature DB — so a
+> machine that imports it can scan vendored JavaScript fully offline.
+
+---
+
+## Air-gapped / PASSI audits: anonymized dependency descriptor
+
+When the audited system is **offline / confidential** (typical of a PASSI engagement) it
+can't reach OSV / NVD / Maven Central / npm. Split the work across machines while keeping
+**zero environment information** off the secure enclave: an anonymized descriptor carries
+only **public package coordinates** — no filesystem paths, no registry URLs, no
+hostnames/usernames — and the **detailed report is produced back on the offline machine**.
+
+The transfer relies on a property of fad-checker's caches: they are keyed by *coordinate*
+or *vuln id*, never by path, so they are **machine-independent**. The online step just
+**warms the caches**; the offline step replays the scan and gets cache hits.
+
+```bash
+# ── Phase 1 — OFFLINE (audited machine): export the anonymized descriptor ──
+# Exclude private/internal packages with -e (offline we can't tell private from public).
+fad-checker -s ./proj -e "^(client|internal)\." --export-anonymized deps.json
+#   → deps.json: public coordinates only. Review it before it leaves the enclave.
+
+# ── Phase 2 — ONLINE (any machine, no source needed): warm the caches ──
+fad-checker --import-anonymized deps.json     # scans coordinates → OSV/NVD/CVE/registry/EOL + retire signatures
+fad-checker --export-cache fad-cache.tar.gz   # bundle the warmed ~/.fad-checker/
+
+# ── Phase 3 — OFFLINE (audited machine): full report, all local context ──
+fad-checker --import-cache fad-cache.tar.gz
+fad-checker -s ./proj --offline               # re-collect locally (real paths) + cache hits
+#   → full HTML/.doc report with manifests & structure, generated inside the enclave.
+```
+
+What the descriptor (`fad-deps/1`) contains vs. drops:
+
+| Kept (needed to scan) | Dropped (environment) |
+| --- | --- |
+| ecosystem, ecosystemType | manifest paths / pom paths |
+| namespace, name | resolved registry URLs |
+| version, versions | integrity hashes |
+| scope, isDev | parent chains, lockfile type |
+
+The online phase report is itself path-free; vendored-JavaScript (retire.js) findings are
+produced **offline in phase 3**, since retire needs the actual `.js` files — its signature
+DB is warmed online (phase 2) and carried by `--export-cache`.
 
 ---
 

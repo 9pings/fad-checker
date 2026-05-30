@@ -7,7 +7,7 @@ Code-level orientation for contributors and Claude Code sessions on this repo.
 `fad-checker` — **Fucking Autonomous Dependency Checker**. Node.js CLI (`fad-checker`, or short alias `fad`) that:
 
 1. Walks a multi-module Maven tree, removes private/excluded dependencies (regex on groupId), writes a parallel directory of "cleaned" POMs that can be fed to Snyk.
-2. Walks every JS package (`package.json` + `package-lock.json` v1/v2/v3 or `yarn.lock` v1), every PHP package (`composer.lock`, or `composer.json` best-effort), and every Python project (`poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`, or `requirements.txt` best-effort), and every .NET project (`packages.lock.json`, or `*.csproj`+`Directory.Packages.props`/`packages.config` best-effort) in the same source tree. Each ecosystem is a **codec** (`lib/codecs/`): maven, npm, yarn, composer, pypi, nuget. Adding one is adding a codec.
+2. Walks every JS package (`package.json` + `package-lock.json` v1/v2/v3, `yarn.lock` v1 **or Berry/v2+**, or `pnpm-lock.yaml` v5/v6/v9), every PHP package (`composer.lock`, or `composer.json` best-effort), and every Python project (`poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`, or `pyproject.toml`/`requirements.txt` best-effort), and every .NET project (`packages.lock.json`, or `*.csproj`/`*.fsproj`/`*.vbproj`+`Directory.Packages.props`/`packages.config` best-effort) in the same source tree. Each ecosystem is a **codec** (`lib/codecs/`): maven, npm, yarn, composer, pypi, nuget. Adding one is adding a codec.
 3. Scans the union against:
    - the CVEProject `cvelistV5` Maven-relevant index (built locally),
    - OSV.dev (multi-ecosystem),
@@ -24,7 +24,7 @@ No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` /
 
 ```bash
 npm install
-npm test                  # 194 unit tests via node --test
+npm test                  # 244 unit tests via node --test
 
 # basic cleanup workflow
 node fad-checker.js -s ./proj                                        # read-only, full report
@@ -62,10 +62,10 @@ lib/codecs/composer.codec.js   Composer (PHP) codec.
 lib/codecs/composer/parse.js        composer.lock + composer.json parsers.
 lib/codecs/composer/registry.js     Packagist query → latest stable + `abandoned` flag.
 lib/codecs/pypi.codec.js     PyPI (Python) codec.
-lib/codecs/pypi/parse.js          poetry.lock/Pipfile.lock/uv.lock/pdm.lock (smol-toml) + requirements.txt parsers (PEP 503).
+lib/codecs/pypi/parse.js          poetry.lock/Pipfile.lock/uv.lock/pdm.lock (smol-toml) + pyproject.toml (PEP 621/poetry) + requirements.txt (recursive -r/-c) parsers (PEP 503).
 lib/codecs/pypi/registry.js       PyPI JSON query → latest + yanked + inactive classifier.
 lib/codecs/nuget.codec.js    NuGet (C#/.NET) codec.
-lib/codecs/nuget/parse.js           packages.lock.json + *.csproj (+CPM Directory.Packages.props) + packages.config parsers.
+lib/codecs/nuget/parse.js           packages.lock.json + *.csproj/*.fsproj/*.vbproj (+CPM Directory.Packages.props) + packages.config parsers.
 lib/codecs/nuget/registry.js        NuGet registration query → latest stable + per-version deprecation.
 lib/dep-record.js            makeDepRecord(): generalized depRecord ({ ecosystem, namespace, name, coordKey, … }).
 lib/core.js                  POM parsing, parent resolution, all-profile merge, rewrite.
@@ -81,10 +81,11 @@ lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configur
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
 lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser.
 lib/scan-completeness.js     Warnings for deps fad-checker couldn't fully resolve.
-lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 parsers.
+lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 + Berry, pnpm-lock.yaml (v5/6/9) parsers.
 lib/codecs/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
 lib/codecs/npm/registry.js          npm registry packument query → per-version deprecation + dist-tags.latest (npm EOL feeds via lib/outdated.js).
-lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/.
+lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/ (incl. retire findings + signatures).
+lib/deps-descriptor.js       Anonymized dep descriptor serialize/deserialize (PASSI offline→online round-trip).
 lib/config.js                Persistent user config in ~/.fad-checker/config.json (mode 0600).
 data/                        known-obsolete.json, eol-mapping.json, cpe-coord-map.json, known-public-namespaces.json
 completions/                 fad-checker.bash, fad-checker.zsh
@@ -106,11 +107,12 @@ For the deep dive — pipeline stages, the resolved-deps Map shape, report struc
 - **npm no-lockfile = best-effort (not skipped)**: `package.json` without a sibling `package-lock.json`/`yarn.lock` is parsed best-effort — pinned exact versions (`"1.2.3"`) are scanned, ranges (`"^1.0.0"`) are skipped, and a `no-lockfile` warning (chapter 0) flags the partial coverage. (Earlier versions skipped such manifests entirely.)
 - **`--ecosystem` is a list**: `auto` (default = `detectCodecs()`) | `all` | comma list `maven,npm,nuget,composer,pypi` (legacy `both`/`maven`/`npm` still parse). Per-codec opt-out via `--no-maven`/`--no-npm`/`--no-yarn`/`--no-nuget`/`--no-composer`/`--no-pypi`; `--no-js` is an alias for `--no-npm`+`--no-yarn`.
 - **Source identifiers**: every match carries `source: "fad" | "osv" | "nvd" | "snyk" | "retire"` (or a `+`-joined combination).
+- **Anonymized descriptor (PASSI offline→online)**: `--export-anonymized <f>` (offline, needs `-s`) serializes the collected `resolved` Map to a flat `fad-deps/1` JSON keeping only public coordinates (`ecosystem`/`ecosystemType`/`namespace`/`name`/`version`/`versions`/`scope`/`isDev`) — **strips** paths, registry URLs, integrity, parent chains — then exits. `--import-anonymized <f>` (online, **no `-s`**) rebuilds the Map (empty `manifestPaths`, recomputed `coordKey`) via `lib/deps-descriptor.js` and runs `runReportFlow` to **warm the coordinate-keyed caches**. Round-trip = export (offline) → import + `--export-cache` (online) → `--import-cache` + normal `--offline -s ./proj` (offline) for the full path-bearing report. Private/public sorting is the auditor's job via `-e` (offline can't check Maven Central). `--import-anonymized` keeps the report path-free (`projectInfo.src` = withheld).
 
 ## Testing
 
 ```bash
-node --test test/*.test.js            # full suite (96 tests)
+node --test test/*.test.js            # full suite (244 tests)
 node --test test/core.test.js         # one file
 ```
 
@@ -131,6 +133,7 @@ Test fixtures live in `test/fixtures/`:
 - The cleaned POM is the union of every profile's deps. Counts will be larger than the source POM. Intentional — don't "fix" that.
 - Unresolved `${…}` Maven variables stay verbatim in the rewritten POM. `lib/cve-match.js` resolves them lazily via `resolveDepVersion()` when scanning. Deps that *still* can't be resolved (external BOM not in source tree) surface in chapter 0 as `unresolved-versions` warnings.
 - **retire.js** doesn't like `--outputpath /dev/stdout`. We write to a temp file and read it back. Exit code 13 means "vulns found" — expected, not an error.
+- **retire.js signatures live in `~/.fad-checker/retire-signatures/jsrepository-v5.json`** (not retire's default `/tmp/.retire-cache`, whose 1 h TTL would force a network refetch). We pass them via `--jsrepo <file>` so retire loads from disk — **no network, no TTL**. `warmRetireSignatures()` fetches them online; `--export-cache` bundles them so phase-3 offline JS scanning works. retire is **offline-only** in the PASSI flow (it needs the actual `.js` files, absent online) and its findings cache stays path-keyed (`md5(srcDir)`), which is fine since it only runs on the same offline machine/path. With no source dir (`--import-anonymized`), `runRetire` returns `null` (nothing to scan).
 
 ### Per-cache TTLs
 
@@ -145,3 +148,4 @@ Test fixtures live in `test/fixtures/`:
 | npm registry (deprecation + latest) | `~/.fad-checker/npm-registry-cache.json` | 24 h |
 | Transitive POM | `~/.fad-checker/poms-cache/<g>__<a>__<v>.pom` | ∞ (immutable on Maven Central) |
 | retire.js findings | `~/.fad-checker/retire-cache/<md5(src)>.json` | 24 h |
+| retire.js signatures | `~/.fad-checker/retire-signatures/jsrepository-v5.json` | warmed online, reused offline via `--jsrepo` |
