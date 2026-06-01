@@ -1,6 +1,6 @@
 {
   "name": "fad-checker",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Scan ALL Maven, npm, Yarn, Composer, Python & C#/.NET dependencies in a source tree ONE SHOT without mvn/python/etc, deal with private deps, multi mvn modules, EOL, obsolete, outdated deps & give fix recos",
   "keywords": [
     "sca",
