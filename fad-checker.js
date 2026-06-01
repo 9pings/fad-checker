@@ -825,6 +825,28 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	ui.section("Report");
 	ui.ok(chalk.white(htmlPath));
 	ui.ok(chalk.white(docPath));
+
+	// Machine-readable exports (CycloneDX SBOM / CSAF VEX). Use the full match set
+	// (prod + dev + cpe-filtered) so the artifacts are complete; cpeFiltered is
+	// marked as a property/flag rather than dropped.
+	if (options.exportSbom) {
+		try {
+			const { writeCycloneDx } = require("./lib/sbom-export");
+			writeCycloneDx(resolved, cveMatches, options.exportSbom, {
+				projectInfo, toolVersion: pkg.version, timestamp: projectInfo.generatedAt, licenseResults,
+			});
+			ui.ok(`CycloneDX SBOM → ${chalk.white(options.exportSbom)}`);
+		} catch (err) { ui.warn(`SBOM export failed: ${err.message}`); }
+	}
+	if (options.exportCsaf) {
+		try {
+			const { writeCsaf } = require("./lib/csaf-export");
+			writeCsaf(resolved, cveMatches, options.exportCsaf, {
+				projectInfo, toolVersion: pkg.version, timestamp: projectInfo.generatedAt,
+			});
+			ui.ok(`CSAF 2.0 VEX → ${chalk.white(options.exportCsaf)}`);
+		} catch (err) { ui.warn(`CSAF export failed: ${err.message}`); }
+	}
 	console.log();
 }
 
