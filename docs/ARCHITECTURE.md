@@ -6,10 +6,12 @@ This is the deep-dive for anyone modifying `fad-checker`'s internals or wonderin
 
 ```
 fad-checker.js                 Thin CLI: commander parsing + orchestration (loops over active codecs).
-lib/codecs/                  Per-ecosystem codecs (maven, npm, yarn, composer, pypi, nuget) + registry + select + recipes (see "Codecs" below).
+lib/codecs/                  Per-ecosystem codecs (maven, npm, yarn, composer, pypi, nuget, go, ruby) + registry + select + recipes (see "Codecs" below).
 lib/codecs/composer/                composer.lock/composer.json parsers + Packagist registry (PHP codec internals).
 lib/codecs/pypi/                  poetry/pipfile/uv/pdm/requirements parsers + PyPI registry (Python codec internals).
 lib/codecs/nuget/                   packages.lock.json/csproj/packages.config parsers + NuGet registry (.NET codec internals).
+lib/codecs/go/                    go.mod/go.sum parsers + Go module-proxy registry (Go codec internals).
+lib/codecs/ruby/                  Gemfile.lock parser + RubyGems registry (Ruby codec internals).
 lib/dep-record.js            makeDepRecord(): the generalized depRecord shared by all codecs.
 lib/core.js                  POM parsing, parent resolution, all-profile merge, rewrite.
 lib/maven-version.js         Maven version parsing + range comparison (no external deps).
@@ -29,6 +31,10 @@ lib/maven-license.js         Network-free Maven license from cached POMs.
 lib/purl.js                  Package-URL builder per ecosystem. Pure.
 lib/sbom-export.js           CycloneDX 1.6 SBOM (vulnerabilities inline). Pure builder + writer.
 lib/csaf-export.js           CSAF 2.0 VEX (csaf_vex). Pure builder + writer.
+lib/sarif-export.js          SARIF 2.1.0 log (rule per CVE + manifest locations). Pure builder + writer.
+lib/json-export.js           Flat findings JSON (all chapters + summary). Pure builder + writer.
+lib/gate.js                  evaluateGate(matches, level) → CI exit-code decision. Pure.
+lib/suppress.js              Triage: --ignore rules + --vex (CSAF) ingestion → suppress matches. Pure.
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
 lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser.
 lib/scan-completeness.js     Warnings for deps we couldn't fully resolve.
@@ -183,7 +189,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 ## Testing
 
 ```bash
-npm test                          # full suite (294 tests)
+npm test                          # full suite (319 tests)
 node --test test/core.test.js     # one file
 ```
 

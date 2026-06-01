@@ -7,7 +7,7 @@ Code-level orientation for contributors and Claude Code sessions on this repo.
 `fad-checker` — **Fucking Autonomous Dependency Checker**. Node.js CLI (`fad-checker`, or short alias `fad`) that:
 
 1. Walks a multi-module Maven tree, removes private/excluded dependencies (regex on groupId), writes a parallel directory of "cleaned" POMs that can be fed to Snyk.
-2. Walks every JS package (`package.json` + `package-lock.json` v1/v2/v3, `yarn.lock` v1 **or Berry/v2+**, or `pnpm-lock.yaml` v5/v6/v9), every PHP package (`composer.lock`, or `composer.json` best-effort), and every Python project (`poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`, or `pyproject.toml`/`requirements.txt` best-effort), and every .NET project (`packages.lock.json`, or `*.csproj`/`*.fsproj`/`*.vbproj`+`Directory.Packages.props`/`packages.config` best-effort) in the same source tree. Each ecosystem is a **codec** (`lib/codecs/`): maven, npm, yarn, composer, pypi, nuget. Adding one is adding a codec.
+2. Walks every JS package (`package.json` + `package-lock.json` v1/v2/v3, `yarn.lock` v1 **or Berry/v2+**, or `pnpm-lock.yaml` v5/v6/v9), every PHP package (`composer.lock`, or `composer.json` best-effort), and every Python project (`poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`, or `pyproject.toml`/`requirements.txt` best-effort), and every .NET project (`packages.lock.json`, or `*.csproj`/`*.fsproj`/`*.vbproj`+`Directory.Packages.props`/`packages.config` best-effort), every Go module (`go.mod`/`go.sum`) and every Ruby app (`Gemfile.lock`) in the same source tree. Each ecosystem is a **codec** (`lib/codecs/`): maven, npm, yarn, composer, pypi, nuget, go, ruby. Adding one is adding a codec.
 3. Scans the union against:
    - the CVEProject `cvelistV5` Maven-relevant index (built locally),
    - OSV.dev (multi-ecosystem),
@@ -17,7 +17,8 @@ Code-level orientation for contributors and Claude Code sessions on this repo.
    - optionally Snyk (`--snyk`).
 4. Cross-checks every match's NVD CPE configurations against the dep version (`lib/cpe.js`) to filter false positives, then computes a **composite priority** per match (`lib/priority.js`): KEV (exploited) > EPSS-weighted CVSS, exposed as a band + score and used to sort the report.
 5. Reports EOL frameworks (endoflife.date — Maven & npm), obsolete libs (curated Maven + npm-registry per-version `deprecated` field — authoritative, skips nothing), outdated libs (Maven Central + npm registry `dist-tags.latest`), and **licenses** (`lib/license-policy.js`): each dep's license is normalised to SPDX and classified (permissive / weak / strong / network copyleft / proprietary / unknown), with copyleft & unknown flagged. **WebJars** (`org.webjars*`) are reduced to their npm coordinate by `webjarToNpm()` and run through the npm EOL/deprecation/outdated paths — so e.g. `org.webjars:angularjs:1.8.3` is flagged EOL.
-6. Produces a self-contained HTML report + Word-compatible `.doc`, organised by ecosystem and by defining manifest, with a Priority column, a Licenses chapter, per-tool fix recipes and an executive summary. Also exports machine-readable **CycloneDX 1.6 SBOM** (vulnerabilities inline, `--export-sbom`) and **CSAF 2.0 VEX** (`--export-csaf`).
+6. Produces a self-contained HTML report + Word-compatible `.doc`, organised by ecosystem and by defining manifest, with a Priority column, a Licenses chapter, per-tool fix recipes and an executive summary. Also exports machine-readable **CycloneDX 1.6 SBOM** (vulnerabilities inline, `--export-sbom`), **CSAF 2.0 VEX** (`--export-csaf`), a flat **findings JSON** (`--export-json`) and a **SARIF 2.1.0** log for GitHub/GitLab code scanning (`--export-sarif`).
+7. CI-friendly: `--fail-on <low|medium|high|critical|kev>` sets a non-zero exit code (KEV = fail only on known-exploited). Triage with `--ignore <file>` (CVE/coord/glob rules) and `--vex <file>` (ingest a CSAF VEX) suppresses accepted-risk / false-positive findings from the report + gate while keeping them flagged in the exports.
 
 No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` / `package-lock.json` / `yarn.lock` are parsed directly.
 
@@ -25,7 +26,7 @@ No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` /
 
 ```bash
 npm install
-npm test                  # 294 unit tests via node --test
+npm test                  # 319 unit tests via node --test
 
 # basic cleanup workflow
 node fad-checker.js -s ./proj                                        # read-only, full report
@@ -68,6 +69,8 @@ lib/codecs/pypi/registry.js       PyPI JSON query → latest + yanked + inactive
 lib/codecs/nuget.codec.js    NuGet (C#/.NET) codec.
 lib/codecs/nuget/parse.js           packages.lock.json + *.csproj/*.fsproj/*.vbproj (+CPM Directory.Packages.props) + packages.config parsers.
 lib/codecs/nuget/registry.js        NuGet registration query → latest stable + per-version deprecation.
+lib/codecs/go.codec.js       Go codec (go.mod/go.sum). go/parse.js (require+indirect, go.sum fallback) + go/registry.js (proxy.golang.org @latest).
+lib/codecs/ruby.codec.js     Ruby codec (Gemfile.lock). ruby/parse.js (GEM specs) + ruby/registry.js (rubygems gems/<g>.json → latest + licenses).
 lib/dep-record.js            makeDepRecord(): generalized depRecord ({ ecosystem, namespace, name, coordKey, … }).
 lib/core.js                  POM parsing, parent resolution, all-profile merge, rewrite.
 lib/maven-version.js         Maven version parsing + range comparison (no external deps).
@@ -83,6 +86,10 @@ lib/maven-license.js         Network-free Maven license detection from cached PO
 lib/purl.js                  Package-URL (purl) builder per ecosystem. Pure. Shared by the exporters.
 lib/sbom-export.js           CycloneDX 1.6 SBOM (components + vulnerabilities inline / VDR). Pure builder + writer.
 lib/csaf-export.js           CSAF 2.0 VEX (csaf_vex) document. Pure builder + writer.
+lib/sarif-export.js          SARIF 2.1.0 log (rule per CVE, security-severity, manifest locations). Pure builder + writer.
+lib/json-export.js           Flat findings JSON (all chapters + summary, diff-friendly). Pure builder + writer.
+lib/gate.js                  evaluateGate(matches, level): CI exit-code decision (none|…|critical|kev). Pure.
+lib/suppress.js              Triage: parse --ignore rules + --vex (CSAF) → suppress matches. Pure.
 lib/outdated.js              EOL (endoflife.date), obsolete (curated), outdated (Maven Central).
 lib/transitive.js            Maven Central POM walker (transitive resolution).
 lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
@@ -114,14 +121,16 @@ For the deep dive — pipeline stages, the resolved-deps Map shape, report struc
 - **Map keys are ecosystem-namespaced** (`dep.coordKey`): Maven uses a **bare** `g:a` (kept prefix-free so `transitive.js` internals and existing tests are untouched); npm uses `npm:name`; new ecosystems use `nuget:`/`composer:vendor/pkg`/`pypi:`. Bare `g:a` is collision-free against those prefixes. Built by `makeDepRecord()`; `groupId`/`artifactId`/`pomPaths` are kept as real duplicated alias fields (not getters — depRecords are spread in hot paths).
 - **Every distinct version is scanned, not just the highest**: when profiles/modules pin the same `g:a` to different versions, the resolved-dep entry keeps `version` = highest (representative for display/EOL/outdated) but `versions` = all distinct concrete versions. CVE matching (`matchOne`) and OSV (`queryOsvForDeps`) iterate `versions` so a vuln affecting only a lower-versioned profile variant isn't missed. Match dedup keys are `g:a:version|cve.id` (version included) to preserve per-version findings.
 - **npm no-lockfile = best-effort (not skipped)**: `package.json` without a sibling `package-lock.json`/`yarn.lock` is parsed best-effort — pinned exact versions (`"1.2.3"`) are scanned, ranges (`"^1.0.0"`) are skipped, and a `no-lockfile` warning (chapter 0) flags the partial coverage. (Earlier versions skipped such manifests entirely.)
-- **`--ecosystem` is a list**: `auto` (default = `detectCodecs()`) | `all` | comma list `maven,npm,nuget,composer,pypi` (legacy `both`/`maven`/`npm` still parse). Per-codec opt-out via `--no-maven`/`--no-npm`/`--no-yarn`/`--no-nuget`/`--no-composer`/`--no-pypi`; `--no-js` is an alias for `--no-npm`+`--no-yarn`.
+- **`--ecosystem` is a list**: `auto` (default = `detectCodecs()`) | `all` | comma list `maven,npm,nuget,composer,pypi` (legacy `both`/`maven`/`npm` still parse). Per-codec opt-out via `--no-maven`/`--no-npm`/`--no-yarn`/`--no-nuget`/`--no-composer`/`--no-pypi`/`--no-go`/`--no-ruby`; `--no-js` is an alias for `--no-npm`+`--no-yarn`.
+- **CI gating & triage**: `--fail-on <low|medium|high|critical|kev>` (`lib/gate.js`) sets `process.exitCode = 1` after all reports/exports are written, gating on `prodActive` (non-dev, non-cpeFiltered, non-suppressed); `kev` fails only on a CISA-known-exploited finding. `--ignore <file>` (CVE id / coord-glob / `# reason` per line) and `--vex <file>` (CSAF `known_not_affected`/`fixed`, products mapped to coords by purl) mark matches `suppressed` (`lib/suppress.js`) — dropped from the report chapters + gate, retained & flagged in the JSON/SBOM/CSAF/SARIF exports, noted in chapter 0.
+- **SARIF / JSON exports** (`--export-sarif` / `--export-json`): machine-readable findings. SARIF 2.1.0 carries one rule per CVE with `security-severity` (GitHub Code Scanning) + manifest `locations`; the JSON is fad's own flat all-chapters format for diffing between audits.
 - **Source identifiers**: every match carries `source: "fad" | "osv" | "nvd" | "snyk" | "retire"` (or a `+`-joined combination).
 - **Anonymized descriptor (PASSI offline→online)**: `--export-anonymized <f>` (offline, needs `-s`) serializes the collected `resolved` Map to a flat `fad-deps/1` JSON keeping only public coordinates (`ecosystem`/`ecosystemType`/`namespace`/`name`/`version`/`versions`/`scope`/`isDev`) — **strips** paths, registry URLs, integrity, parent chains — then exits. `--import-anonymized <f>` (online, **no `-s`**) rebuilds the Map (empty `manifestPaths`, recomputed `coordKey`) via `lib/deps-descriptor.js` and runs `runReportFlow` to **warm the coordinate-keyed caches**. Round-trip = export (offline) → import + `--export-cache` (online) → `--import-cache` + normal `--offline -s ./proj` (offline) for the full path-bearing report. Private/public sorting is the auditor's job via `-e` (offline can't check Maven Central). `--import-anonymized` keeps the report path-free (`projectInfo.src` = withheld).
 
 ## Testing
 
 ```bash
-node --test test/*.test.js            # full suite (294 tests)
+node --test test/*.test.js            # full suite (319 tests)
 node --test test/core.test.js         # one file
 ```
 
@@ -158,6 +167,8 @@ Test fixtures live in `test/fixtures/`:
 | endoflife.date cycles | `~/.fad-checker/eol-cache.json` | 7 d |
 | Maven Central latest | `~/.fad-checker/version-cache.json` | 24 h |
 | npm registry (deprecation + latest) | `~/.fad-checker/npm-registry-cache.json` | 24 h |
+| Go module proxy (latest) | `~/.fad-checker/go-proxy-cache.json` | 24 h |
+| RubyGems (latest + licenses) | `~/.fad-checker/rubygems-cache.json` | 24 h |
 | Transitive POM | `~/.fad-checker/poms-cache/<g>__<a>__<v>.pom` | ∞ (immutable on Maven Central) |
 | retire.js findings | `~/.fad-checker/retire-cache/<md5(src)>.json` | 24 h |
 | retire.js signatures | `~/.fad-checker/retire-signatures/jsrepository-v5.json` | warmed online, reused offline via `--jsrepo` |

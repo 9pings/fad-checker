@@ -22,8 +22,9 @@ By default the HTML + Word reports land in `./fad-checker-report/`. Override wit
 fad-checker -s .
 
 # Pick ecosystems (codecs). --ecosystem is a list: auto (default) | all | comma list.
+# Codec ids: maven, npm, yarn, composer, pypi, nuget, go, ruby.
 fad-checker -s . --ecosystem maven            # Maven only
-fad-checker -s . --ecosystem maven,npm        # both, even if only one is auto-detected
+fad-checker -s . --ecosystem maven,npm,go     # several, even if only one is auto-detected
 fad-checker -s . --ecosystem all              # every supported codec
 fad-checker -s . --ecosystem both             # legacy alias for maven,npm
 
@@ -31,6 +32,7 @@ fad-checker -s . --ecosystem both             # legacy alias for maven,npm
 fad-checker -s . --no-npm                     # skip npm
 fad-checker -s . --no-js                      # alias: skip npm + yarn (Maven-only)
 fad-checker -s . --no-pypi --no-nuget         # skip Python + C#
+fad-checker -s . --no-go --no-ruby            # skip Go + Ruby
 ```
 
 > **npm without a lockfile**: a `package.json` lacking a sibling
@@ -74,12 +76,30 @@ In addition to the HTML/`.doc` report, the run can emit standards-based artifact
 | --- | --- |
 | `--export-sbom <file>` | Write a **CycloneDX 1.6** SBOM with `vulnerabilities` inline (a VDR). Components carry purls + detected licenses; vulnerabilities carry CVSS ratings, CWEs, affected purls, and `fad:epss` / `fad:kev` / `fad:priorityBand` properties. |
 | `--export-csaf <file>` | Write a **CSAF 2.0 VEX** (`csaf_vex`) document: a `product_tree` of every dep (purl-identified) plus per-CVE `product_status.known_affected`, `cvss_v3` scores, a KEV `exploited` flag, and prioritization notes. |
+| `--export-json <file>` | Write a flat **findings JSON** (fad's own format): every chapter (CVE/EOL/obsolete/outdated/licenses/vendored) + a summary, easy to diff between audits and post-process. |
+| `--export-sarif <file>` | Write a **SARIF 2.1.0** log for GitHub Code Scanning / GitLab: one rule per CVE with `security-severity` (drives GitHub's severity), KEV tags, and the manifest file as the result location. |
 
 ```bash
-fad-checker -s ./proj --export-sbom sbom.cdx.json --export-csaf vex.csaf.json
+fad-checker -s ./proj --export-sbom sbom.cdx.json --export-csaf vex.csaf.json \
+                      --export-json findings.json --export-sarif findings.sarif
 ```
 
-Both honour `--offline` (they render from whatever the scan already resolved).
+All honour `--offline` (they render from whatever the scan already resolved).
+
+## CI gating & triage
+
+| Flag | Effect |
+| --- | --- |
+| `--fail-on <level>` | Exit non-zero when a **production** finding meets the level: `low`/`medium`/`high`/`critical` (severity) or `kev` (only CISA-known-exploited). Default `none`. Reports/exports are written first, so artifacts always land. |
+| `--ignore <file>` | Suppress findings. One rule per line: `CVE-2021-44228` (anywhere), `CVE-… org.apache.*` (coord/purl glob), `* npm:lodash` (any CVE for a coord); text after `#` is the reason. |
+| `--vex <file>` | Ingest a **CSAF VEX**: CVEs marked `known_not_affected` / `fixed` are suppressed (products mapped back to coords by purl — round-trips fad's own `--export-csaf`). |
+
+Suppressed findings are dropped from the report chapters and from `--fail-on`, but kept (flagged `suppressed`) in the JSON/SBOM/CSAF/SARIF exports, and the count is noted in chapter 0.
+
+```bash
+# Fail the pipeline only on exploited-in-the-wild vulns, minus accepted risks
+fad-checker -s . --fail-on kev --ignore .fadignore --export-sarif fad.sarif
+```
 
 ## Offline / cache control
 
