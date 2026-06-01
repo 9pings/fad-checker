@@ -37,7 +37,7 @@ Because it doesn't need anything you don't already have on disk:
 | `snyk` binary | Built-in CVE matching via CVEProject + OSV + NVD (merged), prioritised with EPSS + CISA KEV (see below). Snyk is *optional* (`--snyk`). |
 | A network connection | First run downloads CVE / OSV / EOL data; subsequent runs use cached copies (`--offline` to force). |
 
-Exactly **two** runtime dependencies must be on PATH (or installed automatically through npm): Node ≥ 20 and `retire` (the npm package, installed by `npm install`). Everything else is bundled or fetched lazily.
+Exactly **one** runtime dependencies must be on PATH (or installed automatically through npm): Node ≥ 20. Everything else is bundled or fetched lazily.
 
 ---
 
