@@ -178,6 +178,11 @@ program
 	.option("--no-kev", "skip CISA KEV (known-exploited) enrichment")
 	.option("--export-sbom <file>", "write a CycloneDX 1.6 SBOM (with vulnerabilities inline) to <file>")
 	.option("--export-csaf <file>", "write a CSAF 2.0 VEX document to <file>")
+	.option("--export-json <file>", "write a flat machine-readable findings JSON to <file>")
+	.option("--export-sarif <file>", "write a SARIF 2.1.0 log (GitHub/GitLab code scanning) to <file>")
+	.option("--fail-on <level>", "exit non-zero if a production finding meets <level>: low|medium|high|critical|kev|none", "none")
+	.option("--ignore <file>", "suppress findings listed in <file> (CVE ids / coords / globs, one per line)")
+	.option("--vex <file>", "ingest a CSAF VEX: suppress CVEs marked not_affected/fixed")
 	.option("--no-licenses", "skip license detection + copyleft policy check")
 	.option("--offline", "no network: use cached CVE/OSV/NVD/EPSS/KEV/POM data only")
 	.option("--set-nvd-key <key>", "save NVD API key to ~/.fad-checker/config.json (10× faster NVD enrichment)")
@@ -847,7 +852,39 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			ui.ok(`CSAF 2.0 VEX → ${chalk.white(options.exportCsaf)}`);
 		} catch (err) { ui.warn(`CSAF export failed: ${err.message}`); }
 	}
+	if (options.exportJson) {
+		try {
+			const { writeFindings } = require("./lib/json-export");
+			writeFindings({
+				cveMatches, retireMatches, eolResults, obsoleteResults, outdatedResults,
+				licenseResults, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version,
+			}, options.exportJson);
+			ui.ok(`Findings JSON → ${chalk.white(options.exportJson)}`);
+		} catch (err) { ui.warn(`JSON export failed: ${err.message}`); }
+	}
+	if (options.exportSarif) {
+		try {
+			const { writeSarif } = require("./lib/sarif-export");
+			// SARIF carries CVE matches (prod + dev), suppressed/cpeFiltered flagged in properties.
+			writeSarif(cveMatches.filter(m => !m.suppressed), options.exportSarif, { projectInfo, toolVersion: pkg.version });
+			ui.ok(`SARIF → ${chalk.white(options.exportSarif)}`);
+		} catch (err) { ui.warn(`SARIF export failed: ${err.message}`); }
+	}
 	console.log();
+
+	// CI gating — set a non-zero exit code (after all reports/exports are written)
+	// when a production finding meets the --fail-on threshold.
+	if (options.failOn && options.failOn !== "none") {
+		const { evaluateGate } = require("./lib/gate");
+		const gate = evaluateGate(prodActive, options.failOn);
+		if (gate.failed) {
+			ui.section("Gate");
+			console.log(chalk.red(`✗ --fail-on ${options.failOn}: ${gate.reason}`));
+			process.exitCode = 1;
+		} else if (verbose) {
+			ui.info(chalk.dim(`--fail-on ${options.failOn}: no blocking finding`));
+		}
+	}
 }
 
 /**
