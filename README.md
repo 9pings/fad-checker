@@ -7,11 +7,11 @@
 
 > **F**ucking **A**utonomous **D**ependency **C**hecker
 
-`fad-checker` scans **Maven**, **npm**, **Yarn**, **Composer (PHP)**, **PyPI (Python)**, **NuGet (C#/.NET)** and **vendored JavaScript** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE, EOL, obsolete and outdated findings, plus per-ecosystem fix recipes.
+`fad-checker` scans **Maven**, **npm**, **Yarn**, **Composer (PHP)**, **PyPI (Python)**, **NuGet (C#/.NET)** and **vendored JavaScript** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE (prioritised by **EPSS + CISA KEV**), EOL, obsolete, outdated and **license** findings, plus per-ecosystem fix recipes. It also exports a **CycloneDX 1.6 SBOM** and a **CSAF 2.0 VEX**.
 
 🌐 **[Project site & docs →](https://n8tz.github.io/fad-checker/)**
 
-<p align="center"><img src="docs/assets/cli.png" alt="fad-checker terminal output — a [n/8] checklist warming each vulnerability database, then CVE findings coloured by severity" width="760"></p>
+<p align="center"><img src="docs/assets/cli.png" alt="fad-checker terminal output — a [n/N] checklist warming each vulnerability database, then CVE findings coloured by severity" width="760"></p>
 
 It runs against the source files alone. **No `mvn`, no `npm install`, no `composer install`, no `pip`, no `dotnet restore`, no Docker.** It reads `pom.xml`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `composer.lock`, `poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`/`pyproject.toml`/`requirements.txt`, and `packages.lock.json`/`*.csproj`/`*.fsproj`/`*.vbproj`/`packages.config` directly.
 
@@ -32,7 +32,7 @@ Because it doesn't need anything you don't already have on disk:
 | `composer install` | `composer.lock` is parsed directly (concrete versions + transitive). `composer.json` alone → best-effort on pinned versions + warning. |
 | `pip` / `poetry` / a venv | `poetry.lock`, `Pipfile.lock`, `uv.lock`, `pdm.lock` are parsed for concrete versions; `pyproject.toml` (PEP 621 + poetry) and `requirements.txt` (following `-r`/`-c` includes) are best-effort on exact pins. Names normalised per PEP 503. |
 | `dotnet restore` | `packages.lock.json` is parsed; otherwise `*.csproj`/`*.fsproj`/`*.vbproj` (+ `Directory.Packages.props` Central Package Management) and legacy `packages.config`, best-effort on pinned versions. |
-| `snyk` binary | Built-in CVE matching via 4 independent sources (see below). Snyk is *optional* (`--snyk`). |
+| `snyk` binary | Built-in CVE matching via CVEProject + OSV + NVD (merged), prioritised with EPSS + CISA KEV (see below). Snyk is *optional* (`--snyk`). |
 | A network connection | First run downloads CVE / OSV / EOL data; subsequent runs use cached copies (`--offline` to force). |
 
 Exactly **two** runtime dependencies must be on PATH (or installed automatically through npm): Node ≥ 20 and `retire` (the npm package, installed by `npm install`). Everything else is bundled or fetched lazily.
@@ -195,6 +195,9 @@ This is the surprising bit. The whole point is that you can run `fad-checker` ag
   - **OSV.dev** (Google + GitHub Security Lab, multi-ecosystem)
   - **NVD** (official NIST records, used for enrichment: full CVSS, references, CPE configurations)
 - **CPE refinement** — once a CVE is matched, its NVD CPE configurations are checked against the dep version range. A match outside the vulnerable range is flagged `cpeFiltered: true` (likely false positive). A curated `data/cpe-coord-map.json` maps CPE `vendor:product` to Maven `g:a` (60+ entries seeded: log4j, jackson, spring, tomcat, jetty, netty, …).
+- **Prioritization** — each matched CVE is enriched with **EPSS** (FIRST.org exploit-prediction percentile) and **CISA KEV** (known-exploited catalogue), then scored: KEV (exploited in the wild) outranks EPSS-weighted CVSS. The report sorts by this composite priority and badges KEV/EPSS.
+- **Licenses** — each dependency's license is resolved (registry metadata, no extra request; Maven from cached POMs), normalised to SPDX and classified against a copyleft policy (`data/license-policy.json`) — permissive / weak / strong / network copyleft / proprietary / unknown.
+- **Machine-readable exports** — `--export-sbom` emits a **CycloneDX 1.6** SBOM with vulnerabilities inline (VDR); `--export-csaf` emits a **CSAF 2.0 VEX**. purls per ecosystem.
 
 ---
 

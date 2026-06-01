@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fad-checker — polyglot dependency CVE/EOL scanner, no build needed</title>
-<meta name="description" content="Scan Maven, npm, Yarn, pnpm, Composer, PyPI and NuGet dependencies for CVEs, end-of-life and outdated versions in one shot — no build, no install. Audit-ready HTML/Word report and an air-gapped mode for confidential code.">
+<meta name="description" content="Scan Maven, npm, Yarn, pnpm, Composer, PyPI and NuGet dependencies for CVEs (prioritised by EPSS + CISA KEV), end-of-life, outdated versions and licenses in one shot — no build, no install. Audit-ready HTML/Word report, CycloneDX SBOM + CSAF VEX exports, and an air-gapped mode for confidential code.">
 <meta property="og:title" content="fad-checker — audit every dependency, no build, no leaks">
-<meta property="og:description" content="Polyglot CVE / EOL / outdated scanner that reads your source tree directly. Merged sources, CPE filtering, HTML+Word report, air-gapped PASSI mode.">
+<meta property="og:description" content="Polyglot CVE / EOL / outdated / license scanner that reads your source tree directly. Merged sources, CPE filtering, EPSS + KEV priority, CycloneDX SBOM + CSAF VEX, HTML+Word report, air-gapped PASSI mode.">
 <meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -188,10 +188,11 @@
         <span class="tag">Composer</span><span class="tag">PyPI</span><span class="tag">NuGet</span>
       </div>
       <h1 class="reveal">Audit every dependency.<span class="l2">No build. No leaks.</span></h1>
-      <p class="lead reveal">A polyglot <b>CVE · EOL · outdated</b> scanner that reads your source tree
+      <p class="lead reveal">A polyglot <b>CVE · EOL · outdated · license</b> scanner that reads your source tree
         directly — no <span class="mono">mvn</span>, no <span class="mono">npm install</span>, no Docker.
-        Findings merged from <b>CVEProject, OSV, NVD &amp; retire.js</b>, an audit-ready
-        <b>HTML &amp; Word</b> report, and an <b>air-gapped mode</b> for confidential code.</p>
+        Findings merged from <b>CVEProject, OSV, NVD &amp; retire.js</b>, prioritised with
+        <b>EPSS + CISA KEV</b>, an audit-ready <b>HTML &amp; Word</b> report (plus <b>CycloneDX SBOM</b>
+        &amp; <b>CSAF VEX</b>), and an <b>air-gapped mode</b> for confidential code.</p>
       <div class="cta reveal">
         <a class="btn primary" href="#start">$ get started</a>
         <a class="btn ghost" href="https://github.com/n8tz/fad-checker">★ Star on GitHub</a>
@@ -202,7 +203,7 @@
       </div>
     </div>
     <div class="shotwrap reveal">
-      <img class="shot" src="assets/cli.png" alt="fad-checker terminal output: a [n/8] checklist warming each vulnerability database, then CVE results coloured by severity" loading="lazy">
+      <img class="shot" src="assets/cli.png" alt="fad-checker terminal output: a [n/N] checklist warming each vulnerability database, then CVE results coloured by severity" loading="lazy">
     </div>
   </section>
 
@@ -224,11 +225,13 @@
     <h2 class="reveal">Built for audits, not just CI</h2>
     <div class="grid">
       <div class="card reveal"><div class="ic">01</div><h3>No build, polyglot</h3><p>Reads <span class="mono">pom.xml</span> &amp; lockfiles across all seven ecosystems. No JDK, no <span class="mono">install</span>, no Docker — audit a checkout you can't even compile.</p></div>
-      <div class="card reveal"><div class="ic">02</div><h3>Four sources, fewer false positives</h3><p>CVEProject + OSV.dev + NVD + retire.js, merged &amp; deduped, then cross-checked against NVD <span class="mono">CPE</span> version ranges to filter noise.</p></div>
-      <div class="card reveal"><div class="ic">03</div><h3>Beyond CVEs</h3><p>Flags <b>end-of-life</b> (endoflife.date), <b>deprecated / abandoned / yanked</b>, and <b>outdated</b> versions — signals most scanners skip entirely.</p></div>
-      <div class="card reveal"><div class="ic">04</div><h3>Reports you can hand over</h3><p>One self-contained <b>HTML</b> + Word-compatible <b>.doc</b>, organised by ecosystem and by the manifest that declares each dep, with per-tool fix recipes.</p></div>
-      <div class="card reveal"><div class="ic">05</div><h3>Air-gapped / PASSI</h3><p>Export an <b>anonymized</b> descriptor (public coordinates only), enrich online, report offline. The confidential codebase never leaves the enclave.</p></div>
-      <div class="card reveal"><div class="ic">06</div><h3>Maven private-dep cleanup</h3><p>Strip private/internal dependencies into a parallel tree of <b>cleaned POMs</b>, ready to feed straight into Snyk.</p></div>
+      <div class="card reveal"><div class="ic">02</div><h3>Merged sources, fewer false positives</h3><p>CVEProject + OSV.dev + NVD + retire.js, merged &amp; deduped, then cross-checked against NVD <span class="mono">CPE</span> version ranges to filter noise.</p></div>
+      <div class="card reveal"><div class="ic">03</div><h3>Risk-based priority</h3><p>Every CVE enriched with <b>EPSS</b> (FIRST.org exploit-prediction) and <b>CISA KEV</b> (known-exploited). A composite score puts <b>exploited-in-the-wild</b> first, not just the highest CVSS.</p></div>
+      <div class="card reveal"><div class="ic">04</div><h3>Beyond CVEs</h3><p>Flags <b>end-of-life</b> (endoflife.date), <b>deprecated / abandoned / yanked</b>, <b>outdated</b> versions, and <b>licenses</b> (SPDX + copyleft policy) — signals most scanners skip.</p></div>
+      <div class="card reveal"><div class="ic">05</div><h3>Reports you can hand over</h3><p>One self-contained <b>HTML</b> + Word-compatible <b>.doc</b>, organised by ecosystem and by the manifest that declares each dep, with per-tool fix recipes.</p></div>
+      <div class="card reveal"><div class="ic">06</div><h3>SBOM &amp; VEX exports</h3><p>Emit a <b>CycloneDX 1.6</b> SBOM with vulnerabilities inline and a <b>CSAF 2.0 VEX</b> — interoperable with Dependency-Track and the rest of your pipeline.</p></div>
+      <div class="card reveal"><div class="ic">07</div><h3>Air-gapped / PASSI</h3><p>Export an <b>anonymized</b> descriptor (public coordinates only), enrich online, report offline. The confidential codebase never leaves the enclave.</p></div>
+      <div class="card reveal"><div class="ic">08</div><h3>Maven private-dep cleanup</h3><p>Strip private/internal dependencies into a parallel tree of <b>cleaned POMs</b>, ready to feed straight into Snyk.</p></div>
     </div>
   </section>
 </main>
@@ -238,7 +241,7 @@
   <div class="wrap">
     <div class="kicker reveal">The deliverable</div>
     <h2 class="reveal">An executive summary, then the detail</h2>
-    <p class="sub reveal">Severity tiles, CVE table with CWE &amp; fix versions, EOL / obsolete / outdated chapters, and a "likely false positives" appendix — all in a single file you can email.</p>
+    <p class="sub reveal">Severity tiles, a CVE table with a <b>priority</b> column (KEV / EPSS), CWE &amp; fix versions, EOL / obsolete / outdated / <b>license</b> chapters, and a "likely false positives" appendix — all in a single file you can email.</p>
     <figure class="reveal">
       <img class="shot" src="assets/report.png" alt="fad-checker HTML report: executive summary with severity tiles (21 high, 17 medium, 38 total CVEs) and a detailed CVE table with CWE, descriptions and fix versions" loading="lazy">
       <figcaption>cve-report.html — generated by <span class="mono">fad -s ./project</span></figcaption>
@@ -276,7 +279,7 @@
   <section id="compare">
     <div class="kicker reveal">Honest positioning</div>
     <h2 class="reveal">Where it fits</h2>
-    <p class="sub reveal">Not a Trivy/Grype replacement — those own containers, SBOM and CI. fad-checker owns the <b>zero-setup source audit</b> with an air-gapped story.</p>
+    <p class="sub reveal">Not a Trivy/Grype replacement — those own containers and continuous CI. fad-checker owns the <b>zero-setup source audit</b> with an air-gapped story (and now emits SBOM/VEX, flags licenses and prioritises by EPSS/KEV too).</p>
     <div class="tablewrap reveal">
       <table>
         <thead><tr><th>Capability</th><th class="me">fad-checker</th><th>OSV-Scanner</th><th>Trivy</th><th>Grype+Syft</th><th>OWASP DC</th><th>Snyk OSS</th></tr></thead>
@@ -285,9 +288,12 @@
           <tr><th>Best-effort without a lockfile</th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f warn">~</td><td class="f warn">~</td></tr>
           <tr><th>EOL detection</th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f warn">~</td></tr>
           <tr><th>Outdated / deprecated</th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f warn">~</td></tr>
+          <tr><th>EPSS / KEV prioritization</th><td class="f me yes">✓</td><td class="f warn">~</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f no">✗</td><td class="f yes">✓</td></tr>
+          <tr><th>License compliance</th><td class="f me yes">✓</td><td class="f warn">~</td><td class="f yes">✓</td><td class="f warn">~</td><td class="f no">✗</td><td class="f yes">✓</td></tr>
+          <tr><th>SBOM / VEX export</th><td class="f me yes">✓ CDX+CSAF</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f warn">~</td><td class="f yes">✓</td></tr>
           <tr><th>HTML + Word report</th><td class="f me yes">✓</td><td class="f no">json</td><td class="f no">json</td><td class="f no">json</td><td class="f warn">html</td><td class="f no">cloud</td></tr>
           <tr><th>Air-gapped, code never exposed</th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td></tr>
-          <tr><th>Containers / SBOM / license</th><td class="f me no">✗</td><td class="f warn">~</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f no">✗</td><td class="f yes">✓</td></tr>
+          <tr><th>Containers / OS packages</th><td class="f me no">✗</td><td class="f warn">~</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f no">✗</td><td class="f yes">✓</td></tr>
         </tbody>
       </table>
     </div>
