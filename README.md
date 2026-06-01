@@ -7,7 +7,7 @@
 
 > **F**ucking **A**utonomous **D**ependency **C**hecker
 
-`fad-checker` scans **Maven**, **npm**, **Yarn**, **Composer (PHP)**, **PyPI (Python)**, **NuGet (C#/.NET)** and **vendored JavaScript** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE (prioritised by **EPSS + CISA KEV**), EOL, obsolete, outdated and **license** findings, plus per-ecosystem fix recipes. It also exports a **CycloneDX 1.6 SBOM** and a **CSAF 2.0 VEX**.
+`fad-checker` scans **Maven**, **npm**, **Yarn**, **Composer (PHP)**, **PyPI (Python)**, **NuGet (C#/.NET)**, **Go**, **Ruby** and **vendored JavaScript** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE (prioritised by **EPSS + CISA KEV**), EOL, obsolete, outdated and **license** findings, plus per-ecosystem fix recipes. It also exports a **CycloneDX 1.6 SBOM** and a **CSAF 2.0 VEX**.
 
 🌐 **[Project site & docs →](https://n8tz.github.io/fad-checker/)**
 
@@ -15,7 +15,7 @@
 
 It runs against the source files alone. **No `mvn`, no `npm install`, no `composer install`, no `pip`, no `dotnet restore`, no Docker.** It reads `pom.xml`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `composer.lock`, `poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`/`pyproject.toml`/`requirements.txt`, and `packages.lock.json`/`*.csproj`/`*.fsproj`/`*.vbproj`/`packages.config` directly.
 
-> **Supported ecosystems: Maven, npm, Yarn (v1 + Berry/v2+), pnpm, Composer, PyPI, NuGet.** Each is a self-contained **codec** (`lib/codecs/`) — adding another is adding a codec, no orchestrator surgery. Vendored JS (jQuery, Bootstrap, PDF.js, etc.) is also scanned via retire.js.
+> **Supported ecosystems: Maven, npm, Yarn (v1 + Berry/v2+), pnpm, Composer, PyPI, NuGet, Go, Ruby.** Each is a self-contained **codec** (`lib/codecs/`) — adding another is adding a codec, no orchestrator surgery. Vendored JS (jQuery, Bootstrap, PDF.js, etc.) is also scanned via retire.js.
 
 ---
 
@@ -32,6 +32,8 @@ Because it doesn't need anything you don't already have on disk:
 | `composer install` | `composer.lock` is parsed directly (concrete versions + transitive). `composer.json` alone → best-effort on pinned versions + warning. |
 | `pip` / `poetry` / a venv | `poetry.lock`, `Pipfile.lock`, `uv.lock`, `pdm.lock` are parsed for concrete versions; `pyproject.toml` (PEP 621 + poetry) and `requirements.txt` (following `-r`/`-c` includes) are best-effort on exact pins. Names normalised per PEP 503. |
 | `dotnet restore` | `packages.lock.json` is parsed; otherwise `*.csproj`/`*.fsproj`/`*.vbproj` (+ `Directory.Packages.props` Central Package Management) and legacy `packages.config`, best-effort on pinned versions. |
+| `go build` / a Go toolchain | `go.mod` is parsed (the full pruned graph on Go ≥1.17, `// indirect` → transitive); `go.sum` is the fallback. No module download. |
+| `bundle install` | `Gemfile.lock` is parsed for the resolved gem set. No Ruby, no bundler. |
 | `snyk` binary | Built-in CVE matching via CVEProject + OSV + NVD (merged), prioritised with EPSS + CISA KEV (see below). Snyk is *optional* (`--snyk`). |
 | A network connection | First run downloads CVE / OSV / EOL data; subsequent runs use cached copies (`--offline` to force). |
 
@@ -188,6 +190,8 @@ This is the surprising bit. The whole point is that you can run `fad-checker` ag
 - **Composer (PHP)** — `composer.lock` (`packages` + `packages-dev`) gives concrete + transitive versions; `composer.json` alone is best-effort.
 - **PyPI (Python)** — `poetry.lock` / `Pipfile.lock` / `uv.lock` / `pdm.lock` are parsed (TOML via `smol-toml`, or JSON); `pyproject.toml` (PEP 621 `[project]` + `[tool.poetry]`) and `requirements.txt` (following `-r`/`-c` includes recursively, with `-c` constraint pins applied to ranges) are best-effort on exact pins. Package names are PEP 503-normalised (`Flask-SQLAlchemy` → `flask-sqlalchemy`).
 - **NuGet (C#/.NET)** — `packages.lock.json` is authoritative; otherwise `*.csproj` / `*.fsproj` / `*.vbproj` `<PackageReference>` (resolving Central Package Management against `Directory.Packages.props`) and legacy `packages.config`. Ids are case-insensitive.
+- **Go** — `go.mod` `require` entries are the selected versions (full pruned graph on Go ≥1.17; `// indirect` → transitive), `go.sum` as fallback. OSV "Go" ecosystem for recall, the Go module proxy for outdated.
+- **Ruby** — `Gemfile.lock` `specs:` give the resolved gem set. OSV "RubyGems" for recall, the RubyGems API for outdated + licenses.
 - **Lockfile-first, best-effort fallback** — when a lockfile is present it wins. When it's absent, the loose manifest (`package.json` / `composer.json` / `pyproject.toml` / `requirements.txt` / `*.csproj`) is still parsed for its **pinned exact versions**, with ranges skipped and a `no-lockfile` warning in chapter 0 flagging the partial coverage.
 - **Vendored JavaScript** — `retire.js` shells out and scans `.js` / `.min.js` files by signature, catching old jQuery / Bootstrap / Angular / PDF.js copies that no lockfile knows about.
 - **CVE data** — three independent sources merged:
@@ -197,7 +201,8 @@ This is the surprising bit. The whole point is that you can run `fad-checker` ag
 - **CPE refinement** — once a CVE is matched, its NVD CPE configurations are checked against the dep version range. A match outside the vulnerable range is flagged `cpeFiltered: true` (likely false positive). A curated `data/cpe-coord-map.json` maps CPE `vendor:product` to Maven `g:a` (60+ entries seeded: log4j, jackson, spring, tomcat, jetty, netty, …).
 - **Prioritization** — each matched CVE is enriched with **EPSS** (FIRST.org exploit-prediction percentile) and **CISA KEV** (known-exploited catalogue), then scored: KEV (exploited in the wild) outranks EPSS-weighted CVSS. The report sorts by this composite priority and badges KEV/EPSS.
 - **Licenses** — each dependency's license is resolved (registry metadata, no extra request; Maven from cached POMs), normalised to SPDX and classified against a copyleft policy (`data/license-policy.json`) — permissive / weak / strong / network copyleft / proprietary / unknown.
-- **Machine-readable exports** — `--export-sbom` emits a **CycloneDX 1.6** SBOM with vulnerabilities inline (VDR); `--export-csaf` emits a **CSAF 2.0 VEX**. purls per ecosystem.
+- **Machine-readable exports** — `--export-sbom` emits a **CycloneDX 1.6** SBOM with vulnerabilities inline (VDR); `--export-csaf` emits a **CSAF 2.0 VEX**; `--export-json` a flat findings document (all chapters, diff-friendly); `--export-sarif` a **SARIF 2.1.0** log for GitHub/GitLab code scanning. purls per ecosystem.
+- **CI gating & triage** — `--fail-on <low|medium|high|critical|kev>` sets a non-zero exit code (`kev` = fail only on a CISA-known-exploited finding). `--ignore <file>` (CVE/coord/glob rules) and `--vex <file>` (ingest a CSAF VEX) suppress accepted-risk / false-positive findings from the report and the gate, while keeping them flagged in the exports — so re-audits stay signal-rich.
 
 ---
 
@@ -213,6 +218,8 @@ All cached data lives in `~/.fad-checker/`:
 | NVD CVE records | `nvd-cache/<cveId>.json` | 7 d |
 | EPSS scores (FIRST.org) | `epss-cache.json` | 24 h |
 | CISA KEV catalogue | `kev-cache.json` | 24 h |
+| Go module proxy (latest) | `go-proxy-cache.json` | 24 h |
+| RubyGems (latest + licenses) | `rubygems-cache.json` | 24 h |
 | endoflife.date cycles | `eol-cache.json` | 7 d |
 | Maven Central latest versions | `version-cache.json` | 24 h |
 | Transitive POMs from Maven Central | `poms-cache/<g>__<a>__<v>.pom` | ∞ (immutable) |
@@ -317,6 +324,8 @@ Repos are tried **in declared order, Maven Central last**. Auth is sent as a `Ba
 | [Packagist](https://packagist.org/) | Latest stable + `abandoned` flag | Free public service | `GET packagist.org/packages/<vendor>/<pkg>.json` |
 | [PyPI](https://pypi.org/) | Latest + `yanked` + "Inactive" classifier | Free public service | `GET pypi.org/pypi/<pkg>/json` |
 | [NuGet](https://www.nuget.org/) | Latest stable + per-version `deprecation` | Free public service | `GET api.nuget.org/v3/registration5-gz-semver2/<id>/index.json` |
+| [Go module proxy](https://proxy.golang.org/) | Latest module version (outdated) | Free public service | `GET proxy.golang.org/<module>/@latest` |
+| [RubyGems](https://rubygems.org/) | Latest stable + licenses | Free public service | `GET rubygems.org/api/v1/gems/<gem>.json` |
 | [retire.js](https://retirejs.github.io/retire.js/) | Vendored-JS signature DB + scanner | Apache-2.0 | npm package `retire`, executed locally |
 | [Snyk](https://snyk.io/) (optional) | Additional CVE source via `snyk test --all-projects --json` | Per Snyk EULA; needs a Snyk account | Local CLI `snyk` |
 | [MITRE CWE](https://cwe.mitre.org/) | Weakness category links in the report | Free public reference | Linked by URL only, no API call |
@@ -344,7 +353,7 @@ of thing a security consultant or an ANSSI-PASSI engagement needs.
 
 | | **fad-checker** | OSV-Scanner | Trivy | Grype + Syft | OWASP DC | Snyk OSS |
 | --- | --- | --- | --- | --- | --- | --- |
-| Ecosystems it targets¹ | Maven, npm, Yarn, **pnpm**, Composer, PyPI, NuGet + vendored JS | 11+ langs / 19+ lockfiles | 20+ | 20+ | Java/.NET (others exp.) | many |
+| Ecosystems it targets¹ | Maven, npm, Yarn, **pnpm**, Composer, PyPI, NuGet, Go, Ruby + vendored JS | 11+ langs / 19+ lockfiles | 20+ | 20+ | Java/.NET (others exp.) | many |
 | Reads lockfiles without `install`/build² | ✅ | ✅ | ✅ | ✅ | ⚠️ Java needs Maven Central/build | ❌ build required |
 | Best-effort when **no lockfile** (pinned versions) | ✅ | ❌ | ❌ | ❌ | ⚠️ | ⚠️ |
 | Vulnerability sources | CVEProject + OSV + NVD + EPSS + KEV + retire.js (+ Snyk), merged | OSV.dev | Aqua DB | Anchore DB | NVD / CPE | Snyk DB |
@@ -355,13 +364,14 @@ of thing a security consultant or an ANSSI-PASSI engagement needs.
 | SBOM (CycloneDX/SPDX) | ✅ CycloneDX 1.6 (+ CSAF 2.0 VEX) | ✅ | ✅ | ✅ (Syft) | ~ | ✅ |
 | License compliance | ✅ SPDX + copyleft policy | ~ | ✅ | ~ | ❌ | ✅ |
 | EPSS / KEV prioritization | ✅ FIRST.org EPSS + CISA KEV | ~ | ✅ | ✅ | ❌ | ✅ |
+| CI gating (`--fail-on`) + triage | ✅ severity/KEV + ignore/VEX | ✅ | ✅ | ✅ | ⚠️ | ✅ |
 | Auto-remediation / PRs | ❌ (fix recipes only) | ✅ `fix` | ❌ | ❌ | ❌ | ✅ |
 | Offline | ✅ cache | ✅ local DB | ✅ | ✅ | ✅ feed | ❌ mostly online |
 | **Scan without exposing the codebase**³ | ✅ anonymized descriptor | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Maven private-dep cleanup** (→ Snyk) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Output | self-contained **HTML + Word `.doc`** | table/JSON/SARIF | table/JSON/SARIF | table/JSON/SARIF | HTML/XML/JSON | JSON / cloud UI |
+| Output | **HTML + Word `.doc`** + JSON / SARIF / CycloneDX / CSAF | table/JSON/SARIF | table/JSON/SARIF | table/JSON/SARIF | HTML/XML/JSON | JSON / cloud UI |
 
-¹ Narrower language coverage — no Go/Rust/Ruby/Dart.
+¹ Narrower language coverage — no Rust/Dart/Swift (Go and Ruby are now covered).
 ² Reading **lockfiles** without a build is the norm today: OSV-Scanner, Trivy and Grype/Syft
 do it too. For **Maven `pom.xml`** specifically, *every* tool — `fad-checker` included — must
 reach Maven Central (or rely on a real build / CycloneDX SBOM) to resolve transitive versions;
