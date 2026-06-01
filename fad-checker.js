@@ -490,8 +490,9 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const willKev = !!options.kev;
 	const willLicenses = !!options.licenses;
 	const willRetire = !!options.retire;
-	const otherLicenseIds = activeIds.filter(id => id !== "yarn" && typeof getCodec(id)?.checkLicenses === "function");
-	const totalSteps = [willTransitive, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willNvd, willEpss, willKev, ...(willLicenses ? otherLicenseIds : []).map(() => true), willRetire].filter(Boolean).length;
+	// License detection piggybacks on the registry passes (same fetched metadata),
+	// so it adds no progress step of its own.
+	const totalSteps = [willTransitive, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willNvd, willEpss, willKev, willRetire].filter(Boolean).length;
 	const progress = new ui.Progress(totalSteps);
 
 	if (willTransitive) {
@@ -529,6 +530,10 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		catch (err) { st.fail(err.message); }
 	}
 
+	// License findings accumulate from each registry pass (same fetched metadata)
+	// plus Maven's cached POMs — assessed against the copyleft policy below.
+	let licenseFindings = [];
+
 	// 3. Obsolete / deprecated — local curated list, instant (no network step).
 	let obsoleteResults = [];
 	try { obsoleteResults = outdated.checkObsoleteDeps(resolved); }
@@ -553,6 +558,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			const npmReg = await checkNpmRegistryDeps(resolved, { verbose, offline, allLibs: options.allLibs, onProgress: (p, t) => st.tick(p, t) });
 			obsoleteResults = obsoleteResults.concat(npmReg.deprecated);
 			outdatedResults = outdatedResults.concat(npmReg.outdated);
+			licenseFindings = licenseFindings.concat(npmReg.licensed || []);
 			st.done(`${npmReg.deprecated.length} deprecated, ${npmReg.outdated.length} outdated`);
 		} catch (err) { st.fail(err.message); }
 	}
@@ -565,6 +571,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			const reg = await codec.checkRegistry(resolved, { verbose, offline, allLibs: options.allLibs, onProgress: (p, t) => st.tick(p, t) });
 			obsoleteResults = obsoleteResults.concat(reg.deprecated || []);
 			outdatedResults = outdatedResults.concat(reg.outdated || []);
+			licenseFindings = licenseFindings.concat(reg.licensed || []);
 			st.done(`${(reg.deprecated || []).length} deprecated, ${(reg.outdated || []).length} outdated`);
 		} catch (err) { st.fail(err.message); }
 	}
@@ -755,6 +762,26 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		}
 	}
 
+	// License assessment — Maven licenses come (network-free) from cached POMs;
+	// the registry passes already filled licenseFindings for the other ecosystems.
+	let licenseResults = null;
+	if (willLicenses) {
+		try {
+			if (runMaven) {
+				const { collectMavenLicenses } = require("./lib/maven-license");
+				licenseFindings = licenseFindings.concat(collectMavenLicenses(resolved));
+			}
+			const { assessLicenses } = require("./lib/license-policy");
+			licenseResults = assessLicenses(licenseFindings);
+			const flaggedN = licenseResults.flagged.length;
+			heading("Licenses", licenseResults.assessed.length, flaggedN ? chalk.yellow(`${flaggedN} to review`) : "");
+			for (const e of licenseResults.flagged.slice(0, 8)) {
+				console.log("    " + chalk.yellow((e.category).padEnd(16)) + " " + chalk.dim(`${coordOf(e.dep)}`) + " " + chalk.dim((e.ids.concat(e.raw)).join(", ") || "—"));
+			}
+			if (licenseResults.flagged.length > 8) console.log(chalk.dim(`    …and ${licenseResults.flagged.length - 8} more`));
+		} catch (err) { ui.warn(`license assessment skipped: ${err.message}`); }
+	}
+
 	const reportDir = options.reportOutput || "./fad-checker-report";
 	await fs.promises.mkdir(reportDir, { recursive: true });
 	// --import-anonymized has no source tree; keep the report path-free (consistent
@@ -774,6 +801,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		eolResults,
 		obsoleteResults,
 		outdatedResults,
+		licenseResults,
 		resolvedDeps: resolved,
 		projectInfo,
 		outputDir: reportDir,
