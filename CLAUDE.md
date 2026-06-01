@@ -12,11 +12,12 @@ Code-level orientation for contributors and Claude Code sessions on this repo.
    - the CVEProject `cvelistV5` Maven-relevant index (built locally),
    - OSV.dev (multi-ecosystem),
    - NIST NVD (enrichment: CVSS, CPE configurations, references),
+   - EPSS (FIRST.org exploit-prediction percentile) + CISA KEV (known-exploited catalogue) — prioritisation signals,
    - retire.js (vendored JS signatures),
    - optionally Snyk (`--snyk`).
-4. Cross-checks every match's NVD CPE configurations against the dep version (`lib/cpe.js`) to filter false positives.
-5. Reports EOL frameworks (endoflife.date — Maven & npm), obsolete libs (curated Maven + npm-registry per-version `deprecated` field — authoritative, skips nothing), outdated libs (Maven Central + npm registry `dist-tags.latest`). **WebJars** (`org.webjars*`) are reduced to their npm coordinate by `webjarToNpm()` and run through the npm EOL/deprecation/outdated paths — so e.g. `org.webjars:angularjs:1.8.3` is flagged EOL.
-6. Produces a self-contained HTML report + Word-compatible `.doc`, organised by ecosystem and by defining manifest, with per-tool fix recipes and an executive summary.
+4. Cross-checks every match's NVD CPE configurations against the dep version (`lib/cpe.js`) to filter false positives, then computes a **composite priority** per match (`lib/priority.js`): KEV (exploited) > EPSS-weighted CVSS, exposed as a band + score and used to sort the report.
+5. Reports EOL frameworks (endoflife.date — Maven & npm), obsolete libs (curated Maven + npm-registry per-version `deprecated` field — authoritative, skips nothing), outdated libs (Maven Central + npm registry `dist-tags.latest`), and **licenses** (`lib/license-policy.js`): each dep's license is normalised to SPDX and classified (permissive / weak / strong / network copyleft / proprietary / unknown), with copyleft & unknown flagged. **WebJars** (`org.webjars*`) are reduced to their npm coordinate by `webjarToNpm()` and run through the npm EOL/deprecation/outdated paths — so e.g. `org.webjars:angularjs:1.8.3` is flagged EOL.
+6. Produces a self-contained HTML report + Word-compatible `.doc`, organised by ecosystem and by defining manifest, with a Priority column, a Licenses chapter, per-tool fix recipes and an executive summary. Also exports machine-readable **CycloneDX 1.6 SBOM** (vulnerabilities inline, `--export-sbom`) and **CSAF 2.0 VEX** (`--export-csaf`).
 
 No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` / `package-lock.json` / `yarn.lock` are parsed directly.
 
@@ -24,7 +25,7 @@ No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` /
 
 ```bash
 npm install
-npm test                  # 244 unit tests via node --test
+npm test                  # 294 unit tests via node --test
 
 # basic cleanup workflow
 node fad-checker.js -s ./proj                                        # read-only, full report
@@ -74,6 +75,14 @@ lib/cve-download.js          Bulk download of CVEProject/cvelistV5 + Maven-relev
 lib/cve-match.js             Resolved-dep collection + 3-tier CVE matching with dedup.
 lib/cve-report.js            Self-contained HTML and Word-compatible (.doc) report rendering.
 lib/cpe.js                   CPE 2.3 parsing + NVD configurations evaluator (post-match refinement).
+lib/epss.js                  EPSS (FIRST.org) percentile/score enrichment of matched CVEs (24h cache).
+lib/kev.js                   CISA KEV catalogue membership enrichment (24h cache).
+lib/priority.js              Composite priority (KEV > EPSS-weighted CVSS) → band + score + sortKey. Pure.
+lib/license-policy.js        SPDX normalization + copyleft/proprietary classification (data/license-policy.json).
+lib/maven-license.js         Network-free Maven license detection from cached POMs (transitive.js cache).
+lib/purl.js                  Package-URL (purl) builder per ecosystem. Pure. Shared by the exporters.
+lib/sbom-export.js           CycloneDX 1.6 SBOM (components + vulnerabilities inline / VDR). Pure builder + writer.
+lib/csaf-export.js           CSAF 2.0 VEX (csaf_vex) document. Pure builder + writer.
 lib/outdated.js              EOL (endoflife.date), obsolete (curated), outdated (Maven Central).
 lib/transitive.js            Maven Central POM walker (transitive resolution).
 lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
@@ -87,7 +96,7 @@ lib/codecs/npm/registry.js          npm registry packument query → per-version
 lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/ (incl. retire findings + signatures).
 lib/deps-descriptor.js       Anonymized dep descriptor serialize/deserialize (PASSI offline→online round-trip).
 lib/config.js                Persistent user config in ~/.fad-checker/config.json (mode 0600).
-data/                        known-obsolete.json, eol-mapping.json, cpe-coord-map.json, known-public-namespaces.json
+data/                        known-obsolete.json, eol-mapping.json, cpe-coord-map.json, known-public-namespaces.json, license-policy.json
 completions/                 fad-checker.bash, fad-checker.zsh
 test/                        node:test suite + fixtures (simple, complex-enterprise, monorepo-mixed, …).
 ```
@@ -112,7 +121,7 @@ For the deep dive — pipeline stages, the resolved-deps Map shape, report struc
 ## Testing
 
 ```bash
-node --test test/*.test.js            # full suite (244 tests)
+node --test test/*.test.js            # full suite (294 tests)
 node --test test/core.test.js         # one file
 ```
 
@@ -128,7 +137,8 @@ Test fixtures live in `test/fixtures/`:
 - CVE bundle from CVEProject is ~500 MB unpacked. Shells out to `curl + unzip` (fallback to `fetch()` + `unzip` / `Expand-Archive`). Extracted JSON deleted after index build. Ships as `cves.zip.zip` (nested zip) — `extractZip()` recurses up to 3 levels.
 - `endoflife.date` API responses cached 7 days; Maven Central version lookups cached 24 hours. Cache lives in `~/.fad-checker/`.
 - **Persistent config**: `~/.fad-checker/config.json` (mode 0600). Set NVD key via `fad-checker --set-nvd-key <KEY>` (free, instant from <https://nvd.nist.gov/developers/request-an-api-key> — bumps rate limit from 5/30s to 50/30s).
-- **`--offline` umbrella flag**: skips every network call (CVE/OSV/NVD/Maven Central/endoflife/npm-registry/retire). Falls back to whatever is already cached. Per-source variants (`--cve-offline`, `--no-osv`, `--no-nvd`, `--no-retire`, `--no-transitive`) and per-codec toggles (`--no-maven`/`--no-npm`/`--no-yarn`/`--no-nuget`/`--no-composer`/`--no-pypi`, `--no-js`) still work independently. npm registry deprecation always runs when online; npm (and Maven) outdated is gated by `--no-all-libs`.
+- **`--offline` umbrella flag**: skips every network call (CVE/OSV/NVD/EPSS/KEV/Maven Central/endoflife/npm-registry/retire). Falls back to whatever is already cached. Per-source variants (`--cve-offline`, `--no-osv`, `--no-nvd`, `--no-epss`, `--no-kev`, `--no-licenses`, `--no-retire`, `--no-transitive`) and per-codec toggles (`--no-maven`/`--no-npm`/`--no-yarn`/`--no-nuget`/`--no-composer`/`--no-pypi`, `--no-js`) still work independently. npm registry deprecation always runs when online; npm (and Maven) outdated is gated by `--no-all-libs`. License detection piggybacks on the registry passes (no extra fetch) + Maven cached POMs.
+- **Machine-readable exports**: `--export-sbom <f>` writes a CycloneDX 1.6 SBOM with vulnerabilities inline (VDR); `--export-csaf <f>` writes a CSAF 2.0 VEX. Both run after the HTML/`.doc` report and use the full match set (prod+dev+cpeFiltered; cpeFiltered marked as a property/note rather than dropped). purls are built by `lib/purl.js`.
 - `snyk` is not a hard dep — shells out via `execFile`. `snyk` exits 1 on findings; the JSON is still on stdout.
 - The cleaned POM is the union of every profile's deps. Counts will be larger than the source POM. Intentional — don't "fix" that.
 - Unresolved `${…}` Maven variables stay verbatim in the rewritten POM. `lib/cve-match.js` resolves them lazily via `resolveDepVersion()` when scanning. Deps that *still* can't be resolved (external BOM not in source tree) surface in chapter 0 as `unresolved-versions` warnings.
@@ -143,6 +153,8 @@ Test fixtures live in `test/fixtures/`:
 | OSV per-dep stub list | `~/.fad-checker/osv-cache/<eco>__<g>__<a>__<v>.json` | 12 h |
 | OSV vuln details | `~/.fad-checker/osv-cache/vuln_<id>.json` | 12 h |
 | NVD CVE record | `~/.fad-checker/nvd-cache/<cveId>.json` | 7 d |
+| EPSS scores | `~/.fad-checker/epss-cache.json` | 24 h |
+| CISA KEV catalogue | `~/.fad-checker/kev-cache.json` | 24 h |
 | endoflife.date cycles | `~/.fad-checker/eol-cache.json` | 7 d |
 | Maven Central latest | `~/.fad-checker/version-cache.json` | 24 h |
 | npm registry (deprecation + latest) | `~/.fad-checker/npm-registry-cache.json` | 24 h |

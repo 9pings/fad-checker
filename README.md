@@ -44,15 +44,16 @@ Exactly **two** runtime dependencies must be on PATH (or installed automatically
 | Chapter | Source | What it catches |
 | --- | --- | --- |
 | **0. Warnings** | local heuristics | Missing lockfiles, unresolved Maven versions (BOM-managed), private libs not on Maven Central |
-| **1. CVE (production)** | CVEProject + OSV.dev + NVD + CPE | Public CVE / GHSA in production deps, per ecosystem, per manifest file |
+| **1. CVE (production)** | CVEProject + OSV.dev + NVD + CPE | Public CVE / GHSA in production deps, per ecosystem, per manifest file — each row **prioritised** by CISA KEV + EPSS + CVSS |
 | **2. CVE in dev deps** | same | Same, but for `test`/`provided` (Maven) and `dev`/`optional`/`peer` (npm) |
 | **3. Vendored JS** | [retire.js](https://retirejs.github.io/) | Old jQuery/Bootstrap/Angular/PDF.js copies sitting in `static/` or `webapp/` with no lockfile |
 | **4. EOL frameworks** | endoflife.date | Spring Boot 2.5, Hibernate 4.x, EOL JDKs, AngularJS, Laravel/Symfony, Django, .NET, etc. |
 | **5. Obsolete libraries** | curated list (Maven) + registry maintainer flags | log4j 1.x, jackson-mapper-asl, joda-time, …; npm `deprecated`, Composer `abandoned`, PyPI `yanked`/inactive, NuGet `deprecation` |
 | **6. Outdated libraries** | Maven Central + npm / Packagist / PyPI / NuGet registries | Available newer versions, with release dates |
-| **7. Fix Recommendations** | computed | Per-ecosystem pin recipes: Maven `<dependencyManagement>`, npm `overrides`, yarn `resolutions`, `composer require`, `pip install`, `dotnet add package` |
+| **7. Licenses** | registry metadata + Maven POMs → SPDX policy | Each dep's license normalised to SPDX and classified; copyleft (GPL/AGPL/LGPL/MPL), proprietary and unknown flagged for review |
+| **8. Fix Recommendations** | computed | Per-ecosystem pin recipes: Maven `<dependencyManagement>`, npm `overrides`, yarn `resolutions`, `composer require`, `pip install`, `dotnet add package` |
 
-The HTML report opens in any browser, contains every detail (CVSS vectors, references, full descriptions, CPE configurations, via-paths for transitives) and ships a Word-compatible `.doc` twin.
+The HTML report opens in any browser, contains every detail (CVSS vectors, references, full descriptions, CPE configurations, via-paths for transitives) and ships a Word-compatible `.doc` twin. Every match carries a **composite priority** (KEV-exploited > EPSS likelihood > CVSS severity), and the run can additionally emit a **CycloneDX 1.6 SBOM** (`--export-sbom`, vulnerabilities inline) and a **CSAF 2.0 VEX** (`--export-csaf`) for downstream tooling.
 
 ---
 
@@ -207,6 +208,8 @@ All cached data lives in `~/.fad-checker/`:
 | OSV per-dep lookups | `osv-cache/<ecosystem>__<g>__<a>__<v>.json` | 12 h |
 | OSV vuln details | `osv-cache/vuln_<id>.json` | 12 h |
 | NVD CVE records | `nvd-cache/<cveId>.json` | 7 d |
+| EPSS scores (FIRST.org) | `epss-cache.json` | 24 h |
+| CISA KEV catalogue | `kev-cache.json` | 24 h |
 | endoflife.date cycles | `eol-cache.json` | 7 d |
 | Maven Central latest versions | `version-cache.json` | 24 h |
 | Transitive POMs from Maven Central | `poms-cache/<g>__<a>__<v>.pom` | ∞ (immutable) |
@@ -303,6 +306,8 @@ Repos are tried **in declared order, Maven Central last**. Auth is sent as a `Ba
 | [CVEProject `cvelistV5`](https://github.com/CVEProject/cvelistV5) | Daily bulk CVE bundle, filtered to Maven-relevant entries | CC0-1.0 | GitHub release asset (zip) |
 | [OSV.dev](https://osv.dev/) (Google + GitHub Security Lab) | Per-dep vulnerability lookup (Maven, npm, Packagist, PyPI, NuGet, …) | CC-BY 4.0 | `POST api.osv.dev/v1/querybatch`, `GET api.osv.dev/v1/vulns/{id}` |
 | [NIST NVD](https://nvd.nist.gov/) | Canonical CVE description + CVSS vectors + CPE configurations + CWE | US-gov public domain | `GET services.nvd.nist.gov/rest/json/cves/2.0?cveId=…` — free [API key](https://nvd.nist.gov/developers/request-an-api-key) bumps the rate limit 10× |
+| [FIRST.org EPSS](https://www.first.org/epss/) | Exploit-prediction score + percentile per CVE | CC-BY 4.0 | `GET api.first.org/data/v1/epss?cve=…` (batched) |
+| [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | Known-exploited-vulnerability catalogue membership | US-gov public domain | `GET cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` |
 | [endoflife.date](https://endoflife.date/) | Framework / runtime EOL cycle data | MIT | `GET endoflife.date/api/{product}.json` |
 | [Maven Central](https://search.maven.org/) | Latest-version lookups + transitive POM fetches | Free public service | Solr `search.maven.org/solrsearch/select?q=…` + `repo1.maven.org/maven2/<coord>` |
 | [npm registry](https://registry.npmjs.org/) | Per-version `deprecated` + `dist-tags.latest` | Free public service | `GET registry.npmjs.org/<pkg>` |
@@ -339,14 +344,14 @@ of thing a security consultant or an ANSSI-PASSI engagement needs.
 | Ecosystems it targets¹ | Maven, npm, Yarn, **pnpm**, Composer, PyPI, NuGet + vendored JS | 11+ langs / 19+ lockfiles | 20+ | 20+ | Java/.NET (others exp.) | many |
 | Reads lockfiles without `install`/build² | ✅ | ✅ | ✅ | ✅ | ⚠️ Java needs Maven Central/build | ❌ build required |
 | Best-effort when **no lockfile** (pinned versions) | ✅ | ❌ | ❌ | ❌ | ⚠️ | ⚠️ |
-| Vulnerability sources | CVEProject + OSV + NVD + retire.js (+ Snyk), merged | OSV.dev | Aqua DB | Anchore DB | NVD / CPE | Snyk DB |
+| Vulnerability sources | CVEProject + OSV + NVD + EPSS + KEV + retire.js (+ Snyk), merged | OSV.dev | Aqua DB | Anchore DB | NVD / CPE | Snyk DB |
 | False-positive control | CPE/version cross-check | ecosystem-aware | ecosystem-aware | ecosystem-aware | ⚠️ CPE → noisy | ecosystem-aware |
 | **EOL** (end-of-life) detection | ✅ endoflife.date | ❌ | ❌ | ❌ | ❌ | ~ |
 | **Outdated / deprecated** | ✅ registries + curated | ❌ | ❌ | ❌ | ❌ | ~ |
 | Containers / OS packages | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ |
-| SBOM (CycloneDX/SPDX) | ❌ | ✅ | ✅ | ✅ (Syft) | ~ | ✅ |
-| License compliance | ❌ | ~ | ✅ | ~ | ❌ | ✅ |
-| EPSS / KEV prioritization | ❌ | ~ | ✅ | ✅ | ❌ | ✅ |
+| SBOM (CycloneDX/SPDX) | ✅ CycloneDX 1.6 (+ CSAF 2.0 VEX) | ✅ | ✅ | ✅ (Syft) | ~ | ✅ |
+| License compliance | ✅ SPDX + copyleft policy | ~ | ✅ | ~ | ❌ | ✅ |
+| EPSS / KEV prioritization | ✅ FIRST.org EPSS + CISA KEV | ~ | ✅ | ✅ | ❌ | ✅ |
 | Auto-remediation / PRs | ❌ (fix recipes only) | ✅ `fix` | ❌ | ❌ | ❌ | ✅ |
 | Offline | ✅ cache | ✅ local DB | ✅ | ✅ | ✅ feed | ❌ mostly online |
 | **Scan without exposing the codebase**³ | ✅ anonymized descriptor | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -366,8 +371,9 @@ has an offline mode, but it still needs the **source on the scanning machine**.
 
 **Where it fits:** a one-shot audit of a polyglot checkout you may not be able to build, a
 presentable HTML/Word deliverable, and confidential / air-gapped engagements.
-**Where it doesn't:** continuous CI supply-chain security, container/OS scanning, SBOM
-pipelines, license/EPSS gating, auto-fix PRs — reach for **Trivy** or **Grype + Syft**.
+**Where it doesn't:** continuous CI supply-chain security, container/OS scanning,
+reachability analysis, auto-fix PRs — reach for **Trivy** or **Grype + Syft**. (It now
+*does* emit CycloneDX/CSAF and flag licenses + EPSS/KEV, but it isn't a gating CI daemon.)
 
 You don't have to choose — `fad-checker` takes Snyk's results as input (`--snyk`) and merges them.
 

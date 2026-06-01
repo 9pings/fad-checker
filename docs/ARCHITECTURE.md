@@ -21,6 +21,14 @@ lib/outdated.js              EOL (endoflife.date), obsolete (curated), outdated 
 lib/transitive.js            Maven Central POM walker (transitive resolution).
 lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
 lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configurations).
+lib/epss.js                  EPSS (FIRST.org) percentile/score enrichment (24h cache).
+lib/kev.js                   CISA KEV catalogue membership enrichment (24h cache).
+lib/priority.js              Composite priority (KEV > EPSS-weighted CVSS) → band/score/sortKey. Pure.
+lib/license-policy.js        SPDX normalization + copyleft/proprietary classification.
+lib/maven-license.js         Network-free Maven license from cached POMs.
+lib/purl.js                  Package-URL builder per ecosystem. Pure.
+lib/sbom-export.js           CycloneDX 1.6 SBOM (vulnerabilities inline). Pure builder + writer.
+lib/csaf-export.js           CSAF 2.0 VEX (csaf_vex). Pure builder + writer.
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
 lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser.
 lib/scan-completeness.js     Warnings for deps we couldn't fully resolve.
@@ -106,20 +114,23 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 7. **CPE refinement** — `refineMatchesWithCpe()` walks NVD's `configurations[].nodes[]` against each matched dep:
    - Confirms the dep version actually falls in the vulnerable range (else `cpeFiltered: true` — likely false positive).
    - Upgrades match `confidence` from `possible` → `probable` → `exact` when a curated `cpe-coord-map.json` entry confirms vendor:product → dep coord.
+7b. **EPSS + KEV + priority** (default on, `--no-epss`/`--no-kev`) — `lib/epss.js` batches matched CVE ids to FIRST.org for the exploit-prediction percentile; `lib/kev.js` checks the CISA KEV catalogue. `lib/priority.js` then attaches a composite `cve.priority` (band + 0-100 score) to every match: KEV (exploited) outranks EPSS-weighted CVSS. The report sorts by it and surfaces a Priority column + KEV/EPSS chips. Both caches 24h.
 8. **retire.js** (default on) — shells out to `retire --outputformat json --jspath <src>`. Output normalised to fad-checker match shape, with the vendored file path attached so the report can show where the offending `.js` lives. Cache: `~/.fad-checker/retire-cache/<md5(src)>.json`, 24h TTL.
 9. **EOL / Obsolete / Outdated** — `lib/outdated.js` (Maven) + `lib/codecs/npm/registry.js` (npm):
    - **WebJars** (`org.webjars*` — client-side JS shipped as Maven artifacts) are reduced to their npm-equivalent coordinate by `webjarToNpm()` (`lib/codecs/npm/collect.js`): `org.webjars.npm` is a deterministic npm mirror (`angular__core` → `@angular/core`); classic `org.webjars`/bower names pass through. They then flow through the **same npm paths** below — no WebJar-specific data.
    - **EOL**: matches dep coord against `data/eol-mapping.json`, fetches the cycle list from endoflife.date (cached 7d), flags cycles past their EOL date. npm packages and WebJars resolve by JS library name via `by_npm_name` / `by_npm_scope` (e.g. npm `angular`/webjar `angularjs` → AngularJS 1.x, `@angular/*` → Angular, `react`/`jquery`/`vue`/`bootstrap`).
    - **Obsolete**: Maven via curated `data/known-obsolete.json` (log4j 1.x, jackson-mapper-asl, joda-time, commons-httpclient 3.x, …); npm **and WebJars** via the registry's per-version `deprecated` field (authoritative maintainer data — every dep is checked, nothing curated, nothing skipped).
    - **Outdated**: Maven Central Solr query; npm registry `dist-tags.latest` (npm deps and WebJars). Both gated by `--no-all-libs`. Cache 24h. Concurrency 8.
+   - **Licenses** (`--no-licenses`): each registry pass also returns the package's license (no extra request); Maven licenses come network-free from cached POMs (`lib/maven-license.js`). `lib/license-policy.js` normalises to SPDX and classifies (permissive / weak / strong / network copyleft / proprietary / unknown), flagging copyleft + unknown.
 10. **Snyk** (optional, `--snyk`) — runs `snyk test --all-projects --json` against the cleaned target dir. Normalised + merged. Findings in both sources tagged `source: "both"`.
 11. **Render** — `writeReports()` produces `cve-report.html` (self-contained, inline CSS, no external assets) and `cve-report.doc` (same HTML with Office XML namespace meta tags so Word opens it natively). Default output dir: `./fad-checker-report/`.
+12. **Machine-readable exports** (optional) — `--export-sbom` writes a CycloneDX 1.6 SBOM with vulnerabilities inline (VDR); `--export-csaf` writes a CSAF 2.0 VEX. Both build purls via `lib/purl.js` and use the full match set (cpeFiltered marked, not dropped).
 
 ## Report structure
 
 ```
 <Executive Summary>            ← global criticality + key bullet counts
-<Summary cards>                ← critical / high / medium / low / EOL / obsolete / outdated
+<Summary cards>                ← critical / high / medium / low / KEV / EOL / obsolete / outdated / licenses
 <Toolbar>                      ← expand-all / collapse-all / expand CVE details
 
 0. Warnings & scan-completeness ← chapter 0 if any warnings
@@ -139,10 +150,11 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 4. End-of-Life Frameworks
 5. Obsolete / Deprecated Libraries
 6. Outdated Libraries
-7. Fix Recommendations          ← per-ecosystem snippets
-  7.a Maven                     ← dependencyManagement XML
-  7.b npm                       ← package.json overrides
-  7.c yarn                      ← package.json resolutions
+7. Licenses                     ← grouped by SPDX policy category (copyleft/unknown flagged)
+8. Fix Recommendations          ← per-ecosystem snippets
+  8.a Maven                     ← dependencyManagement XML
+  8.b npm                       ← package.json overrides
+  8.c yarn                      ← package.json resolutions
 ```
 
 ## Important conventions
@@ -162,7 +174,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 - The bundle ships as `cves.zip.zip` (a zip whose sole content is another zip). `extractZip()` recurses up to 3 levels.
 - `endoflife.date` API responses are cached locally for 7 days; Maven Central and npm registry version lookups for 24 hours.
 - **Persistent config**: `~/.fad-checker/config.json` (mode 0600) stores per-user state, currently the NVD API key. Set via `fad-checker --set-nvd-key <KEY>`.
-- **`--offline` umbrella flag**: skips every network call (CVE index download, OSV queries, NVD enrichment, endoflife.date lookups, Maven Central version queries, npm registry queries, transitive POM fetches, retire.js scans). Falls back to whatever is already cached. Per-source variants (`--cve-offline`, `--no-osv`, `--no-nvd`, `--no-retire`, `--no-js`) still work independently.
+- **`--offline` umbrella flag**: skips every network call (CVE index download, OSV queries, NVD enrichment, EPSS/KEV lookups, endoflife.date lookups, Maven Central version queries, npm registry queries, transitive POM fetches, retire.js scans). Falls back to whatever is already cached. Per-source variants (`--cve-offline`, `--no-osv`, `--no-nvd`, `--no-epss`, `--no-kev`, `--no-licenses`, `--no-retire`, `--no-js`) still work independently.
 - `snyk` is not a dependency — we shell out via `execFile`. `snyk` exits 1 when it finds vulnerabilities, which is expected (the JSON is still on stdout).
 - The cleaned POM is the union of every profile's deps. Counts will therefore be larger than the source POM. This is intentional — verify your reasoning before "reducing" them.
 - Unresolved `${…}` Maven variables are kept verbatim in the rewritten POM. `lib/cve-match.js` resolves them lazily via `resolveDepVersion()` when collecting deps for the scan. Deps that *still* can't be resolved (external BOM) are surfaced in chapter 0 as `unresolved-versions` warnings.
@@ -171,7 +183,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 ## Testing
 
 ```bash
-npm test                          # full suite (244 tests)
+npm test                          # full suite (294 tests)
 node --test test/core.test.js     # one file
 ```
 

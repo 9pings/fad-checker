@@ -60,8 +60,26 @@ Each data source can be disabled independently:
 | `--no-all-libs` | Don't query Maven Central for latest versions (skips chapter 6 Outdated and the "missing on Central" check) |
 | `--no-osv` | Skip OSV.dev (Google + GitHub aggregated feed) |
 | `--no-nvd` | Skip NVD enrichment (no full CVSS, no CPE refinement) |
+| `--no-epss` | Skip EPSS (FIRST.org) exploit-prediction enrichment |
+| `--no-kev` | Skip CISA KEV (known-exploited) enrichment |
+| `--no-licenses` | Skip license detection + the copyleft-policy chapter |
 | `--no-retire` | Skip retire.js vendored-JS scan |
 | `--ignore-test` | Drop test-scoped Maven deps and dev npm deps from the scan entirely (chapter 2 will be empty) |
+
+## Machine-readable exports
+
+In addition to the HTML/`.doc` report, the run can emit standards-based artifacts (after the report, using the full match set):
+
+| Flag | Effect |
+| --- | --- |
+| `--export-sbom <file>` | Write a **CycloneDX 1.6** SBOM with `vulnerabilities` inline (a VDR). Components carry purls + detected licenses; vulnerabilities carry CVSS ratings, CWEs, affected purls, and `fad:epss` / `fad:kev` / `fad:priorityBand` properties. |
+| `--export-csaf <file>` | Write a **CSAF 2.0 VEX** (`csaf_vex`) document: a `product_tree` of every dep (purl-identified) plus per-CVE `product_status.known_affected`, `cvss_v3` scores, a KEV `exploited` flag, and prioritization notes. |
+
+```bash
+fad-checker -s ./proj --export-sbom sbom.cdx.json --export-csaf vex.csaf.json
+```
+
+Both honour `--offline` (they render from whatever the scan already resolved).
 
 ## Offline / cache control
 
