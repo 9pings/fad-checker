@@ -174,7 +174,12 @@ program
 	.option("--no-all-libs", "skip Maven Central queries (outdated check + missing-on-central check)")
 	.option("--no-osv", "skip OSV.dev (Google/GitHub aggregated Maven CVE feed)")
 	.option("--no-nvd", "skip NIST NVD enrichment of matched CVEs")
-	.option("--offline", "no network: use cached CVE/OSV/NVD/POM data only")
+	.option("--no-epss", "skip EPSS (FIRST.org exploit-prediction) enrichment")
+	.option("--no-kev", "skip CISA KEV (known-exploited) enrichment")
+	.option("--export-sbom <file>", "write a CycloneDX 1.6 SBOM (with vulnerabilities inline) to <file>")
+	.option("--export-csaf <file>", "write a CSAF 2.0 VEX document to <file>")
+	.option("--no-licenses", "skip license detection + copyleft policy check")
+	.option("--offline", "no network: use cached CVE/OSV/NVD/EPSS/KEV/POM data only")
 	.option("--set-nvd-key <key>", "save NVD API key to ~/.fad-checker/config.json (10× faster NVD enrichment)")
 	.option("--show-config", "print the persisted ~/.fad-checker/config.json")
 	.option("--export-cache <file>", "tar.gz/zip the ~/.fad-checker/ caches to <file> (excludes config.json by default)")
@@ -481,8 +486,12 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const willOsv = !!options.osv;
 	const willOutdated = !!options.allLibs;
 	const willNvd = !!options.nvd;
+	const willEpss = !!options.epss;
+	const willKev = !!options.kev;
+	const willLicenses = !!options.licenses;
 	const willRetire = !!options.retire;
-	const totalSteps = [willTransitive, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willNvd, willRetire].filter(Boolean).length;
+	const otherLicenseIds = activeIds.filter(id => id !== "yarn" && typeof getCodec(id)?.checkLicenses === "function");
+	const totalSteps = [willTransitive, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willNvd, willEpss, willKev, ...(willLicenses ? otherLicenseIds : []).map(() => true), willRetire].filter(Boolean).length;
 	const progress = new ui.Progress(totalSteps);
 
 	if (willTransitive) {
@@ -605,6 +614,40 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		}
 	}
 
+	// 4e. EPSS — exploit-prediction percentile for each matched CVE (FIRST.org).
+	if (willEpss) {
+		const st = progress.start("EPSS (FIRST.org)");
+		if (!cveMatches.length) { st.skip("no CVE"); }
+		else {
+			try {
+				const { enrichEpss } = require("./lib/epss");
+				await enrichEpss(cveMatches, { verbose, offline, onProgress: (p, t) => st.tick(p, t) });
+				const scored = cveMatches.filter(m => m.cve?.epssPercentile != null).length;
+				st.done(`${scored} scored`);
+			} catch (err) { st.fail(err.message); }
+		}
+	}
+
+	// 4f. CISA KEV — flag CVEs known to be exploited in the wild.
+	if (willKev) {
+		const st = progress.start("CISA KEV");
+		if (!cveMatches.length) { st.skip("no CVE"); }
+		else {
+			try {
+				const { enrichKev } = require("./lib/kev");
+				await enrichKev(cveMatches, { verbose, offline });
+				const kevd = cveMatches.filter(m => m.cve?.kev).length;
+				st.done(`${kevd} known-exploited`);
+			} catch (err) { st.fail(err.message); }
+		}
+	}
+
+	// 4g. Composite priority (KEV > EPSS-weighted CVSS). Always — cheap, pure.
+	try {
+		const { attachPriority } = require("./lib/priority");
+		attachPriority(cveMatches);
+	} catch (err) { ui.warn(`priority scoring skipped: ${err.message}`); }
+
 	// 5. retire.js — native "vendored" scanner contributed by the npm codec. Scans
 	//    vendored JS files (jquery copies, bootstrap, pdf.js, …) that live in the
 	//    source tree without any lockfile to back them.
@@ -649,10 +692,12 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// full per-bucket list (including cpeFiltered) so the HTML report can render
 	// its "Likely false positives" appendix — only the CLI headline excludes
 	// cpeFiltered to avoid alarming on triaged-out matches.
+	const { sortByPriority } = require("./lib/priority");
 	const prodMatches = cveMatches.filter(m => !m.dep?.isDev);
 	const devMatches  = cveMatches.filter(m =>  m.dep?.isDev);
-	const prodActive  = prodMatches.filter(m => !m.cpeFiltered);
-	const devActive   = devMatches.filter(m => !m.cpeFiltered);
+	const prodActive  = sortByPriority(prodMatches.filter(m => !m.cpeFiltered));
+	const devActive   = sortByPriority(devMatches.filter(m => !m.cpeFiltered));
+	const kevCount    = prodActive.filter(m => m.cve?.kev).length;
 	const cpeFilteredCount = (prodMatches.length - prodActive.length) + (devMatches.length - devActive.length);
 
 	const stats = computeStats(prodActive);
@@ -671,9 +716,11 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 
 	ui.section("Results");
 
-	heading("CVE · production", prodActive.length, fmtStats(stats));
+	heading("CVE · production", prodActive.length, fmtStats(stats) + (kevCount ? "  " + chalk.bgRed.white(` ${kevCount} KEV `) : ""));
 	for (const m of prodActive.slice(0, 12)) {
-		console.log("    " + sev(m.cve.severity)((m.cve.severity || "UNKNOWN").padEnd(8)) + " " + chalk.white(m.cve.id) + "  " + chalk.dim(`${depLabel(m.dep)}:${m.dep.version}`));
+		const epss = m.cve?.epssPercentile != null ? chalk.dim(` epss ${Math.round(m.cve.epssPercentile * 100)}%`) : "";
+		const kev = m.cve?.kev ? " " + chalk.bgRed.white(" KEV ") : "";
+		console.log("    " + sev(m.cve.severity)((m.cve.severity || "UNKNOWN").padEnd(8)) + " " + chalk.white(m.cve.id) + "  " + chalk.dim(`${depLabel(m.dep)}:${m.dep.version}`) + epss + kev);
 	}
 	if (prodActive.length > 12) console.log(chalk.dim(`    …and ${prodActive.length - 12} more (see report)`));
 	if (cpeFilteredCount) console.log(chalk.dim(`    ${cpeFilteredCount} likely false positive(s) → report appendix`));
