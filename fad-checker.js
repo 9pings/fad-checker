@@ -704,9 +704,25 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// full per-bucket list (including cpeFiltered) so the HTML report can render
 	// its "Likely false positives" appendix — only the CLI headline excludes
 	// cpeFiltered to avoid alarming on triaged-out matches.
+	// Triage — suppress accepted-risk / false-positive findings (--ignore / --vex).
+	// Marked in place; kept in the machine exports (flagged) but dropped from the
+	// human report's active chapters and from CI gating.
+	let suppressedCount = 0;
+	if (options.ignore || options.vex) {
+		try {
+			const { parseIgnoreFile, parseVex, applySuppressions } = require("./lib/suppress");
+			const rules = [];
+			if (options.ignore) rules.push(...parseIgnoreFile(fs.readFileSync(options.ignore, "utf8")));
+			if (options.vex) rules.push(...parseVex(JSON.parse(fs.readFileSync(options.vex, "utf8"))));
+			suppressedCount = applySuppressions(cveMatches, rules);
+			const via = [options.ignore && "--ignore", options.vex && "--vex"].filter(Boolean).join(" + ");
+			if (suppressedCount) ui.info(chalk.dim(`triage: ${suppressedCount} finding(s) suppressed by ${via}`));
+		} catch (err) { ui.warn(`suppression skipped: ${err.message}`); }
+	}
+
 	const { sortByPriority } = require("./lib/priority");
-	const prodMatches = cveMatches.filter(m => !m.dep?.isDev);
-	const devMatches  = cveMatches.filter(m =>  m.dep?.isDev);
+	const prodMatches = cveMatches.filter(m => !m.dep?.isDev && !m.suppressed);
+	const devMatches  = cveMatches.filter(m =>  m.dep?.isDev && !m.suppressed);
 	const prodActive  = sortByPriority(prodMatches.filter(m => !m.cpeFiltered));
 	const devActive   = sortByPriority(devMatches.filter(m => !m.cpeFiltered));
 	const kevCount    = prodActive.filter(m => m.cve?.kev).length;
@@ -811,6 +827,11 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		projectInfo,
 		outputDir: reportDir,
 		warnings: [
+			...(suppressedCount ? [{
+				type: "suppressed",
+				count: suppressedCount,
+				message: `${suppressedCount} finding(s) suppressed via triage (--ignore/--vex) — excluded from the chapters above and from CI gating, but retained (flagged) in the JSON/SBOM/CSAF exports.`,
+			}] : []),
 			...npmWarnings,
 			...scanWarnings,
 			...(privateLibIds.length ? [{
