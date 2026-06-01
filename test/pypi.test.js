@@ -145,3 +145,16 @@ test("pypi codec: poetry pyproject still detected when lockfile present (lock wi
 	assert.ok(deps.has("pypi:requests"));
 	assert.ok(!warnings.find(w => w.type === "no-lockfile"));             // lockfile is authoritative
 });
+
+// Regression: classic poetry.lock (≤1.4) marks dev deps via `category = "dev"`,
+// not `groups` — those were wrongly classified prod. (audit fix #F)
+test("parsePoetryLock honours classic category=dev", () => {
+	const fs = require("fs"), os = require("os");
+	const f = path.join(os.tmpdir(), `fad-poetry-${process.pid}.lock`);
+	fs.writeFileSync(f, '[[package]]\nname="pytest"\nversion="7.0.0"\ncategory="dev"\n\n[[package]]\nname="flask"\nversion="2.0.0"\ncategory="main"\n');
+	const deps = parsePoetryLock(f).deps;
+	const by = Object.fromEntries(deps.map(d => [d.name, d]));
+	assert.equal(by.pytest.isDev, true);
+	assert.equal(by.flask.isDev, false);
+	fs.rmSync(f, { force: true });
+});

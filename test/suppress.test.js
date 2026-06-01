@@ -71,3 +71,16 @@ test("parseVex suppresses CVEs marked not_affected/fixed, mapped by purl", () =>
 	assert.equal(matches[1].suppressed, undefined);
 	assert.equal(matches[2].suppressed, true);
 });
+
+// Regression: a VEX product_id with no purl in the product_tree must NOT become a
+// global (coordRe:null) rule that suppresses the CVE for every dependency. (#4)
+test("VEX with an unmappable product_id does not suppress unrelated deps", () => {
+	const csaf = { product_tree: { full_product_names: [] }, vulnerabilities: [
+		{ cve: "CVE-2021-44228", product_status: { known_not_affected: ["CSAFPID-1"] } },
+	] };
+	const rules = parseVex(csaf);
+	assert.equal(rules.length, 0);
+	const unrelated = makeDepRecord({ ecosystem: "maven", namespace: "org.unrelated", name: "thing", version: "1.0.0", manifestPath: "pom.xml" });
+	const matches = [{ cve: { id: "CVE-2021-44228" }, dep: unrelated }];
+	assert.equal(applySuppressions(matches, rules), 0);
+});

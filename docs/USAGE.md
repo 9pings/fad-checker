@@ -33,7 +33,10 @@ fad-checker -s . --no-npm                     # skip npm
 fad-checker -s . --no-js                      # alias: skip npm + yarn (Maven-only)
 fad-checker -s . --no-pypi --no-nuget         # skip Python + C#
 fad-checker -s . --no-go --no-ruby            # skip Go + Ruby
+fad-checker -s . --no-jars                    # skip embedded .jar/.war/.ear scanning
 ```
+
+> **Embedded JARs**: committed `.jar`/`.war`/`.ear` archives (vendored libs, Spring-Boot fat-jars, shaded uber-jars) are unzipped in-memory and their Maven coordinates — read from `META-INF/maven/.../pom.properties`, then `MANIFEST.MF`, then the file name — are scanned for CVEs and reported in their own **Embedded binaries** chapter, grouped by containing archive. Auto when archives are present; `--no-jars` disables it. Archives with no resolvable coordinate are listed in chapter 0.
 
 > **npm without a lockfile**: a `package.json` lacking a sibling
 > `package-lock.json`/`yarn.lock` is now scanned **best-effort** — pinned exact
@@ -57,7 +60,7 @@ Each data source can be disabled independently:
 
 | Flag | Effect |
 | --- | --- |
-| `--no-report` | Skip the report flow entirely (just cleanup) |
+| `--no-report` | Write **no output files at all** (gate-only / CI mode) — the scan, terminal summary and `--fail-on` gate still run. See **Outputs** for the per-type `--report-*` flags |
 | `--no-transitive` | Don't fetch transitive Maven deps from Maven Central |
 | `--no-all-libs` | Don't query Maven Central for latest versions (skips chapter 6 Outdated and the "missing on Central" check) |
 | `--no-osv` | Skip OSV.dev (Google + GitHub aggregated feed) |
@@ -66,22 +69,32 @@ Each data source can be disabled independently:
 | `--no-kev` | Skip CISA KEV (known-exploited) enrichment |
 | `--no-licenses` | Skip license detection + the copyleft-policy chapter |
 | `--no-retire` | Skip retire.js vendored-JS scan |
+| `--no-jars` | Skip scanning embedded `.jar`/`.war`/`.ear` binaries for Maven coordinates (chapter 1B) |
 | `--ignore-test` | Drop test-scoped Maven deps and dev npm deps from the scan entirely (chapter 2 will be empty) |
 
-## Machine-readable exports
+## Outputs
 
-In addition to the HTML/`.doc` report, the run can emit standards-based artifacts (after the report, using the full match set):
+Every output has its own `--report-<type>` flag, each taking an **optional** path. Give a path to write there; omit the path to use a default name under `--report-output` (default dir `./fad-checker-report`). **If you pass no `--report-*` flag at all, the HTML + `.doc` report is written by default** (the historical behaviour); pass `--no-report` to write nothing (gate-only / CI). Selecting any `--report-*` flag writes exactly that set — e.g. `--report-sbom` alone writes only the SBOM, no HTML.
 
-| Flag | Effect |
-| --- | --- |
-| `--export-sbom <file>` | Write a **CycloneDX 1.6** SBOM with `vulnerabilities` inline (a VDR). Components carry purls + detected licenses; vulnerabilities carry CVSS ratings, CWEs, affected purls, and `fad:epss` / `fad:kev` / `fad:priorityBand` properties. |
-| `--export-csaf <file>` | Write a **CSAF 2.0 VEX** (`csaf_vex`) document: a `product_tree` of every dep (purl-identified) plus per-CVE `product_status.known_affected`, `cvss_v3` scores, a KEV `exploited` flag, and prioritization notes. |
-| `--export-json <file>` | Write a flat **findings JSON** (fad's own format): every chapter (CVE/EOL/obsolete/outdated/licenses/vendored) + a summary, easy to diff between audits and post-process. |
-| `--export-sarif <file>` | Write a **SARIF 2.1.0** log for GitHub Code Scanning / GitLab: one rule per CVE with `security-severity` (drives GitHub's severity), KEV tags, and the manifest file as the result location. |
+| Flag | Default name | Effect |
+| --- | --- | --- |
+| `--report-html [file]` | `cve-report.html` | The self-contained HTML report (inline CSS, no external assets). |
+| `--report-doc [file]` | `cve-report.doc` | The same report as a Word-compatible `.doc`. |
+| `--report-sbom [file]` | `sbom.cdx.json` | A **CycloneDX 1.6** SBOM with `vulnerabilities` inline (a VDR). Components carry purls + detected licenses (+ `fad:provenance`/`fad:location` for embedded-jar coords); vulnerabilities carry CVSS ratings, CWEs, affected purls, and `fad:epss` / `fad:kev` / `fad:priorityBand` properties. |
+| `--report-csaf [file]` | `csaf-vex.json` | A **CSAF 2.0 VEX** (`csaf_vex`) document: a `product_tree` of every dep (purl-identified) plus per-CVE `product_status.known_affected`, `cvss_v3` scores, a KEV `exploited` flag, and prioritization notes. |
+| `--report-json [file]` | `findings.json` | A flat **findings JSON** (fad's own format): every chapter (CVE/EOL/obsolete/outdated/licenses/vendored) + a summary, easy to diff between audits and post-process. |
+| `--report-sarif [file]` | `fad.sarif` | A **SARIF 2.1.0** log for GitHub Code Scanning / GitLab: one rule per CVE with `security-severity` (drives GitHub's severity), KEV tags, and the manifest (or embedding jar) as the result location. |
+| `--report-output <dir>` | `./fad-checker-report` | Base directory for any output left at its default name. |
 
 ```bash
-fad-checker -s ./proj --export-sbom sbom.cdx.json --export-csaf vex.csaf.json \
-                      --export-json findings.json --export-sarif findings.sarif
+# default: HTML + .doc into ./fad-checker-report
+fad-checker -s ./proj
+
+# only the machine artifacts, default names under a custom dir
+fad-checker -s ./proj --report-output ./out --report-sbom --report-csaf --report-json --report-sarif
+
+# explicit paths
+fad-checker -s ./proj --report-sbom sbom.cdx.json --report-sarif fad.sarif
 ```
 
 All honour `--offline` (they render from whatever the scan already resolved).
@@ -90,15 +103,15 @@ All honour `--offline` (they render from whatever the scan already resolved).
 
 | Flag | Effect |
 | --- | --- |
-| `--fail-on <level>` | Exit non-zero when a **production** finding meets the level: `low`/`medium`/`high`/`critical` (severity) or `kev` (only CISA-known-exploited). Default `none`. Reports/exports are written first, so artifacts always land. |
+| `--fail-on <level>` | Exit non-zero when a **production or embedded-binary** finding meets the level: `low`/`medium`/`high`/`critical` (severity) or `kev` (only CISA-known-exploited). Default `none`. Outputs are written first, so artifacts always land. An invalid level hard-fails (exit 2) rather than silently disabling the gate. |
 | `--ignore <file>` | Suppress findings. One rule per line: `CVE-2021-44228` (anywhere), `CVE-… org.apache.*` (coord/purl glob), `* npm:lodash` (any CVE for a coord); text after `#` is the reason. |
-| `--vex <file>` | Ingest a **CSAF VEX**: CVEs marked `known_not_affected` / `fixed` are suppressed (products mapped back to coords by purl — round-trips fad's own `--export-csaf`). |
+| `--vex <file>` | Ingest a **CSAF VEX**: CVEs marked `known_not_affected` / `fixed` are suppressed (products mapped back to coords by purl — round-trips fad's own `--report-csaf`). |
 
 Suppressed findings are dropped from the report chapters and from `--fail-on`, but kept (flagged `suppressed`) in the JSON/SBOM/CSAF/SARIF exports, and the count is noted in chapter 0.
 
 ```bash
 # Fail the pipeline only on exploited-in-the-wild vulns, minus accepted risks
-fad-checker -s . --fail-on kev --ignore .fadignore --export-sarif fad.sarif
+fad-checker -s . --fail-on kev --ignore .fadignore --report-sarif fad.sarif
 ```
 
 ## Offline / cache control

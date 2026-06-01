@@ -52,3 +52,11 @@ test("go codec collects from the fixture (go.mod authoritative)", async () => {
 test("go codec detects the fixture dir", () => {
 	assert.equal(go.detect(path.join(__dirname, "fixtures", "go-app")), true);
 });
+
+// Regression: go.sum lists every version in the module graph — keep the HIGHEST,
+// not the first encountered (the comment promised highest, the code kept first). (#E)
+test("parseGoSum keeps the highest version per module", () => {
+	const out = parseGoSum("ex.com/m v1.0.0 h1:a=\nex.com/m v1.5.0 h1:b=\nex.com/m v1.2.0 h1:c=\n");
+	assert.equal(out.deps.length, 1);
+	assert.equal(out.deps[0].version, "1.5.0");
+});

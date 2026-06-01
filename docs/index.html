@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fad-checker — polyglot dependency CVE/EOL scanner, no build needed</title>
-<meta name="description" content="Scan Maven, npm, Yarn, pnpm, Composer, PyPI and NuGet dependencies for CVEs (prioritised by EPSS + CISA KEV), end-of-life, outdated versions and licenses in one shot — no build, no install. Audit-ready HTML/Word report, CycloneDX SBOM + CSAF VEX exports, and an air-gapped mode for confidential code.">
+<meta name="description" content="Scan Maven, npm, Yarn, pnpm, Composer, PyPI, NuGet, Go and Ruby dependencies — plus embedded JARs (fat-jars/war/ear) — for CVEs (prioritised by EPSS + CISA KEV), end-of-life, outdated versions and licenses in one shot — no build, no install. Audit-ready HTML/Word report, CycloneDX SBOM + CSAF VEX exports, and an air-gapped mode for confidential code.">
 <meta property="og:title" content="fad-checker — audit every dependency, no build, no leaks">
 <meta property="og:description" content="Polyglot CVE / EOL / outdated / license scanner that reads your source tree directly. Merged sources, CPE filtering, EPSS + KEV priority, CycloneDX SBOM + CSAF VEX, HTML+Word report, air-gapped PASSI mode.">
 <meta property="og:type" content="website">
@@ -211,13 +211,14 @@
   <!-- ECOSYSTEMS -->
   <section style="padding-top:18px">
     <div class="kicker reveal">One tool, one pass</div>
-    <h2 class="reveal">Nine ecosystems + vendored JS</h2>
+    <h2 class="reveal">Nine ecosystems + vendored JS + embedded JARs</h2>
     <p class="sub reveal">Point it at any checkout — multi-module, monorepo, polyglot. It parses manifests and lockfiles directly, and falls back to best-effort (pinned versions) when there's no lockfile.</p>
     <div class="ecos reveal">
       <span>Maven · pom.xml</span><span>npm · package-lock</span><span>Yarn · v1 + Berry</span>
       <span>pnpm · v5/6/9</span><span>Composer · composer.lock</span><span>PyPI · poetry/uv/pdm/pip</span>
       <span>NuGet · .csproj/.fsproj/.vbproj</span><span>Go · go.mod/go.sum</span>
       <span>Ruby · Gemfile.lock</span><span>Vendored JS · retire.js</span>
+      <span>Embedded JARs · fat-jar/war/ear</span>
     </div>
   </section>
 
@@ -226,7 +227,7 @@
     <div class="kicker reveal">Why it's different</div>
     <h2 class="reveal">Built for audits, not just CI</h2>
     <div class="grid">
-      <div class="card reveal"><div class="ic">01</div><h3>No build, polyglot</h3><p>Reads <span class="mono">pom.xml</span> &amp; lockfiles across all nine ecosystems. No JDK, no <span class="mono">install</span>, no Docker — audit a checkout you can't even compile.</p></div>
+      <div class="card reveal"><div class="ic">01</div><h3>No build, polyglot</h3><p>Reads <span class="mono">pom.xml</span> &amp; lockfiles across all nine ecosystems. No JDK, no <span class="mono">install</span>, no Docker — audit a checkout you can't even compile. It even cracks open committed <span class="mono">.jar</span>/<span class="mono">.war</span>/<span class="mono">.ear</span> binaries (fat-jars, shaded uber-jars) in-memory to scan the libraries shaded inside them.</p></div>
       <div class="card reveal"><div class="ic">02</div><h3>Merged sources, fewer false positives</h3><p>CVEProject + OSV.dev + NVD + retire.js, merged &amp; deduped, then cross-checked against NVD <span class="mono">CPE</span> version ranges to filter noise.</p></div>
       <div class="card reveal"><div class="ic">03</div><h3>Risk-based priority</h3><p>Every CVE enriched with <b>EPSS</b> (FIRST.org exploit-prediction) and <b>CISA KEV</b> (known-exploited). A composite score puts <b>exploited-in-the-wild</b> first, not just the highest CVSS.</p></div>
       <div class="card reveal"><div class="ic">04</div><h3>Beyond CVEs</h3><p>Flags <b>end-of-life</b> (endoflife.date), <b>deprecated / abandoned / yanked</b>, <b>outdated</b> versions, and <b>licenses</b> (SPDX + copyleft policy) — signals most scanners skip.</p></div>

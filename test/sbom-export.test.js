@@ -67,3 +67,24 @@ test("cvssMethod + cdxSeverity map NVD shapes to CycloneDX enums", () => {
 	assert.equal(cdxSeverity("CRITICAL"), "critical");
 	assert.equal(cdxSeverity("WAT"), "unknown");
 });
+
+// Regression: tolerate both the clean "CVSS:3.1" label and the legacy "CVSS:V31"
+// left in pre-fix NVD caches; an OSV/GHSA id must not get a dead NVD url. (#B/#C)
+test("cvssMethod tolerates legacy CVSS:V31 cache labels", () => {
+	assert.equal(cvssMethod("CVSS:3.1"), "CVSSv31");
+	assert.equal(cvssMethod("CVSS:V31"), "CVSSv31");
+	assert.equal(cvssMethod("CVSS:V40"), "CVSSv4");
+});
+
+test("buildCycloneDx points GHSA/OSV ids at the right advisory db", () => {
+	const dep = makeDepRecord({ ecosystem: "npm", namespace: "", name: "x", version: "1.0.0", manifestPath: "package.json" });
+	const resolved = new Map([[dep.coordKey, dep]]);
+	const bom = buildCycloneDx(resolved, [
+		{ dep, source: "osv", cve: { id: "GHSA-aaaa-bbbb-cccc", severity: "HIGH", score: 7 } },
+		{ dep, source: "nvd", cve: { id: "CVE-2021-1", severity: "HIGH", score: 7 } },
+	]);
+	const ghsa = bom.vulnerabilities.find(v => v.id.startsWith("GHSA"));
+	const cve = bom.vulnerabilities.find(v => v.id.startsWith("CVE"));
+	assert.match(ghsa.source.url, /github\.com\/advisories/);
+	assert.match(cve.source.url, /nvd\.nist\.gov/);
+});

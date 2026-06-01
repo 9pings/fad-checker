@@ -55,3 +55,14 @@ test("parseRange handles Maven range syntax", () => {
 	assert.deepEqual(parseRange("[1.0,2.0)"), { lower: "1.0", lowerInclusive: true, upper: "2.0", upperInclusive: false });
 	assert.deepEqual(parseRange("(,1.5]"), { lower: null, lowerInclusive: false, upper: "1.5", upperInclusive: true });
 });
+
+// Regression: a dot-aligned qualifier segment (e.g. "x.y.z.RC1") must rank BELOW
+// a numeric segment at the same position. cmpSegments read `.value` (undefined for
+// a qual+num segment) and wrongly ranked rc1 as a release. (audit fix #6)
+test("qualifier segment dot-aligned with a number ranks below the number", () => {
+	assert.equal(compareMavenVersions("1.0.rc1", "1.0.1"), -1);
+	assert.equal(compareMavenVersions("1.0.1", "1.0.rc1"), 1);
+	assert.equal(compareMavenVersions("5.0.0.RC1", "5.0.0.5"), -1);
+	// post-release qualifier (service pack) still ranks ABOVE the number
+	assert.equal(compareMavenVersions("5.0.0.sp1", "5.0.0.0"), 1);
+});

@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert");
-const { osvEcosystemFor, osvPkgName } = require("../lib/osv");
+const { osvEcosystemFor, osvPkgName, severityFromOsv, vulnToMatch } = require("../lib/osv");
 
 test("osvEcosystemFor maps codec ids to OSV ecosystem names", () => {
 	assert.strictEqual(osvEcosystemFor({ ecosystem: "maven" }), "Maven");
@@ -59,4 +59,25 @@ test("queryOsvForDeps sends correct package name + ecosystem per codec (mock fet
 		assert.strictEqual(q.package.ecosystem, d._exp.eco, `ecosystem for ${d._exp.name}`);
 		assert.strictEqual(q.version, d.version);
 	}
+});
+
+// Regression: OSV stores the CVSS *vector* in severity[].score — we must compute
+// the base score, not extract the version "3.1" as the score. (audit fix #A)
+test("severityFromOsv computes the v3 base score from the vector, not the version", () => {
+	const mk = v => ({ severity: [{ type: "CVSS_V3", score: v }] });
+	assert.deepEqual(severityFromOsv(mk("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H")), { severity: "CRITICAL", score: 9.8 });
+	// reflected-XSS reference vector → 6.1
+	assert.deepEqual(severityFromOsv(mk("CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N")), { severity: "MEDIUM", score: 6.1 });
+	// a CVSS v4 vector can't be scored here → null (lets NVD fill it in), never 4.0
+	assert.equal(severityFromOsv(mk("CVSS:4.0/AV:N/AC:L")).score, null);
+	// a bare numeric score is taken as-is
+	assert.equal(severityFromOsv(mk("7.5")).score, 7.5);
+});
+
+test("vulnToMatch carries the CVSS vector + version from OSV severity", () => {
+	const m = vulnToMatch({ ecosystem: "npm", name: "x", version: "1.0.0", coordKey: "npm:x" },
+		{ id: "GHSA-aaaa", severity: [{ type: "CVSS_V3", score: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" }] });
+	assert.equal(m.cve.score, 9.8);
+	assert.equal(m.cve.cvssVersion, "CVSS:3.1");
+	assert.ok(m.cve.cvssVector.startsWith("CVSS:3.1/"));
 });

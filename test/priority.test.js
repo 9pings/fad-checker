@@ -44,3 +44,11 @@ test("attachPriority mutates in place", () => {
 	assert.ok(matches[0].cve.priority);
 	assert.equal(typeof matches[0].cve.priority.score, "number");
 });
+
+// Regression: score===0 is a placeholder, not a real CVSS 0.0 — a CRITICAL-labelled
+// finding with score 0 must band from its severity, not collapse to "low". (#7)
+test("score 0 falls back to the severity label instead of banding as low", () => {
+	const p = computePriority({ score: 0, severity: "CRITICAL" });
+	assert.equal(p.band, "critical");
+	assert.ok(p.cvss > 0);
+});

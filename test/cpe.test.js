@@ -164,3 +164,17 @@ test("refineMatchesWithCpe flags out-of-range version as likely FP", () => {
 	refineMatchesWithCpe(matches);
 	assert.equal(matches[0].cpeFiltered, true);
 });
+
+// Regression: an AND configuration of (vulnerable software) AND (vulnerable:false
+// platform context) must still flag the dep — the context-only node is ignored,
+// not required. Previously .every(Boolean) dropped the finding. (audit fix #3)
+test("AND config with a vulnerable:false context node still affects the dep", () => {
+	const dep = { ecosystem: "maven", groupId: "org.apache.struts", artifactId: "struts", namespace: "org.apache.struts", name: "struts", version: "2.5.10", coordKey: "org.apache.struts:struts" };
+	const vulnNode = { operator: "OR", cpeMatch: [{ vulnerable: true, criteria: "cpe:2.3:a:apache:struts:*:*:*:*:*:*:*:*", versionEndExcluding: "2.5.20" }] };
+	const ctxNode = { operator: "OR", cpeMatch: [{ vulnerable: false, criteria: "cpe:2.3:o:linux:linux_kernel:*:*:*:*:*:*:*:*" }] };
+	const map = { byVendorProduct: {}, byProduct: {} };
+	const andCve = { configurations: [{ operator: "AND", nodes: [vulnNode, ctxNode] }] };
+	assert.equal(evaluateCveForDep(andCve, dep, map).affected, true);
+	// a fixed version (>= 2.5.20) is still NOT affected
+	assert.equal(evaluateCveForDep(andCve, { ...dep, version: "2.5.25" }, map).affected, false);
+});

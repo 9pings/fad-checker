@@ -15,7 +15,7 @@
 
 It runs against the source files alone. **No `mvn`, no `npm install`, no `composer install`, no `pip`, no `dotnet restore`, no Docker.** It reads `pom.xml`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `composer.lock`, `poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`/`pyproject.toml`/`requirements.txt`, and `packages.lock.json`/`*.csproj`/`*.fsproj`/`*.vbproj`/`packages.config` directly.
 
-> **Supported ecosystems: Maven, npm, Yarn (v1 + Berry/v2+), pnpm, Composer, PyPI, NuGet, Go, Ruby.** Each is a self-contained **codec** (`lib/codecs/`) — adding another is adding a codec, no orchestrator surgery. Vendored JS (jQuery, Bootstrap, PDF.js, etc.) is also scanned via retire.js.
+> **Supported ecosystems: Maven, npm, Yarn (v1 + Berry/v2+), pnpm, Composer, PyPI, NuGet, Go, Ruby.** Each is a self-contained **codec** (`lib/codecs/`) — adding another is adding a codec, no orchestrator surgery. Vendored JS (jQuery, Bootstrap, PDF.js, etc.) is also scanned via retire.js. **Embedded JARs** committed into the tree — vendored libs, Spring-Boot fat-jars, shaded uber-jars inside `.jar`/`.war`/`.ear` — are unzipped in-memory and their Maven coordinates scanned too (disable with `--no-jars`).
 
 ---
 
@@ -47,6 +47,7 @@ Exactly **two** runtime dependencies must be on PATH (or installed automatically
 | --- | --- | --- |
 | **0. Warnings** | local heuristics | Missing lockfiles, unresolved Maven versions (BOM-managed), private libs not on Maven Central |
 | **1. CVE (production)** | CVEProject + OSV.dev + NVD + CPE | Public CVE / GHSA in production deps, per ecosystem, per manifest file — each row **prioritised** by CISA KEV + EPSS + CVSS |
+| **1B. Embedded binaries** | same, on coords read from archives | CVEs in libraries **shipped inside committed `.jar`/`.war`/`.ear`** (vendored libs, Spring-Boot fat-jars, shaded uber-jars) — not declared in any `pom.xml`. Grouped by containing archive |
 | **2. CVE in dev deps** | same | Same, but for `test`/`provided` (Maven) and `dev`/`optional`/`peer` (npm) |
 | **3. Vendored JS** | [retire.js](https://retirejs.github.io/) | Old jQuery/Bootstrap/Angular/PDF.js copies sitting in `static/` or `webapp/` with no lockfile |
 | **4. EOL frameworks** | endoflife.date | Spring Boot 2.5, Hibernate 4.x, EOL JDKs, AngularJS, Laravel/Symfony, Django, .NET, etc. |
@@ -55,7 +56,7 @@ Exactly **two** runtime dependencies must be on PATH (or installed automatically
 | **7. Licenses** | registry metadata + Maven POMs → SPDX policy | Each dep's license normalised to SPDX and classified; copyleft (GPL/AGPL/LGPL/MPL), proprietary and unknown flagged for review |
 | **8. Fix Recommendations** | computed | Per-ecosystem pin recipes: Maven `<dependencyManagement>`, npm `overrides`, yarn `resolutions`, `composer require`, `pip install`, `dotnet add package` |
 
-The HTML report opens in any browser, contains every detail (CVSS vectors, references, full descriptions, CPE configurations, via-paths for transitives) and ships a Word-compatible `.doc` twin. Every match carries a **composite priority** (KEV-exploited > EPSS likelihood > CVSS severity), and the run can additionally emit a **CycloneDX 1.6 SBOM** (`--export-sbom`, vulnerabilities inline) and a **CSAF 2.0 VEX** (`--export-csaf`) for downstream tooling.
+The HTML report opens in any browser, contains every detail (CVSS vectors, references, full descriptions, CPE configurations, via-paths for transitives) and ships a Word-compatible `.doc` twin. Every match carries a **composite priority** (KEV-exploited > EPSS likelihood > CVSS severity), and the run can additionally emit a **CycloneDX 1.6 SBOM** (`--report-sbom`, vulnerabilities inline) and a **CSAF 2.0 VEX** (`--report-csaf`) for downstream tooling.
 
 ---
 
@@ -194,6 +195,7 @@ This is the surprising bit. The whole point is that you can run `fad-checker` ag
 - **Ruby** — `Gemfile.lock` `specs:` give the resolved gem set. OSV "RubyGems" for recall, the RubyGems API for outdated + licenses.
 - **Lockfile-first, best-effort fallback** — when a lockfile is present it wins. When it's absent, the loose manifest (`package.json` / `composer.json` / `pyproject.toml` / `requirements.txt` / `*.csproj`) is still parsed for its **pinned exact versions**, with ranges skipped and a `no-lockfile` warning in chapter 0 flagging the partial coverage.
 - **Vendored JavaScript** — `retire.js` shells out and scans `.js` / `.min.js` files by signature, catching old jQuery / Bootstrap / Angular / PDF.js copies that no lockfile knows about.
+- **Embedded JARs** — committed `.jar` / `.war` / `.ear` archives are unzipped **in memory** (via `fflate` — nested fat-jar libs are recursed without ever touching disk, so there's no zip-slip risk) and each artifact's Maven coordinate is read from `META-INF/maven/.../pom.properties` (authoritative), then `MANIFEST.MF`, then the file name. Those coordinates run through the same CVE/OSV/NVD matching as declared deps but report in their own **Embedded binaries** chapter, grouped by containing archive. An archive whose coordinate can't be resolved is flagged in chapter 0 rather than scanned blindly. Auto when archives are present; disable with `--no-jars`. (Embedded coords don't trigger Maven Central transitive resolution — a fat-jar already ships its dependencies, which the recursion finds directly.)
 - **CVE data** — three independent sources merged:
   - **CVEProject** (the canonical `cvelistV5` bundle, filtered to Maven-relevant entries)
   - **OSV.dev** (Google + GitHub Security Lab, multi-ecosystem)
@@ -201,7 +203,7 @@ This is the surprising bit. The whole point is that you can run `fad-checker` ag
 - **CPE refinement** — once a CVE is matched, its NVD CPE configurations are checked against the dep version range. A match outside the vulnerable range is flagged `cpeFiltered: true` (likely false positive). A curated `data/cpe-coord-map.json` maps CPE `vendor:product` to Maven `g:a` (60+ entries seeded: log4j, jackson, spring, tomcat, jetty, netty, …).
 - **Prioritization** — each matched CVE is enriched with **EPSS** (FIRST.org exploit-prediction percentile) and **CISA KEV** (known-exploited catalogue), then scored: KEV (exploited in the wild) outranks EPSS-weighted CVSS. The report sorts by this composite priority and badges KEV/EPSS.
 - **Licenses** — each dependency's license is resolved (registry metadata, no extra request; Maven from cached POMs), normalised to SPDX and classified against a copyleft policy (`data/license-policy.json`) — permissive / weak / strong / network copyleft / proprietary / unknown.
-- **Machine-readable exports** — `--export-sbom` emits a **CycloneDX 1.6** SBOM with vulnerabilities inline (VDR); `--export-csaf` emits a **CSAF 2.0 VEX**; `--export-json` a flat findings document (all chapters, diff-friendly); `--export-sarif` a **SARIF 2.1.0** log for GitHub/GitLab code scanning. purls per ecosystem.
+- **Unified outputs** — one `--report-<type>` flag per output, each with an OPTIONAL path (omit it → a default name under `--report-output`): `--report-html`, `--report-doc`, plus the machine-readable `--report-sbom` (**CycloneDX 1.6**, vulnerabilities inline / VDR), `--report-csaf` (**CSAF 2.0 VEX**), `--report-json` (flat findings, diff-friendly) and `--report-sarif` (**SARIF 2.1.0** for GitHub/GitLab code scanning). With no `--report-*` flag, HTML + `.doc` are written by default; `--no-report` writes nothing (gate-only). purls per ecosystem.
 - **CI gating & triage** — `--fail-on <low|medium|high|critical|kev>` sets a non-zero exit code (`kev` = fail only on a CISA-known-exploited finding). `--ignore <file>` (CVE/coord/glob rules) and `--vex <file>` (ingest a CSAF VEX) suppress accepted-risk / false-positive findings from the report and the gate, while keeping them flagged in the exports — so re-audits stay signal-rich.
 
 ---

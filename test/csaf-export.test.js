@@ -44,3 +44,24 @@ test("buildCsaf omits cvss_v3 scores for non-v3 metrics", () => {
 	const doc = buildCsaf(resolved, matches, {});
 	assert.equal(doc.vulnerabilities[0].scores, undefined);
 });
+
+// Regression: CSAF must stay schema-valid for awkward inputs. (audit fix #5)
+//  - a match whose dep isn't in resolvedDeps (Snyk-only) gets registered as a
+//    product so known_affected is never the (invalid) empty array;
+//  - an "UNKNOWN" severity is mapped to a valid CVSS-v3 baseSeverity enum;
+//  - a non-v3 (e.g. v4) vector string is dropped rather than failing the v3 schema.
+test("buildCsaf keeps schema-valid output for snyk-only + UNKNOWN + v4-vector", () => {
+	const doc = buildCsaf(new Map(), [
+		{ dep: { ecosystem: "npm", name: "ghost", version: "1.0.0", coordKey: "npm:ghost" }, source: "snyk", cve: { id: "CVE-X", severity: "HIGH", score: 7 } },
+		{ dep: { ecosystem: "npm", name: "foo", version: "2.0.0", coordKey: "npm:foo" }, cve: { id: "CVE-Y", severity: "UNKNOWN", score: 5, cvssVersion: "3.1", cvssVector: "CVSS:4.0/AV:N" } },
+	]);
+	for (const v of doc.vulnerabilities) {
+		assert.ok(v.product_status.known_affected.length >= 1, `${v.cve} has affected products`);
+		const sev = v.scores?.[0]?.cvss_v3?.baseSeverity;
+		if (sev) assert.ok(["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"].includes(sev), `${sev} is a valid enum`);
+		const vec = v.scores?.[0]?.cvss_v3?.vectorString;
+		if (vec) assert.match(vec, /^CVSS:3\.[01]\//);
+	}
+	// the unresolved snyk-only dep was registered as a product
+	assert.ok(doc.product_tree.full_product_names.some(p => p.name.includes("ghost")));
+});

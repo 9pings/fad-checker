@@ -3,6 +3,56 @@
 All notable changes to `fad-checker` are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0]
+
+### Added
+- **Embedded-binary scanning (chapter 1B).** The Maven codec now discovers Maven
+  coordinates inside committed `.jar`/`.war`/`.ear` archives — vendored libs,
+  Spring-Boot fat-jars, shaded uber-jars — by unzipping them **in memory** (via
+  `fflate`, recursing into nested jars without touching disk, so there is no
+  zip-slip risk). Each artifact's coordinate is read from
+  `META-INF/maven/.../pom.properties` → `MANIFEST.MF` → file name; unidentifiable
+  archives are flagged in chapter 0 rather than scanned blindly. Findings carry
+  `provenance:"embedded"`, report in a dedicated **Embedded binaries** chapter
+  (grouped by containing archive), feed the `--fail-on` gate, and are labelled in
+  the SBOM (`fad:provenance`/`fad:location` + unique `bom-ref`), SARIF
+  (`provenance` + nested-jar location) and JSON exports. Auto when archives are
+  present; `--no-jars` disables it.
+
+### Changed
+- **Unified output flags.** Every output now has its own `--report-<type>` flag
+  taking an OPTIONAL path (omit it → a default name under `--report-output`):
+  `--report-html`, `--report-doc`, `--report-sbom`, `--report-csaf`,
+  `--report-json`, `--report-sarif`. With no `--report-*` flag, HTML + `.doc` are
+  written as before; selecting any flag writes exactly that set.
+  **BREAKING:** the old `--export-sbom`/`--export-csaf`/`--export-json`/`--export-sarif`
+  flags are removed — use `--report-sbom`/`-csaf`/`-json`/`-sarif`. (The unrelated
+  `--export-cache` / `--export-anonymized` flags are unchanged.)
+- **`--no-report` now writes NO output files at all** (gate-only / CI mode) — the
+  scan, terminal summary and `--fail-on` gate still run. Previously it
+  short-circuited the whole flow, so `--no-report --fail-on …` silently passed.
+
+### Fixed
+- **Catastrophic data loss**: `--target` being a *parent* of `--src` passed the
+  guardrail and `rimraf`'d the source tree. The guard now rejects overlap in both
+  directions.
+- **Missed npm/yarn/pnpm CVEs**: only the highest version of a duplicated package
+  was scanned; nested-`node_modules` lower versions are now accumulated.
+- **CPE false negatives**: AND-configurations with a `vulnerable:false` platform
+  node wrongly dropped real findings.
+- **VEX over-suppression**: an unmappable product id suppressed a CVE for every
+  dependency.
+- **CSAF/SBOM/SARIF scoring**: OSV CVSS *vectors* were mis-read as the score
+  (`3.1`), the NVD CVSS version label was malformed (`CVSS:V31`), and an NVD record
+  without metrics clobbered an OSV-derived vector — so CSAF emitted no scores and
+  SBOM showed `method:other`. CVSS v3 base scores are now computed from the vector,
+  labels normalised, and exports stay schema-valid (no empty `known_affected`, no
+  `UNKNOWN` baseSeverity, no v4 vector under a v3 score).
+- **CI / parsing**: an invalid `--fail-on <level>` (typo) now hard-fails instead of
+  silently disabling the gate; Maven version ordering for dot-aligned qualifiers
+  (`5.0.0.RC1` vs `5.0.0.5`) corrected; classic poetry.lock `category="dev"` and
+  `go.sum` highest-version selection fixed.
+
 ## [2.0.1]
 
 ### Fixed

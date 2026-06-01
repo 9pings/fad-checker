@@ -129,8 +129,8 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
    - **Outdated**: Maven Central Solr query; npm registry `dist-tags.latest` (npm deps and WebJars). Both gated by `--no-all-libs`. Cache 24h. Concurrency 8.
    - **Licenses** (`--no-licenses`): each registry pass also returns the package's license (no extra request); Maven licenses come network-free from cached POMs (`lib/maven-license.js`). `lib/license-policy.js` normalises to SPDX and classifies (permissive / weak / strong / network copyleft / proprietary / unknown), flagging copyleft + unknown.
 10. **Snyk** (optional, `--snyk`) — runs `snyk test --all-projects --json` against the cleaned target dir. Normalised + merged. Findings in both sources tagged `source: "both"`.
-11. **Render** — `writeReports()` produces `cve-report.html` (self-contained, inline CSS, no external assets) and `cve-report.doc` (same HTML with Office XML namespace meta tags so Word opens it natively). Default output dir: `./fad-checker-report/`.
-12. **Machine-readable exports** (optional) — `--export-sbom` writes a CycloneDX 1.6 SBOM with vulnerabilities inline (VDR); `--export-csaf` writes a CSAF 2.0 VEX. Both build purls via `lib/purl.js` and use the full match set (cpeFiltered marked, not dropped).
+11. **Outputs** — controlled by the `--report-<type>` family (`html`/`doc`/`sbom`/`csaf`/`json`/`sarif`), each taking an optional path (else a default name under `--report-output`, default `./fad-checker-report/`). With no `--report-*` flag the default set is HTML + `.doc`; `--no-report` writes nothing (gate-only). `writeReports()` renders `cve-report.html` (self-contained, inline CSS) and/or `cve-report.doc` (same HTML with Office XML meta tags so Word opens it natively).
+12. **Machine-readable exports** (optional) — `--report-sbom` writes a CycloneDX 1.6 SBOM with vulnerabilities inline (VDR); `--report-csaf` writes a CSAF 2.0 VEX; `--report-json` a flat findings doc; `--report-sarif` a SARIF 2.1.0 log. All build purls via `lib/purl.js` and use the full match set (cpeFiltered marked, not dropped; embedded-jar coords carry `provenance:"embedded"`).
 
 ## Report structure
 

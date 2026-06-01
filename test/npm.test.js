@@ -241,3 +241,28 @@ test("collectNpmDeps: Berry yarn.lock collected with ecosystemType=yarn", () => 
 	// no "yarn-berry-unsupported" warning anymore
 	assert.ok(!(map.warnings || []).find(w => w.type === "yarn-berry-unsupported"));
 });
+
+// Regression: every DISTINCT concrete version of a package must be scanned, not
+// just the highest. A nested node_modules pin (lower version) used to be dropped,
+// missing CVEs that only affect that lower version. (audit fix #2)
+test("collectNpmDeps accumulates every distinct nested version", () => {
+	const { collectNpmDeps } = require("../lib/codecs/npm/collect");
+	const fs = require("fs");
+	const os = require("os");
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-npm-"));
+	fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "t", version: "1.0.0", dependencies: { lodash: "^4.0.0", a: "^1.0.0" } }));
+	fs.writeFileSync(path.join(dir, "package-lock.json"), JSON.stringify({
+		name: "t", version: "1.0.0", lockfileVersion: 3,
+		packages: {
+			"": { name: "t", version: "1.0.0", dependencies: { lodash: "^4.0.0", a: "^1.0.0" } },
+			"node_modules/lodash": { version: "4.17.21" },
+			"node_modules/a": { version: "1.0.0", dependencies: { lodash: "^3.0.0" } },
+			"node_modules/a/node_modules/lodash": { version: "3.10.1" },
+		},
+	}));
+	const deps = collectNpmDeps(dir); // returns the resolved-deps Map directly
+	const lodash = deps.get("npm:lodash");
+	assert.ok(lodash, "lodash collected");
+	assert.deepEqual([...lodash.versions].sort(), ["3.10.1", "4.17.21"]);
+	fs.rmSync(dir, { recursive: true, force: true });
+});

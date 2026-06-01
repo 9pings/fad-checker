@@ -169,17 +169,22 @@ program
 	.option("-e, --exclude <exclude>", "regex of groupId to exclude, e.g. '^(client|private)\\.'")
 	.option("-v, --verbose", "verbose")
 	// Defaults: report + transitive + allLibs all ON. Use --no-* to disable.
-	.option("--no-report", "skip the CVE / EOL / obsolete report")
+	.option("--no-report", "write NO output files at all — the scan, terminal summary and --fail-on gate still run (gate-only / CI mode)")
 	.option("--no-transitive", "skip transitive dependency resolution")
 	.option("--no-all-libs", "skip Maven Central queries (outdated check + missing-on-central check)")
 	.option("--no-osv", "skip OSV.dev (Google/GitHub aggregated Maven CVE feed)")
 	.option("--no-nvd", "skip NIST NVD enrichment of matched CVEs")
 	.option("--no-epss", "skip EPSS (FIRST.org exploit-prediction) enrichment")
 	.option("--no-kev", "skip CISA KEV (known-exploited) enrichment")
-	.option("--export-sbom <file>", "write a CycloneDX 1.6 SBOM (with vulnerabilities inline) to <file>")
-	.option("--export-csaf <file>", "write a CSAF 2.0 VEX document to <file>")
-	.option("--export-json <file>", "write a flat machine-readable findings JSON to <file>")
-	.option("--export-sarif <file>", "write a SARIF 2.1.0 log (GitHub/GitLab code scanning) to <file>")
+	// Output family: each --report-<type> takes an OPTIONAL path (omit → default name
+	// under --report-output). With NO --report-* flag at all, HTML + .doc are written
+	// by default. --no-report writes nothing (scan + gate only).
+	.option("--report-html [file]", "write the self-contained HTML report (default: <report-output>/cve-report.html)")
+	.option("--report-doc [file]", "write the Word-compatible .doc report (default: <report-output>/cve-report.doc)")
+	.option("--report-sbom [file]", "write a CycloneDX 1.6 SBOM, vulnerabilities inline (default: <report-output>/sbom.cdx.json)")
+	.option("--report-csaf [file]", "write a CSAF 2.0 VEX document (default: <report-output>/csaf-vex.json)")
+	.option("--report-json [file]", "write a flat machine-readable findings JSON (default: <report-output>/findings.json)")
+	.option("--report-sarif [file]", "write a SARIF 2.1.0 log for GitHub/GitLab code scanning (default: <report-output>/fad.sarif)")
 	.option("--fail-on <level>", "exit non-zero if a production finding meets <level>: low|medium|high|critical|kev|none", "none")
 	.option("--ignore <file>", "suppress findings listed in <file> (CVE ids / coords / globs, one per line)")
 	.option("--vex <file>", "ingest a CSAF VEX: suppress CVEs marked not_affected/fixed")
@@ -210,6 +215,7 @@ program
 	.option("--no-pypi", "skip the PyPI (Python) codec")
 	.option("--no-go", "skip the Go codec")
 	.option("--no-ruby", "skip the Ruby (Bundler) codec")
+	.option("--no-jars", "skip scanning embedded .jar/.war/.ear binaries for Maven coordinates")
 	.option("--no-js", "alias: skip JS/npm/yarn manifests even if present (Maven-only)")
 	.option("--repo <url...>", "extra Maven repository URL(s) to try before Maven Central. Supports https://user:pass@host/path/. Repeatable.")
 	.option("--add-repo <name>", "persist a Maven repo: --add-repo <name> <url> [--auth user:pass]")
@@ -221,6 +227,18 @@ program.parse(process.argv);
 const options = program.opts();
 const deps2Exclude = options.exclude ? new RegExp(options.exclude) : null;
 const verbose = !!options.verbose;
+
+// Validate --fail-on early: an unrecognised value (typo like "hgih", wrong case)
+// must HARD-FAIL, never silently disable the CI gate.
+if (options.failOn) {
+	const FAIL_ON_LEVELS = ["none", "low", "medium", "high", "critical", "kev"];
+	const lvl = String(options.failOn).toLowerCase();
+	if (!FAIL_ON_LEVELS.includes(lvl)) {
+		console.error(chalk.red(`❌  invalid --fail-on "${options.failOn}" — expected one of: ${FAIL_ON_LEVELS.join(", ")}`));
+		process.exit(2);
+	}
+	options.failOn = lvl;
+}
 // Read-only when no target is given. No need for an explicit --test flag.
 const readOnly = !options.target;
 
@@ -235,10 +253,18 @@ if (options.src && options.importAnonymized) {
 }
 
 if (options.src && options.target) {
-	const rel = path.relative(path.resolve(options.src), path.resolve(options.target));
-	const isSubdir = !rel || (!rel.startsWith("..") && !path.isAbsolute(rel));
-	if (isSubdir) {
-		console.error(chalk.red("❌  --target cannot be the same as or a subdirectory of --src"));
+	// --target is rimraf'd before being rewritten, so it must NOT overlap --src in
+	// EITHER direction: not the same dir, not a subdir of --src, and — the
+	// catastrophic case — not a PARENT of --src (which would delete the source tree
+	// and everything beside it).
+	const srcAbs = path.resolve(options.src);
+	const tgtAbs = path.resolve(options.target);
+	const relFromSrc = path.relative(srcAbs, tgtAbs); // target as seen from src
+	const relToSrc = path.relative(tgtAbs, srcAbs);   // src as seen from target
+	const targetInsideSrc = !relFromSrc || (!relFromSrc.startsWith("..") && !path.isAbsolute(relFromSrc));
+	const srcInsideTarget = !relToSrc || (!relToSrc.startsWith("..") && !path.isAbsolute(relToSrc));
+	if (targetInsideSrc || srcInsideTarget) {
+		console.error(chalk.red("❌  --target must not overlap --src (it cannot be the same as, a subdirectory of, or a parent of --src) — it is deleted before being rewritten"));
 		process.exit(1);
 	}
 }
@@ -321,7 +347,7 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 		const codec = getCodec(id);
 		let res;
 		try {
-			res = await codec.collect(options.src, { ignoreTest: !!options.ignoreTest, deps2Exclude, verbose });
+			res = await codec.collect(options.src, { ignoreTest: !!options.ignoreTest, deps2Exclude, verbose, scanJars: options.jars !== false, srcRoot: options.src });
 		} catch (err) {
 			console.warn(chalk.red(`❌  ${id} collect failed:`), chalk.dim(err.message));
 			continue;
@@ -334,13 +360,18 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 	// --- Collection summary ---
 	ui.section("Collection");
 	const ecoCount = {};
-	for (const d of resolved.values()) ecoCount[d.ecosystem] = (ecoCount[d.ecosystem] || 0) + 1;
+	let embeddedCount = 0;
+	for (const d of resolved.values()) {
+		if (d.provenance === "embedded") { embeddedCount++; continue; } // counted separately below
+		ecoCount[d.ecosystem] = (ecoCount[d.ecosystem] || 0) + 1;
+	}
 	if (runMaven) ui.ok(`${chalk.bold("Maven".padEnd(8))} ${mavenCtx ? mavenCtx.pomFiles.length + " module(s) · " : ""}${ecoCount.maven || 0} direct dep(s)`);
 	if (runNpm)   ui.ok(`${chalk.bold("npm/yarn".padEnd(8))} ${ecoCount.npm || 0} dep(s)`);
 	for (const [id, n] of Object.entries(ecoCount)) {
 		if (id === "maven" || id === "npm") continue;
 		ui.ok(`${chalk.bold(((getCodec(id)?.label) || id).padEnd(8))} ${n} dep(s)`);
 	}
+	if (embeddedCount) ui.ok(`${chalk.bold("Embedded".padEnd(8))} ${embeddedCount} coord(s) in .jar/.war/.ear`);
 	if (!ecoCount.maven && !ecoCount.npm && !Object.keys(ecoCount).length) ui.warn("no dependencies found in the source tree");
 	if (collectWarnings.length) {
 		ui.warn(`${collectWarnings.length} manifest warning(s) — best-effort / no lockfile:`);
@@ -441,10 +472,12 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 		else ui.info(chalk.dim(`${wrotePom} POM(s) cleanable (read-only — pass -t <dir> to write them)`));
 	}
 
-	// ---------- Report flow (CVE / EOL / Obsolete) ----------
-	if (options.report) {
-		await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds, mavenRepos, collectWarnings });
-	} else if (!readOnly) {
+	// ---------- Scan flow (CVE / EOL / Obsolete) ----------
+	// The scan always runs — it feeds the terminal summary, the file outputs and the
+	// CI gate. Which files get written is decided by the --report-* family inside
+	// (HTML + .doc by default; --no-report writes nothing).
+	await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds, mavenRepos, collectWarnings });
+	if (!readOnly) {
 		ui.section("Next step");
 		ui.info(`run Snyk on the cleaned tree:`);
 		console.log("    " + chalk.white(`cd ${options.target} && snyk test --json --all-projects | snyk-to-html -o ../snyk-deps-check.html`));
@@ -723,10 +756,16 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	}
 
 	const { sortByPriority } = require("./lib/priority");
-	const prodMatches = cveMatches.filter(m => !m.dep?.isDev && !m.suppressed);
-	const devMatches  = cveMatches.filter(m =>  m.dep?.isDev && !m.suppressed);
+	const isEmbedded  = m => m.dep?.provenance === "embedded";
+	// Embedded-binary findings get their own chapter, so keep them out of the
+	// declared prod/dev sets (a coord that's both declared AND embedded yields two
+	// distinct records — one in each — which is the intended, audit-useful split).
+	const prodMatches     = cveMatches.filter(m => !m.dep?.isDev && !m.suppressed && !isEmbedded(m));
+	const devMatches      = cveMatches.filter(m =>  m.dep?.isDev && !m.suppressed && !isEmbedded(m));
+	const embeddedMatches = cveMatches.filter(m => isEmbedded(m) && !m.suppressed);
 	const prodActive  = sortByPriority(prodMatches.filter(m => !m.cpeFiltered));
 	const devActive   = sortByPriority(devMatches.filter(m => !m.cpeFiltered));
+	const embeddedActive = sortByPriority(embeddedMatches.filter(m => !m.cpeFiltered));
 	const kevCount    = prodActive.filter(m => m.cve?.kev).length;
 	const cpeFilteredCount = (prodMatches.length - prodActive.length) + (devMatches.length - devActive.length);
 
@@ -756,6 +795,15 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	if (cpeFilteredCount) console.log(chalk.dim(`    ${cpeFilteredCount} likely false positive(s) → report appendix`));
 
 	heading("CVE · dev", devActive.length, devActive.length ? fmtStats(devStats) : "");
+
+	if (embeddedActive.length) {
+		heading("CVE · embedded binaries", embeddedActive.length, fmtStats(computeStats(embeddedActive)));
+		for (const m of embeddedActive.slice(0, 8)) {
+			const top = (m.dep.manifestPaths?.[0] || "").split("!/")[0];
+			console.log("    " + sev(m.cve.severity)((m.cve.severity || "UNKNOWN").padEnd(8)) + " " + chalk.white(m.cve.id) + "  " + chalk.dim(`${depLabel(m.dep)}:${m.dep.version}`) + chalk.dim(`  ⊂ ${top}`));
+		}
+		if (embeddedActive.length > 8) console.log(chalk.dim(`    …and ${embeddedActive.length - 8} more (see report ch.1B)`));
+	}
 
 	heading("EOL frameworks", eolResults.length);
 	for (const e of eolResults.slice(0, 8)) console.log("    " + chalk.yellow(e.product.padEnd(18)) + " " + chalk.dim(`${coordOf(e.dep)}:${e.dep.version}`) + " " + chalk.dim(e.eol === true ? "EOL" : String(e.eol)));
@@ -806,7 +854,6 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	}
 
 	const reportDir = options.reportOutput || "./fad-checker-report";
-	await fs.promises.mkdir(reportDir, { recursive: true });
 	// --import-anonymized has no source tree; keep the report path-free (consistent
 	// with the anonymized descriptor it was fed).
 	const srcResolved = options.src ? path.resolve(options.src) : null;
@@ -817,81 +864,99 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		toolVersion: pkg.version,
 		cveDataDate,
 	};
-	const { htmlPath, docPath } = await writeReports({
-		cveMatches: prodMatches,
-		devCveMatches: devMatches,
-		retireMatches,
-		eolResults,
-		obsoleteResults,
-		outdatedResults,
-		licenseResults,
-		resolvedDeps: resolved,
-		projectInfo,
-		outputDir: reportDir,
-		warnings: [
-			...(suppressedCount ? [{
-				type: "suppressed",
-				count: suppressedCount,
-				message: `${suppressedCount} finding(s) suppressed via triage (--ignore/--vex) — excluded from the chapters above and from CI gating, but retained (flagged) in the JSON/SBOM/CSAF exports.`,
-			}] : []),
-			...npmWarnings,
-			...scanWarnings,
-			...(privateLibIds.length ? [{
-				type: "private-libs",
-				count: privateLibIds.length,
-				// Enrich each private lib with the relative path(s) of the pom(s)
-				// that declare it, so the team knows where to look.
-				items: privateLibIds.map(id => {
-					const dep = resolved.get(id);
-					const paths = (dep?.pomPaths || []).map(p => path.relative(options.src, p));
-					return { id, manifestPaths: paths };
-				}),
-				message: `${privateLibIds.length} Maven coord(s) not found on Maven Central — they are private/internal libraries. Their CVEs (if any) cannot be detected by fad-checker; if you have an internal CVE feed, audit them separately.`,
-			}] : []),
-		],
-	});
-	ui.section("Report");
-	ui.ok(chalk.white(htmlPath));
-	ui.ok(chalk.white(docPath));
 
-	// Machine-readable exports (CycloneDX SBOM / CSAF VEX). Use the full match set
-	// (prod + dev + cpe-filtered) so the artifacts are complete; cpeFiltered is
-	// marked as a property/flag rather than dropped.
-	if (options.exportSbom) {
+	// --- Output target resolution -------------------------------------------------
+	// One --report-<type> flag per output, each taking an OPTIONAL path: a string is
+	// an explicit path, `true` means "use the default name under --report-output",
+	// undefined means "not requested". If NO --report-* flag is given at all, fall
+	// back to the historical default set (HTML + .doc). --no-report suppresses ALL
+	// file outputs (the scan, terminal summary and --fail-on gate still ran).
+	const DEFAULT_NAMES = { html: "cve-report.html", doc: "cve-report.doc", sbom: "sbom.cdx.json", csaf: "csaf-vex.json", json: "findings.json", sarif: "fad.sarif" };
+	const sel = { html: options.reportHtml, doc: options.reportDoc, sbom: options.reportSbom, csaf: options.reportCsaf, json: options.reportJson, sarif: options.reportSarif };
+	const anySpecified = Object.values(sel).some(v => v !== undefined);
+	const resolveOut = key => {
+		const v = sel[key];
+		if (v === undefined) return (!anySpecified && (key === "html" || key === "doc")) ? path.join(reportDir, DEFAULT_NAMES[key]) : null;
+		return (v === true) ? path.join(reportDir, DEFAULT_NAMES[key]) : v;
+	};
+	const out = options.report === false
+		? { html: null, doc: null, sbom: null, csaf: null, json: null, sarif: null }
+		: { html: resolveOut("html"), doc: resolveOut("doc"), sbom: resolveOut("sbom"), csaf: resolveOut("csaf"), json: resolveOut("json"), sarif: resolveOut("sarif") };
+	const ensureDir = async p => { if (p) await fs.promises.mkdir(path.dirname(path.resolve(p)), { recursive: true }); };
+
+	const reportWarnings = [
+		...(suppressedCount ? [{
+			type: "suppressed",
+			count: suppressedCount,
+			message: `${suppressedCount} finding(s) suppressed via triage (--ignore/--vex) — excluded from the chapters above and from CI gating, but retained (flagged) in the JSON/SBOM/CSAF exports.`,
+		}] : []),
+		...npmWarnings,
+		...scanWarnings,
+		...(privateLibIds.length ? [{
+			type: "private-libs",
+			count: privateLibIds.length,
+			items: privateLibIds.map(id => {
+				const dep = resolved.get(id);
+				const paths = (dep?.pomPaths || []).map(p => path.relative(options.src, p));
+				return { id, manifestPaths: paths };
+			}),
+			message: `${privateLibIds.length} Maven coord(s) not found on Maven Central — they are private/internal libraries. Their CVEs (if any) cannot be detected by fad-checker; if you have an internal CVE feed, audit them separately.`,
+		}] : []),
+	];
+
+	const wrote = [];
+	if (out.html || out.doc) {
+		await ensureDir(out.html); await ensureDir(out.doc);
+		const { htmlPath, docPath } = await writeReports({
+			cveMatches: prodMatches, devCveMatches: devMatches, embeddedMatches, retireMatches,
+			eolResults, obsoleteResults, outdatedResults, licenseResults,
+			resolvedDeps: resolved, projectInfo, warnings: reportWarnings,
+			htmlPath: out.html, docPath: out.doc,
+		});
+		if (htmlPath) wrote.push(["HTML report", htmlPath]);
+		if (docPath) wrote.push(["Word .doc", docPath]);
+	}
+
+	// Machine-readable exports. Use the full match set (prod + dev + cpe-filtered) so
+	// the artifacts are complete; cpeFiltered is marked as a property/flag, not dropped.
+	if (out.sbom) {
 		try {
 			const { writeCycloneDx } = require("./lib/sbom-export");
-			writeCycloneDx(resolved, cveMatches, options.exportSbom, {
-				projectInfo, toolVersion: pkg.version, timestamp: projectInfo.generatedAt, licenseResults,
-			});
-			ui.ok(`CycloneDX SBOM → ${chalk.white(options.exportSbom)}`);
+			await ensureDir(out.sbom);
+			writeCycloneDx(resolved, cveMatches, out.sbom, { projectInfo, toolVersion: pkg.version, timestamp: projectInfo.generatedAt, licenseResults });
+			wrote.push(["CycloneDX SBOM", out.sbom]);
 		} catch (err) { ui.warn(`SBOM export failed: ${err.message}`); }
 	}
-	if (options.exportCsaf) {
+	if (out.csaf) {
 		try {
 			const { writeCsaf } = require("./lib/csaf-export");
-			writeCsaf(resolved, cveMatches, options.exportCsaf, {
-				projectInfo, toolVersion: pkg.version, timestamp: projectInfo.generatedAt,
-			});
-			ui.ok(`CSAF 2.0 VEX → ${chalk.white(options.exportCsaf)}`);
+			await ensureDir(out.csaf);
+			writeCsaf(resolved, cveMatches, out.csaf, { projectInfo, toolVersion: pkg.version, timestamp: projectInfo.generatedAt });
+			wrote.push(["CSAF 2.0 VEX", out.csaf]);
 		} catch (err) { ui.warn(`CSAF export failed: ${err.message}`); }
 	}
-	if (options.exportJson) {
+	if (out.json) {
 		try {
 			const { writeFindings } = require("./lib/json-export");
-			writeFindings({
-				cveMatches, retireMatches, eolResults, obsoleteResults, outdatedResults,
-				licenseResults, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version,
-			}, options.exportJson);
-			ui.ok(`Findings JSON → ${chalk.white(options.exportJson)}`);
+			await ensureDir(out.json);
+			writeFindings({ cveMatches, retireMatches, eolResults, obsoleteResults, outdatedResults, licenseResults, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version }, out.json);
+			wrote.push(["Findings JSON", out.json]);
 		} catch (err) { ui.warn(`JSON export failed: ${err.message}`); }
 	}
-	if (options.exportSarif) {
+	if (out.sarif) {
 		try {
 			const { writeSarif } = require("./lib/sarif-export");
-			// SARIF carries CVE matches (prod + dev), suppressed/cpeFiltered flagged in properties.
-			writeSarif(cveMatches.filter(m => !m.suppressed), options.exportSarif, { projectInfo, toolVersion: pkg.version });
-			ui.ok(`SARIF → ${chalk.white(options.exportSarif)}`);
+			await ensureDir(out.sarif);
+			writeSarif(cveMatches.filter(m => !m.suppressed), out.sarif, { projectInfo, toolVersion: pkg.version });
+			wrote.push(["SARIF", out.sarif]);
 		} catch (err) { ui.warn(`SARIF export failed: ${err.message}`); }
+	}
+
+	if (wrote.length) {
+		ui.section("Output");
+		for (const [label, p] of wrote) ui.ok(`${label} → ${chalk.white(p)}`);
+	} else if (options.report === false) {
+		ui.info(chalk.dim("--no-report: no files written (scan + gate only)"));
 	}
 	console.log();
 
@@ -899,7 +964,8 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// when a production finding meets the --fail-on threshold.
 	if (options.failOn && options.failOn !== "none") {
 		const { evaluateGate } = require("./lib/gate");
-		const gate = evaluateGate(prodActive, options.failOn);
+		// Embedded-binary findings are real production risk → gate on them too.
+		const gate = evaluateGate([...prodActive, ...embeddedActive], options.failOn);
 		if (gate.failed) {
 			ui.section("Gate");
 			console.log(chalk.red(`✗ --fail-on ${options.failOn}: ${gate.reason}`));
@@ -917,7 +983,9 @@ async function runReportFlow(resolved, ecoFlags = {}) {
  */
 function mergeBySource(existing, additions) {
 	const byKey = new Map();
-	const k = m => `${m.dep.groupId}:${m.dep.artifactId}:${m.dep.version}|${m.cve.id}`;
+	// coordKey keeps embedded-binary findings distinct from a same-g:a:v declared dep
+	// (see cve-match dedup). Falls back to g:a for any match lacking a coordKey.
+	const k = m => `${m.dep.coordKey || (m.dep.groupId + ":" + m.dep.artifactId)}:${m.dep.version}|${m.cve.id}`;
 	for (const m of existing || []) byKey.set(k(m), { ...m, source: m.source || "fad" });
 	for (const m of additions || []) {
 		const key = k(m);

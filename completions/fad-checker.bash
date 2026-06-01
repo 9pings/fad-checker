@@ -6,7 +6,7 @@ _fad_check_complete() {
 	COMPREPLY=()
 	cur="${COMP_WORDS[COMP_CWORD]}"
 	prev="${COMP_WORDS[COMP_CWORD-1]}"
-	opts="--src --target --exclude --verbose --no-report --no-transitive --no-all-libs --no-osv --no-nvd --no-retire --retire-refresh --report-output --ignore-test --cve-refresh --cve-offline --snyk --transitive-depth --offline --ecosystem --no-maven --no-npm --no-yarn --no-nuget --no-composer --no-pypi --no-js --set-nvd-key --show-config --completion --help --version -s -t -e -v"
+	opts="--src --target --exclude --verbose --no-report --no-transitive --no-all-libs --no-osv --no-nvd --no-epss --no-kev --no-licenses --no-retire --retire-refresh --report-output --report-html --report-doc --report-sbom --report-csaf --report-json --report-sarif --fail-on --ignore --vex --ignore-test --cve-refresh --cve-offline --snyk --transitive-depth --offline --ecosystem --no-maven --no-npm --no-yarn --no-nuget --no-composer --no-pypi --no-go --no-ruby --no-jars --no-js --set-nvd-key --show-config --completion --help --version -s -t -e -v"
 	case "$prev" in
 		--src|-s|--target|-t|--report-output)
 			COMPREPLY=( $(compgen -d -- "$cur") )
