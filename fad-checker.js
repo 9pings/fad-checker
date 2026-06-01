@@ -201,13 +201,15 @@ program
 	.option("--no-retire", "skip retire.js vendored-JS scan")
 	.option("--retire-refresh", "ignore retire cache and re-scan")
 	.option("--transitive-depth <n>", "max transitive depth", "6")
-	.option("--ecosystem <list>", "codecs to run: auto|all|<comma list> e.g. maven,npm,nuget,composer,pypi (default: auto = detected)", "auto")
+	.option("--ecosystem <list>", "codecs to run: auto|all|<comma list> e.g. maven,npm,nuget,composer,pypi,go,ruby (default: auto = detected)", "auto")
 	.option("--no-maven", "skip the Maven codec")
 	.option("--no-npm", "skip the npm codec")
 	.option("--no-yarn", "skip the Yarn codec")
 	.option("--no-nuget", "skip the NuGet (C#/.NET) codec")
 	.option("--no-composer", "skip the Composer (PHP) codec")
 	.option("--no-pypi", "skip the PyPI (Python) codec")
+	.option("--no-go", "skip the Go codec")
+	.option("--no-ruby", "skip the Ruby (Bundler) codec")
 	.option("--no-js", "alias: skip JS/npm/yarn manifests even if present (Maven-only)")
 	.option("--repo <url...>", "extra Maven repository URL(s) to try before Maven Central. Supports https://user:pass@host/path/. Repeatable.")
 	.option("--add-repo <name>", "persist a Maven repo: --add-repo <name> <url> [--auth user:pass]")
@@ -305,7 +307,7 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 	const { resolveActiveCodecs } = require("./lib/codecs/select");
 	const eco = (options.ecosystem || "auto").toLowerCase();
 	const detected = (eco === "auto") ? detectCodecs(options.src).map(c => c.id) : allCodecs().map(c => c.id);
-	const noCodecs = ["maven", "npm", "yarn", "nuget", "composer", "pypi"].filter(id => options[id] === false);
+	const noCodecs = ["maven", "npm", "yarn", "nuget", "composer", "pypi", "go", "ruby"].filter(id => options[id] === false);
 	const activeIds = resolveActiveCodecs(eco, detected, { noCodecs, noJs: !options.js });
 	const runMaven = activeIds.includes("maven");
 	const runNpm = activeIds.includes("npm") || activeIds.includes("yarn");

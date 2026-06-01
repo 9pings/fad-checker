@@ -1,0 +1,21 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    actionpack (6.1.4)
+      actionview (= 6.1.4)
+      rack (~> 2.0)
+    actionview (6.1.4)
+    rack (2.2.3)
+    rails (6.1.4)
+      actionpack (= 6.1.4)
+    nokogiri (1.13.0-x86_64-linux)
+
+PLATFORMS
+  ruby
+  x86_64-linux
+
+DEPENDENCIES
+  rails
+
+BUNDLED WITH
+   2.2.22

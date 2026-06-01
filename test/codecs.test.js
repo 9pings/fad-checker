@@ -64,7 +64,7 @@ const { getCodec, allCodecs, detectCodecs } = require("../lib/codecs");
 
 test("registry exposes maven/npm/yarn and validates their shape", () => {
 	const ids = allCodecs().map(c => c.id).sort();
-	assert.deepStrictEqual(ids, ["composer", "maven", "npm", "nuget", "pypi", "yarn"]);
+	assert.deepStrictEqual(ids, ["composer", "go", "maven", "npm", "nuget", "pypi", "ruby", "yarn"]);
 	for (const c of allCodecs()) assertCodecShape(c);
 	assert.strictEqual(getCodec("maven").id, "maven");
 	assert.strictEqual(getCodec("nope"), null);
