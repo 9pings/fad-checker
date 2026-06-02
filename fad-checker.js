@@ -218,6 +218,7 @@ program
 	.option("--no-pypi", "skip the PyPI (Python) codec")
 	.option("--no-go", "skip the Go codec")
 	.option("--no-ruby", "skip the Ruby (Bundler) codec")
+	.option("--no-binaries", "skip scanning committed native binaries (.dll/.exe/.so/.dylib)")
 	.option("--no-jars", "skip scanning embedded .jar/.war/.ear binaries for Maven coordinates")
 	.option("--no-js", "alias: skip JS/npm/yarn manifests even if present (Maven-only)")
 	.option("--repo <url...>", "extra Maven repository URL(s) to try before Maven Central. Supports https://user:pass@host/path/. Repeatable.")
@@ -405,7 +406,7 @@ async function timedPhase(label, fn) {
 	const detected = (eco === "auto")
 		? (await timedPhase("detecting ecosystems", () => detectCodecs(options.src))).map(c => c.id)
 		: allCodecs().map(c => c.id);
-	const noCodecs = ["maven", "npm", "yarn", "nuget", "composer", "pypi", "go", "ruby"].filter(id => options[id] === false);
+	const noCodecs = ["maven", "npm", "yarn", "nuget", "composer", "pypi", "go", "ruby", "binary"].filter(id => options[id] === false);
 	const activeIds = resolveActiveCodecs(eco, detected, { noCodecs, noJs: !options.js });
 	const runMaven = activeIds.includes("maven");
 	const runNpm = activeIds.includes("npm") || activeIds.includes("yarn");
@@ -422,7 +423,7 @@ async function timedPhase(label, fn) {
 		const codec = getCodec(id);
 		let res;
 		try {
-			res = await timedPhase(`collecting ${codec.label || id}`, () => codec.collect(options.src, { ignoreTest: !!options.ignoreTest, deps2Exclude, verbose, scanJars: options.jars !== false, srcRoot: options.src, onJarProgress: makeJarProgress() }));
+			res = await timedPhase(`collecting ${codec.label || id}`, () => codec.collect(options.src, { ignoreTest: !!options.ignoreTest, deps2Exclude, verbose, scanJars: options.jars !== false, srcRoot: options.src, onJarProgress: makeJarProgress(), onBinaryProgress: null }));
 		} catch (err) {
 			console.warn(chalk.red(`❌  ${id} collect failed:`), chalk.dim(err.message));
 			continue;
@@ -435,8 +436,10 @@ async function timedPhase(label, fn) {
 	// --- Collection summary ---
 	const ecoCount = {};
 	let embeddedCount = 0;
+	let binaryCount = 0;
 	for (const d of resolved.values()) {
 		if (d.provenance === "embedded") { embeddedCount++; continue; } // counted separately below
+		if (d.provenance === "binary") { binaryCount++; continue; }     // committed native libs, no manifest
 		ecoCount[d.ecosystem] = (ecoCount[d.ecosystem] || 0) + 1;
 	}
 	if (runMaven) ui.ok(`${chalk.bold("Maven".padEnd(8))} ${mavenCtx ? mavenCtx.pomFiles.length + " module(s) · " : ""}${ecoCount.maven || 0} direct dep(s)`);
@@ -446,6 +449,7 @@ async function timedPhase(label, fn) {
 		ui.ok(`${chalk.bold(((getCodec(id)?.label) || id).padEnd(8))} ${n} dep(s)`);
 	}
 	if (embeddedCount) ui.ok(`${chalk.bold("Embedded".padEnd(8))} ${embeddedCount} coord(s) in .jar/.war/.ear`);
+	if (binaryCount) ui.ok(`${chalk.bold("Binary".padEnd(8))} ${binaryCount} native lib(s) (.dll/.exe/.so/.dylib)`);
 	if (!ecoCount.maven && !ecoCount.npm && !Object.keys(ecoCount).length) ui.warn("no dependencies found in the source tree");
 	if (collectWarnings.length) {
 		ui.warn(`${collectWarnings.length} manifest warning(s) — best-effort / no lockfile:`);
