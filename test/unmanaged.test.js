@@ -1,0 +1,46 @@
+const { test } = require("node:test");
+const assert = require("node:assert");
+const { enrichUnmanaged } = require("../lib/unmanaged");
+const { makeDepRecord } = require("../lib/dep-record");
+
+function rec(name, hashes) { return makeDepRecord({ ecosystem: "binary", name, manifestPath: `/p/${name}`, provenance: "binary", hashes, declaredName: name }); }
+
+test("enrichUnmanaged sets identity + integrity per record (deps.dev=pristine, circl=known-good, none=unknown)", async () => {
+	const resolved = new Map();
+	resolved.set("binary:/p/a.dll", rec("a.dll", { sha1: "a".repeat(40), sha256: "1".repeat(64) }));
+	resolved.set("binary:/p/b.so", rec("b.so", { sha1: "b".repeat(40), sha256: "2".repeat(64) }));
+	resolved.set("binary:/p/c.so", rec("c.so", { sha1: "c".repeat(40), sha256: "3".repeat(64) }));
+	resolved.set("g:a", makeDepRecord({ ecosystem: "maven", namespace: "g", name: "a", version: "1.0", manifestPath: "/pom.xml" })); // untouched
+
+	const fetcher = async (url) => {
+		if (url.includes("deps.dev")) {
+			if (url.includes(encodeURIComponent(Buffer.from("a".repeat(40), "hex").toString("base64")))) {
+				return { ok: true, json: async () => ({ results: [{ version: { versionKey: { system: "NUGET", name: "A.Pkg", version: "2.0" } } }] }) };
+			}
+			return { ok: true, json: async () => ({ results: [] }) };
+		}
+		// CIRCL: b.so known, c.so unknown
+		if (url.endsWith("2".repeat(64))) return { ok: true, json: async () => ({ FileName: "libb.so", ProductCode: { ProductName: "libb", ProductVersion: "1.1" }, db: "ubuntu" }) };
+		return { ok: true, json: async () => ({ message: "Non existing SHA-256" }) };
+	};
+
+	const summary = await enrichUnmanaged(resolved, { fetcher, cache: {} });
+	const a = resolved.get("binary:/p/a.dll"), b = resolved.get("binary:/p/b.so"), c = resolved.get("binary:/p/c.so");
+	assert.deepEqual(a.identity, { ecosystem: "nuget", name: "A.Pkg", version: "2.0", source: "deps.dev" });
+	assert.equal(a.integrity, "pristine");
+	assert.equal(b.integrity, "known-good");
+	assert.equal(b.identity.name, "libb");
+	assert.equal(c.identity, null);
+	assert.equal(c.integrity, "unknown");
+	assert.equal(resolved.get("g:a").identity, undefined); // managed deps not touched
+	assert.deepEqual(summary, { total: 3, identified: 2, pristine: 1, knownGood: 1, unknown: 1, malicious: 0 });
+});
+
+test("enrichUnmanaged offline does not call the fetcher", async () => {
+	const resolved = new Map();
+	resolved.set("binary:/p/a.dll", rec("a.dll", { sha1: "a".repeat(40), sha256: "1".repeat(64) }));
+	let called = false;
+	await enrichUnmanaged(resolved, { fetcher: async () => { called = true; return { ok: true, json: async () => ({}) }; }, cache: {}, offline: true });
+	assert.equal(called, false);
+	assert.equal(resolved.get("binary:/p/a.dll").integrity, "unknown");
+});
