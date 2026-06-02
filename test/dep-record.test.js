@@ -29,3 +29,24 @@ test("pomPaths shares the manifestPaths array reference (push stays in sync)", (
 	d.manifestPaths.push("/q/pom.xml");
 	assert.deepStrictEqual(d.pomPaths, ["/p/pom.xml", "/q/pom.xml"]);
 });
+
+test("binary provenance is keyed by physical path and carries hashes + declaredName", () => {
+	const d = makeDepRecord({
+		ecosystem: "binary", name: "libssl.so.1.1", manifestPath: "/p/libssl.so.1.1",
+		provenance: "binary", hashes: { sha1: "a".repeat(40), sha256: "b".repeat(64) },
+		declaredName: "libssl.so.1.1",
+	});
+	assert.equal(d.coordKey, "binary:/p/libssl.so.1.1");
+	assert.equal(d.provenance, "binary");
+	assert.deepEqual(d.hashes, { sha1: "a".repeat(40), sha256: "b".repeat(64) });
+	assert.equal(d.declaredName, "libssl.so.1.1");
+	assert.deepEqual(d.manifestPaths, ["/p/libssl.so.1.1"]);
+});
+
+test("manifest provenance is unchanged (no hashes field bleed)", () => {
+	const d = makeDepRecord({ ecosystem: "maven", namespace: "g", name: "a", version: "1.0", manifestPath: "/p/pom.xml" });
+	assert.equal(d.coordKey, "g:a");
+	assert.equal(d.provenance, "manifest");
+	assert.equal(d.hashes, null);
+	assert.equal(d.declaredName, null);
+});
