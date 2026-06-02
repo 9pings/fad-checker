@@ -406,7 +406,13 @@ async function timedPhase(label, fn) {
 	const detected = (eco === "auto")
 		? (await timedPhase("detecting ecosystems", () => detectCodecs(options.src))).map(c => c.id)
 		: allCodecs().map(c => c.id);
-	const noCodecs = ["maven", "npm", "yarn", "nuget", "composer", "pypi", "go", "ruby", "binary"].filter(id => options[id] === false);
+	// The binary scanner is a cross-cutting catch-all (committed native libs in ANY
+	// project), and detectCodecs' manifest-glob matcher misses versioned sonames
+	// (libz.so.1). Always make it a candidate in auto mode; --no-binaries removes it.
+	if (eco === "auto" && !detected.includes("binary")) detected.push("binary");
+	const noCodecs = ["maven", "npm", "yarn", "nuget", "composer", "pypi", "go", "ruby"].filter(id => options[id] === false);
+	// `--no-binaries` maps to options.binaries (plural) but the codec id is `binary`.
+	if (options.binaries === false) noCodecs.push("binary");
 	const activeIds = resolveActiveCodecs(eco, detected, { noCodecs, noJs: !options.js });
 	const runMaven = activeIds.includes("maven");
 	const runNpm = activeIds.includes("npm") || activeIds.includes("yarn");
@@ -625,9 +631,11 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const willKev = !!options.kev;
 	const willLicenses = !!options.licenses;
 	const willRetire = !!options.retire;
+	// Identify committed native binaries by checksum (deps.dev + CIRCL) when present.
+	const willBinaryId = [...resolved.values()].some(d => d.provenance === "binary");
 	// License detection piggybacks on the registry passes (same fetched metadata),
 	// so it adds no progress step of its own.
-	const totalSteps = [willTransitive, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willNvd, willEpss, willKev, willRetire].filter(Boolean).length;
+	const totalSteps = [willTransitive, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willNvd, willEpss, willKev, willRetire, willBinaryId].filter(Boolean).length;
 	const progress = new ui.Progress(totalSteps);
 
 	if (willTransitive) {
@@ -655,6 +663,17 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		} catch (err) {
 			st.fail(err.message);
 		}
+	}
+
+	// 1c. Identify committed native binaries by checksum (deps.dev → CIRCL).
+	if (willBinaryId) {
+		const st = progress.start("Binary identification (deps.dev + CIRCL)");
+		try {
+			const { enrichUnmanaged } = require("./lib/unmanaged");
+			const s = await enrichUnmanaged(resolved, { offline, onProgress: (p, t) => st.tick(p, t) });
+			const bits = [`${s.identified}/${s.total} identified`, s.pristine ? `${s.pristine} pristine` : null, s.unknown ? `${s.unknown} unknown` : null, s.malicious ? `${s.malicious} ⚠ malicious` : null].filter(Boolean).join(", ");
+			st.done(bits);
+		} catch (err) { st.fail(err.message); }
 	}
 
 	// 2. EOL frameworks (endoflife.date) — always a step.
