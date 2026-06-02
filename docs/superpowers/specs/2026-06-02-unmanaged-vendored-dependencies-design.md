@@ -101,10 +101,25 @@ per-codec caches:
 ## Components
 
 - **`lib/codecs/binary.codec.js` + `lib/codecs/binary/scan.js`** — new codec. `detect`
-  walks the source tree for `.dll`/`.exe`/`.so`/`.dylib` (configurable extension
-  set); `collect` hashes each (SHA-1 + SHA-256) and emits a depRecord with
-  `provenance:"binary"`, `hashes`, and `declaredName` (from the filename). No
-  parsing. Toggle **`--no-binaries`** (mirrors `--no-jars`).
+  walks the source tree for candidate files; `collect` hashes each (SHA-1 + SHA-256)
+  and emits a depRecord with `provenance:"binary"`, `hashes`, and `declaredName`
+  (from the filename). No parsing. Toggle **`--no-binaries`** (mirrors `--no-jars`).
+
+  **File selection — binaries + dependency archives ONLY, never assets.** A file is
+  a candidate only if BOTH its extension is allowlisted AND its magic bytes confirm
+  the type (extension alone is not trusted):
+  - native binaries: `.dll`/`.exe` → PE `MZ` (`0x4D5A`); `.so` (incl. `.so.N`) →
+    ELF (`0x7F 45 4C 46`); `.dylib` → Mach-O (`0xFEEDFACE`/`0xFEEDFACF`/`0xCAFEBABE`
+    fat); `.a` static libs optional/later.
+  - dependency archives (jar-style zips): `.jar`/`.war`/`.ear` (and extensible:
+    `.aar`) → ZIP (`PK\x03\x04`). These overlap with `jar-scan.js`; the binary
+    codec only takes archives `jar-scan.js` does not already claim.
+  - **explicitly excluded** (never hashed/looked up): images (`.png`/`.jpg`/`.jpeg`/
+    `.gif`/`.svg`/`.ico`/`.webp`/`.bmp`), fonts (`.woff`/`.woff2`/`.ttf`/`.otf`/
+    `.eot`), media, documents, source, and any file whose magic bytes don't match a
+    binary/archive signature — even if the extension matched.
+  - standard skip dirs (`node_modules`, `.git`, build output) follow the existing
+    walker conventions.
 - **`lib/hash-id.js`** — shared identity service (sits alongside `osv.js`/`nvd.js`).
   Input: depRecords/inventory entries carrying `hashes`. Queries deps.dev then CIRCL,
   cached per-hash, `--offline`-aware (CIRCL via Bloom filter / warmed cache).
@@ -198,7 +213,9 @@ New cache entries (add to the per-cache TTL table in CLAUDE.md):
 ## Testing
 
 - `binary/scan.js` — fixture tree with `.dll`/`.so` files → correct hashes,
-  provenance, `declaredName`; `--no-binaries` skips it.
+  provenance, `declaredName`; `--no-binaries` skips it. **Asset-rejection test:** an
+  image with a spoofed `.so` extension (PNG bytes) and a real `.png`/`.ttf` are NOT
+  picked up; magic-byte mismatch wins over extension.
 - `hash-id.js` — mocked deps.dev / CIRCL responses → identity mapping; offline path
   reads cache only and never throws on missing network.
 - `integrity.js` — pristine (hash matches published digest), modified (mismatch),
