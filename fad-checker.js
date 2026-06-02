@@ -928,6 +928,20 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		if (embeddedActive.length > 8) console.log(chalk.dim(`    …and ${embeddedActive.length - 8} more (see report ch.1B)`));
 	}
 
+	{
+		const { buildInventory } = require("./lib/unmanaged");
+		const inv = buildInventory(resolved);
+		if (inv.length) {
+			heading("Unmanaged binaries", inv.length);
+			for (const e of inv.slice(0, 10)) {
+				const id = e.identity ? `${e.identity.ecosystem ? e.identity.ecosystem + ":" : ""}${e.identity.name || ""}${e.identity.version ? "@" + e.identity.version : ""}` : chalk.dim("unknown");
+				const flags = [e.knownMalicious ? chalk.bgRed.white(" malicious ") : null, e.nameMismatch ? chalk.yellow("name≠checksum") : null, e.shouldBeManaged ? chalk.cyan("should-be-managed") : null, (e.noOnlineInfo ? chalk.dim("unknown") : null)].filter(Boolean).join(" ");
+				console.log("    " + chalk.white(path.basename(String(e.path))) + "  " + chalk.dim(id) + (flags ? "  " + flags : ""));
+			}
+			if (inv.length > 10) console.log(chalk.dim(`    …and ${inv.length - 10} more (see report ch.1C)`));
+		}
+	}
+
 	heading("EOL frameworks", eolResults.length);
 	for (const e of eolResults.slice(0, 8)) console.log("    " + chalk.yellow(e.product.padEnd(18)) + " " + chalk.dim(`${coordOf(e.dep)}:${e.dep.version}`) + " " + chalk.dim(e.eol === true ? "EOL" : String(e.eol)) + definedInOf(e.dep));
 	if (eolResults.length > 8) console.log(chalk.dim(`    …and ${eolResults.length - 8} more`));
