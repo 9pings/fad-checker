@@ -20,7 +20,10 @@ const ui = require("./lib/ui");
 
 const core = require("./lib/core");
 
-const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8"));
+// require() (not fs.readFileSync) so bun --compile statically bundles package.json
+// into the binary — otherwise the compiled exe tries to read it off disk at runtime
+// (from $bunfs/root) and crashes with ENOENT. Keeps the bun builds fully standalone.
+const pkg = require("./package.json");
 
 // -------- bash/zsh completion shortcut (must run before required-options parse) --------
 if (process.argv.includes("--completion")) {
@@ -269,20 +272,87 @@ if (options.src && options.target) {
 	}
 }
 
-async function checkMavenLibExist(groupId, artifactId, repos) {
+// Maven Central presence cache (~/.fad-checker/maven-exists-cache.json) — keyed by
+// "g:a", value true (on a repo) / false (absent → likely private). Persisted so an
+// online warm-up populates it, --export-cache ships it, and an --offline air-gapped
+// run reads it instead of probing the network. Returns:
+//   true  → present on a configured repo
+//   false → absent (likely private)
+//   null  → unknown (offline + not cached, or probe error) — caller must NOT guess
+const MAVEN_EXISTS_CACHE_PATH = require("path").join(require("./lib/outdated").CACHE_DIR, "maven-exists-cache.json");
+const MAVEN_EXISTS_MAX_AGE_MS = 7 * 24 * 3600 * 1000; // 7 days
+
+async function checkMavenLibExist(groupId, artifactId, repos, cache, opts = {}) {
 	const g = core.coord(groupId);
 	const a = core.coord(artifactId);
-	if (!g || !a) return false;
+	if (!g || !a) return null;
+	const key = `${g}:${a}`;
+	if (cache && Object.prototype.hasOwnProperty.call(cache.entries, key)) return cache.entries[key];
+	if (opts.offline) return null;  // air-gapped + not warmed: honestly unknown, never network
 	const p = `${g.replace(/\./g, "/")}/${a}/maven-metadata.xml`;
 	const { existsInAny } = require("./lib/maven-repo");
 	try {
 		const hit = await existsInAny(repos, p, { userAgent: "fad-checker-existence" });
-		if (hit) return true;
-		if (verbose) console.log(chalk.dim(`   not on any repo: ${g}:${a}`));
-		return false;
+		if (cache) cache.entries[key] = !!hit;
+		if (!hit && verbose) console.log(chalk.dim(`   not on any repo: ${g}:${a}`));
+		return !!hit;
 	} catch (err) {
 		if (verbose) console.info(chalk.dim(`   error querying repos: ${g}:${a} — ${err.message}`));
-		return false;
+		return null;  // probe failed → unknown, don't poison the cache or mislabel as private
+	}
+}
+
+/**
+ * Build an onProgress callback for the embedded-JAR scan so the user sees what's
+ * happening — the scan reads + unzips archives synchronously and can block for a
+ * while on big or numerous fat-jars (incl. the silent recursion through a fat-jar's
+ * bundled libs). The scanner reports EVERY archive (top-level + nested):
+ *   - On a TTY: one transient line, rewritten in place, naming the archive being
+ *     read right now (so a long pause clearly points at the culprit). Cleared at end.
+ *   - Off a TTY (CI/pipe): a throttled line every ~250 archives so logs show forward
+ *     motion without being spammed, plus a start and a final summary line.
+ * Returns a fresh closure per codec.
+ */
+function makeJarProgress() {
+	let total = 0, lastLogged = 0;
+	const STEP = 250;
+	return (ev) => {
+		if (!ev) return;
+		if (ev.phase === "start") {
+			total = ev.total || 0;
+			if (total && !ui.isTTY) ui.info(chalk.dim(`scanning ${total} embedded archive(s) (.jar/.war/.ear)…`));
+		} else if (ev.phase === "scan" && total) {
+			if (ui.isTTY) {
+				const head = total ? `${ev.scanned}/${total}+` : String(ev.scanned);
+				process.stdout.write(`\r  ${chalk.dim("·")} ${chalk.dim(`reading embedded JARs (${head})`)} ${chalk.dim(ev.path)}\x1b[K`);
+			} else if (ev.scanned - lastLogged >= STEP) {
+				lastLogged = ev.scanned;
+				ui.info(chalk.dim(`… ${ev.scanned} archive(s) read (current: ${ev.path})`));
+			}
+		} else if (ev.phase === "done") {
+			if (total && ui.isTTY) process.stdout.write("\r\x1b[K");
+			else if (total && !ui.isTTY) ui.info(chalk.dim(`scanned ${ev.scanned} archive(s) → ${ev.found} embedded coord(s)`));
+		}
+	};
+}
+
+/**
+ * Run `fn` (sync or async) while telling the user which phase is in flight, so a
+ * long pause is attributable instead of a silent hang. TTY: a transient line that's
+ * cleared when done. Non-TTY: a plain "· <label> …" line. Either way, a phase that
+ * takes >3s prints "· <label> took Ns" so slow steps self-report even without -v.
+ */
+async function timedPhase(label, fn) {
+	if (ui.isTTY) process.stdout.write(`  ${chalk.dim("·")} ${chalk.dim(label + " …")}\x1b[K`);
+	else ui.info(chalk.dim(label + " …"));
+	const t0 = Date.now();
+	try {
+		return await fn();
+	} finally {
+		const ms = Date.now() - t0;
+		if (ui.isTTY) process.stdout.write("\r\x1b[K");
+		if (ms > 3000) ui.info(chalk.dim(`${label} took ${(ms / 1000).toFixed(1)}s`));
+		else if (verbose) ui.info(chalk.dim(`${label} done in ${ms}ms`));
 	}
 }
 
@@ -332,13 +402,18 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 	const { detectCodecs, allCodecs, getCodec } = require("./lib/codecs");
 	const { resolveActiveCodecs } = require("./lib/codecs/select");
 	const eco = (options.ecosystem || "auto").toLowerCase();
-	const detected = (eco === "auto") ? detectCodecs(options.src).map(c => c.id) : allCodecs().map(c => c.id);
+	const detected = (eco === "auto")
+		? (await timedPhase("detecting ecosystems", () => detectCodecs(options.src))).map(c => c.id)
+		: allCodecs().map(c => c.id);
 	const noCodecs = ["maven", "npm", "yarn", "nuget", "composer", "pypi", "go", "ruby"].filter(id => options[id] === false);
 	const activeIds = resolveActiveCodecs(eco, detected, { noCodecs, noJs: !options.js });
 	const runMaven = activeIds.includes("maven");
 	const runNpm = activeIds.includes("npm") || activeIds.includes("yarn");
 
 	// --- Collect deps from every active codec into one Map (coordKeys never collide) ---
+	// Section header first so the embedded-JAR scan can print live progress under it
+	// (the scan reads + unzips archives synchronously and would otherwise block silently).
+	ui.section("Collection");
 	const resolved = new Map();
 	let mavenCtx = null;
 	const collectWarnings = [];
@@ -347,7 +422,7 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 		const codec = getCodec(id);
 		let res;
 		try {
-			res = await codec.collect(options.src, { ignoreTest: !!options.ignoreTest, deps2Exclude, verbose, scanJars: options.jars !== false, srcRoot: options.src });
+			res = await timedPhase(`collecting ${codec.label || id}`, () => codec.collect(options.src, { ignoreTest: !!options.ignoreTest, deps2Exclude, verbose, scanJars: options.jars !== false, srcRoot: options.src, onJarProgress: makeJarProgress() }));
 		} catch (err) {
 			console.warn(chalk.red(`❌  ${id} collect failed:`), chalk.dim(err.message));
 			continue;
@@ -358,7 +433,6 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 	}
 
 	// --- Collection summary ---
-	ui.section("Collection");
 	const ecoCount = {};
 	let embeddedCount = 0;
 	for (const d of resolved.values()) {
@@ -432,7 +506,18 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 			ui.ok("no missing Maven parent POMs");
 		}
 
+		// Private-lib detection asks each configured repo whether a missing coord
+		// exists (→ absent = likely private). Results are cached + bundled, so an
+		// --offline run reads the online-warmed cache instead of probing the network.
+		// A coord that's neither cached nor probeable (offline + cold) stays UNKNOWN —
+		// we never fake it as "private", which is what made offline both wrong and slow.
 		if (options.allLibs) {
+			const { loadJsonCache, saveJsonCache } = require("./lib/outdated");
+			const existsCache = loadJsonCache(MAVEN_EXISTS_CACHE_PATH);
+			const fresh = existsCache.meta?.fetchedAt && (Date.now() - existsCache.meta.fetchedAt) < MAVEN_EXISTS_MAX_AGE_MS;
+			if (!fresh && !options.offline) existsCache.entries = {};   // refresh stale probes when online
+			if (!existsCache.entries) existsCache.entries = {};
+
 			const anyMissingLibs = Object.keys(allPomMetadata.anyMissingById)
 				.filter(id => {
 					const parts = id.split(":");
@@ -442,14 +527,20 @@ async function checkMavenLibExist(groupId, artifactId, repos) {
 			const limit = pLimit(10);
 			const results = await Promise.all(anyMissingLibs.map(id => {
 				const [g, a] = id.split(":");
-				return limit(async () => ({ id, found: await checkMavenLibExist(g, a, mavenRepos) }));
+				return limit(async () => ({ id, found: await checkMavenLibExist(g, a, mavenRepos, existsCache, { offline: options.offline }) }));
 			}));
-			for (const r of results) if (r && r.found === false) privateLibIds.push(r.id);
+			let unknown = 0;
+			for (const r of results) {
+				if (r.found === false) privateLibIds.push(r.id);
+				else if (r.found === null) unknown++;
+			}
+			if (!options.offline) { existsCache.meta = { fetchedAt: Date.now() }; saveJsonCache(MAVEN_EXISTS_CACHE_PATH, existsCache); }
 			if (privateLibIds.length) {
 				ui.warn(`${privateLibIds.length} lib(s) absent from Maven Central (likely private):`);
 				for (const id of privateLibIds.slice(0, 10)) ui.info(chalk.magenta(id));
 				if (privateLibIds.length > 10) ui.info(chalk.dim(`…and ${privateLibIds.length - 10} more`));
 			}
+			if (unknown) ui.info(chalk.dim(`${unknown} lib(s) not in the presence cache — run online once (or --export-cache from an online host) to classify them`));
 		}
 
 		if (deps2Exclude) {

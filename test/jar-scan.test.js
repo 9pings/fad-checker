@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const crypto = require("crypto");
 const { zipSync, strToU8 } = require("fflate");
 const {
 	scanEmbeddedJars,
@@ -33,7 +34,7 @@ test("coordFromFilename splits name-version", () => {
 	assert.equal(coordFromFilename("no-version.jar"), null);
 });
 
-test("scanEmbeddedJars finds fat-jar libs, recurses, warns on unidentifiable, skips node_modules", () => {
+test("scanEmbeddedJars finds fat-jar libs, recurses, warns on unidentifiable, skips node_modules", async () => {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-jarscan-"));
 	const inner = zipSync({ "META-INF/maven/org.apache.logging.log4j/log4j-core/pom.properties": strToU8("groupId=org.apache.logging.log4j\nartifactId=log4j-core\nversion=2.14.0\n") });
 	const outer = zipSync({
@@ -46,7 +47,7 @@ test("scanEmbeddedJars finds fat-jar libs, recurses, warns on unidentifiable, sk
 	fs.mkdirSync(path.join(dir, "node_modules"));
 	fs.writeFileSync(path.join(dir, "node_modules", "ignore.jar"), Buffer.from(outer));
 
-	const { deps, warnings } = scanEmbeddedJars(dir, { srcRoot: dir });
+	const { deps, warnings } = await scanEmbeddedJars(dir, { srcRoot: dir });
 	const byName = Object.fromEntries(deps.map(d => [d.name, d]));
 
 	// fat-jar's own coord (from MANIFEST), nested lib from pom.properties + from filename
@@ -66,11 +67,58 @@ test("scanEmbeddedJars finds fat-jar libs, recurses, warns on unidentifiable, sk
 	fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test("scanEmbeddedJars warns (does not throw) on a corrupt archive", () => {
+test("scanEmbeddedJars warns (does not throw) on a corrupt archive", async () => {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-jarscan-"));
 	fs.writeFileSync(path.join(dir, "broken.jar"), Buffer.from("not a zip at all"));
-	const { deps, warnings } = scanEmbeddedJars(dir, { srcRoot: dir });
+	const { deps, warnings } = await scanEmbeddedJars(dir, { srcRoot: dir });
 	assert.equal(deps.length, 0);
 	assert.ok(warnings.some(w => /broken\.jar/.test(w.message)));
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("scanEmbeddedJars reads only the coordinate, not the whole jar (lazy central-dir read)", async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-jarscan-"));
+	// 16MB of incompressible data → a genuinely large on-disk jar whose bulk is .class.
+	const big = crypto.randomBytes(16 * 1024 * 1024);
+	const jar = zipSync({
+		"META-INF/maven/com.acme/widget/pom.properties": strToU8("groupId=com.acme\nartifactId=widget\nversion=4.5.6\n"),
+		"com/acme/Huge.class": big,
+	});
+	const jp = path.join(dir, "widget-4.5.6.jar");
+	fs.writeFileSync(jp, Buffer.from(jar));
+	const fileSize = fs.statSync(jp).size;
+
+	let bytesRead = 0;
+	const orig = fs.readSync;
+	fs.readSync = function (...args) { const n = orig.apply(this, args); bytesRead += n; return n; };
+	let deps;
+	try { ({ deps } = await scanEmbeddedJars(dir, { srcRoot: dir })); }
+	finally { fs.readSync = orig; }
+
+	assert.equal(deps.length, 1);
+	assert.equal(deps[0].name, "widget");
+	assert.equal(deps[0].version, "4.5.6");
+	// The .class bytes must never be touched: total reads stay a tiny fraction of the file.
+	assert.ok(fileSize > 8 * 1024 * 1024, "fixture jar should be large");
+	assert.ok(bytesRead < fileSize / 50, `expected to read <2% of ${fileSize} bytes, read ${bytesRead}`);
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("scanEmbeddedJars reports progress for every archive, nested ones included", async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-jarscan-"));
+	const inner = zipSync({ "META-INF/maven/org.apache.logging.log4j/log4j-core/pom.properties": strToU8("groupId=org.apache.logging.log4j\nartifactId=log4j-core\nversion=2.14.0\n") });
+	const fat = zipSync({ "BOOT-INF/lib/log4j-core-2.14.0.jar": inner, "BOOT-INF/classes/App.class": strToU8("x") });
+	fs.writeFileSync(path.join(dir, "app.jar"), Buffer.from(fat));
+
+	const events = [];
+	await scanEmbeddedJars(dir, { srcRoot: dir, onProgress: e => events.push(e) });
+
+	assert.equal(events[0].phase, "start");
+	assert.equal(events.at(-1).phase, "done");
+	const scanned = events.filter(e => e.phase === "scan");
+	// One event for the outer app.jar, one for the nested log4j-core jar.
+	assert.equal(scanned.length, 2);
+	assert.ok(scanned.some(e => /^app\.jar$/.test(e.path)));
+	assert.ok(scanned.some(e => /app\.jar!\/BOOT-INF\/lib\/log4j-core-2\.14\.0\.jar$/.test(e.path)));
 	fs.rmSync(dir, { recursive: true, force: true });
 });

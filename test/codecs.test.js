@@ -70,9 +70,9 @@ test("registry exposes maven/npm/yarn and validates their shape", () => {
 	assert.strictEqual(getCodec("nope"), null);
 });
 
-test("detectCodecs finds maven+npm on monorepo-mixed, not yarn duplicate", () => {
+test("detectCodecs finds maven+npm on monorepo-mixed, not yarn duplicate", async () => {
 	const dir = path.join(__dirname, "fixtures", "monorepo-mixed");
-	const detected = detectCodecs(dir).map(c => c.id);
+	const detected = (await detectCodecs(dir)).map(c => c.id);
 	assert.ok(detected.includes("maven"));
 	assert.ok(detected.includes("npm"));
 	assert.ok(!detected.includes("yarn"));

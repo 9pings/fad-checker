@@ -17,7 +17,7 @@ const POLY = path.join(__dirname, "fixtures", "polyglot");
 async function collectAll(dir) {
 	const resolved = new Map();
 	const warnings = [];
-	for (const id of detectCodecs(dir).map(c => c.id)) {
+	for (const id of (await detectCodecs(dir)).map(c => c.id)) {
 		if (id === "yarn") continue;
 		const { deps, warnings: w } = await getCodec(id).collect(dir, {});
 		for (const [k, v] of deps) resolved.set(k, v);
@@ -30,8 +30,8 @@ test("every registered codec satisfies the interface contract", () => {
 	for (const c of allCodecs()) assertCodecShape(c);
 });
 
-test("detectCodecs finds all five ecosystems in the polyglot tree", () => {
-	const ids = detectCodecs(POLY).map(c => c.id).sort();
+test("detectCodecs finds all five ecosystems in the polyglot tree", async () => {
+	const ids = (await detectCodecs(POLY)).map(c => c.id).sort();
 	assert.deepStrictEqual(ids, ["composer", "maven", "npm", "nuget", "pypi"]);
 });
 
