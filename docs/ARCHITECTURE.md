@@ -6,7 +6,10 @@ This is the deep-dive for anyone modifying `fad-checker`'s internals or wonderin
 
 ```
 fad-checker.js                 Thin CLI: commander parsing + orchestration (loops over active codecs).
-lib/codecs/                  Per-ecosystem codecs (maven, npm, yarn, composer, pypi, nuget, go, ruby) + registry + select + recipes (see "Codecs" below).
+lib/codecs/                  Per-ecosystem codecs (maven, npm, yarn, composer, pypi, nuget, go, ruby, binary) + registry + select + recipes (see "Codecs" below).
+lib/codecs/binary/                 Native-binary scanner: sniff.js (extension + magic-byte gate) + scan.js (walk + SHA-1/SHA-256). The binary codec finds committed .dll/.exe/.so/.dylib (provenance:"binary").
+lib/hash-id.js               Identity-by-checksum: deps.dev (→ exact coordinate) then CIRCL hashlookup (→ known-good + KnownMalicious). Cached, offline-aware.
+lib/unmanaged.js             enrichUnmanaged() (identity + integrity on hash-bearing records) + buildInventory() (per-file signals for report chapter 1C / JSON).
 lib/codecs/composer/                composer.lock/composer.json parsers + Packagist registry (PHP codec internals).
 lib/codecs/pypi/                  poetry/pipfile/uv/pdm/requirements parsers + PyPI registry (Python codec internals).
 lib/codecs/nuget/                   packages.lock.json/csproj/packages.config parsers + NuGet registry (.NET codec internals).
