@@ -7,7 +7,7 @@
 
 > **F**ucking **A**utonomous **D**ependency **C**hecker
 
-`fad-checker` scans **Maven**, **npm**, **Yarn**, **Composer (PHP)**, **PyPI (Python)**, **NuGet (C#/.NET)**, **Go**, **Ruby** and **vendored JavaScript** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE (prioritised by **EPSS + CISA KEV**), EOL, obsolete, outdated and **license** findings, plus per-ecosystem fix recipes. It also exports a **CycloneDX 1.6 SBOM** and a **CSAF 2.0 VEX**.
+`fad-checker` scans **Maven**, **npm**, **Yarn**, **Composer (PHP)**, **PyPI (Python)**, **NuGet (C#/.NET)**, **Go**, **Ruby**, **vendored JavaScript** and **committed native binaries** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE (prioritised by **EPSS + CISA KEV**), EOL, obsolete, outdated and **license** findings, plus per-ecosystem fix recipes. It also exports a **CycloneDX 1.6 SBOM** and a **CSAF 2.0 VEX**.
 
 🌐 **[Project site & docs →](https://n8tz.github.io/fad-checker/)**
 
@@ -15,7 +15,7 @@
 
 It runs against the source files alone. **No `mvn`, no `npm install`, no `composer install`, no `pip`, no `dotnet restore`, no Docker.** It reads `pom.xml`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `composer.lock`, `poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`/`pyproject.toml`/`requirements.txt`, and `packages.lock.json`/`*.csproj`/`*.fsproj`/`*.vbproj`/`packages.config` directly.
 
-> **Supported ecosystems: Maven, npm, Yarn (v1 + Berry/v2+), pnpm, Composer, PyPI, NuGet, Go, Ruby.** Each is a self-contained **codec** (`lib/codecs/`) — adding another is adding a codec, no orchestrator surgery. Vendored JS (jQuery, Bootstrap, PDF.js, etc.) is also scanned via retire.js. **Embedded JARs** committed into the tree — vendored libs, Spring-Boot fat-jars, shaded uber-jars inside `.jar`/`.war`/`.ear` — are unzipped in-memory and their Maven coordinates scanned too (disable with `--no-jars`).
+> **Supported ecosystems: Maven, npm, Yarn (v1 + Berry/v2+), pnpm, Composer, PyPI, NuGet, Go, Ruby + committed native binaries.** Each is a self-contained **codec** (`lib/codecs/`) — adding another is adding a codec, no orchestrator surgery. Vendored JS (jQuery, Bootstrap, PDF.js, etc.) is also scanned via retire.js. **Embedded JARs** committed into the tree — vendored libs, Spring-Boot fat-jars, shaded uber-jars inside `.jar`/`.war`/`.ear` — are unzipped in-memory and their Maven coordinates scanned too (disable with `--no-jars`). **Committed native binaries** (`.dll`/`.exe`/`.so`/`.dylib`) are detected (magic-byte confirmed, so images/assets are never picked up) and **identified by checksum** via deps.dev + CIRCL — to flag tampered/unknown files and libraries that ought to be declared dependencies (disable with `--no-binaries`).
 
 ---
 
@@ -48,6 +48,7 @@ Exactly **one** runtime dependencies must be on PATH (or installed automatically
 | **0. Warnings** | local heuristics | Missing lockfiles, unresolved Maven versions (BOM-managed), private libs not on Maven Central |
 | **1. CVE (production)** | CVEProject + OSV.dev + NVD + CPE | Public CVE / GHSA in production deps, per ecosystem, per manifest file — each row **prioritised** by CISA KEV + EPSS + CVSS |
 | **1B. Embedded binaries** | same, on coords read from archives | CVEs in libraries **shipped inside committed `.jar`/`.war`/`.ear`** (vendored libs, Spring-Boot fat-jars, shaded uber-jars) — not declared in any `pom.xml`. Grouped by containing archive |
+| **1C. Unmanaged / vendored binaries** | deps.dev + CIRCL (by checksum) | Committed **native binaries** (`.dll`/`.exe`/`.so`/`.dylib`) no package manager governs — identified by hash, flagged **should-be-managed** (exists in a registry), **name≠checksum** (filename disagrees with the hash), **unknown** (no source knows it) or **malicious** (free CIRCL signal) |
 | **2. CVE in dev deps** | same | Same, but for `test`/`provided` (Maven) and `dev`/`optional`/`peer` (npm) |
 | **3. Vendored JS** | [retire.js](https://retirejs.github.io/) | Old jQuery/Bootstrap/Angular/PDF.js copies sitting in `static/` or `webapp/` with no lockfile |
 | **4. EOL frameworks** | endoflife.date | Spring Boot 2.5, Hibernate 4.x, EOL JDKs, AngularJS, Laravel/Symfony, Django, .NET, etc. |
@@ -102,6 +103,7 @@ fad-checker -s ./proj --offline
 fad-checker -s ./proj --ecosystem maven            # Maven only
 fad-checker -s ./proj --ecosystem maven,npm,pypi   # several
 fad-checker -s ./proj --no-nuget --no-composer     # or opt out per codec
+fad-checker -s ./proj --no-binaries                # skip the native-binary scan
 ```
 
 Run `fad-checker --help` for the full flag list.
@@ -196,6 +198,7 @@ This is the surprising bit. The whole point is that you can run `fad-checker` ag
 - **Lockfile-first, best-effort fallback** — when a lockfile is present it wins. When it's absent, the loose manifest (`package.json` / `composer.json` / `pyproject.toml` / `requirements.txt` / `*.csproj`) is still parsed for its **pinned exact versions**, with ranges skipped and a `no-lockfile` warning in chapter 0 flagging the partial coverage.
 - **Vendored JavaScript** — `retire.js` shells out and scans `.js` / `.min.js` files by signature, catching old jQuery / Bootstrap / Angular / PDF.js copies that no lockfile knows about.
 - **Embedded JARs** — committed `.jar` / `.war` / `.ear` archives are unzipped **in memory** (via `fflate` — nested fat-jar libs are recursed without ever touching disk, so there's no zip-slip risk) and each artifact's Maven coordinate is read from `META-INF/maven/.../pom.properties` (authoritative), then `MANIFEST.MF`, then the file name. Those coordinates run through the same CVE/OSV/NVD matching as declared deps but report in their own **Embedded binaries** chapter, grouped by containing archive. An archive whose coordinate can't be resolved is flagged in chapter 0 rather than scanned blindly. Auto when archives are present; disable with `--no-jars`. (Embedded coords don't trigger Maven Central transitive resolution — a fat-jar already ships its dependencies, which the recursion finds directly.)
+- **Committed native binaries** — `.dll` / `.exe` / `.so` / `.dylib` files are found by a magic-byte-confirmed walk (extension **and** PE/ELF/Mach-O signature must agree, so an image renamed `.so` or any asset is rejected), hashed (SHA-1 + SHA-256), then **identified by checksum** online: **deps.dev** query-by-hash returns the exact package coordinate (so the file is byte-identical to a published artifact → *pristine*, and ought to be a declared dependency), and **CIRCL hashlookup** recognises known OS/distro/CDN/NSRL files (→ *known-good*) plus a free `KnownMalicious` flag. Files no source knows are flagged *unknown*; a filename that disagrees with the resolved identity is flagged *name≠checksum*. Reported in their own **Unmanaged / vendored binaries** chapter (1C) and the JSON export. Cached + `--offline`-aware; disable with `--no-binaries`. No malware/AV lane and no binary-metadata parsing — identity is hash-lookup, integrity is hash-comparison.
 - **CVE data** — three independent sources merged:
   - **CVEProject** (the canonical `cvelistV5` bundle, filtered to Maven-relevant entries)
   - **OSV.dev** (Google + GitHub Security Lab, multi-ecosystem)
@@ -222,6 +225,7 @@ All cached data lives in `~/.fad-checker/`:
 | CISA KEV catalogue | `kev-cache.json` | 24 h |
 | Go module proxy (latest) | `go-proxy-cache.json` | 24 h |
 | RubyGems (latest + licenses) | `rubygems-cache.json` | 24 h |
+| Binary identity (deps.dev + CIRCL by hash) | `hash-id-cache.json` | 24 h |
 | endoflife.date cycles | `eol-cache.json` | 7 d |
 | Maven Central latest versions | `version-cache.json` | 24 h |
 | Transitive POMs from Maven Central | `poms-cache/<g>__<a>__<v>.pom` | ∞ (immutable) |
@@ -328,6 +332,8 @@ Repos are tried **in declared order, Maven Central last**. Auth is sent as a `Ba
 | [NuGet](https://www.nuget.org/) | Latest stable + per-version `deprecation` | Free public service | `GET api.nuget.org/v3/registration5-gz-semver2/<id>/index.json` |
 | [Go module proxy](https://proxy.golang.org/) | Latest module version (outdated) | Free public service | `GET proxy.golang.org/<module>/@latest` |
 | [RubyGems](https://rubygems.org/) | Latest stable + licenses | Free public service | `GET rubygems.org/api/v1/gems/<gem>.json` |
+| [deps.dev](https://deps.dev/) | Native-binary identity by checksum (→ package coordinate) | Free public API (CC-BY) | `GET api.deps.dev/v3/query?hash.type=SHA1&hash.value=<base64>` |
+| [CIRCL hashlookup](https://hashlookup.circl.lu/) | Known-good file identity (NSRL/distro/CDN) + KnownMalicious | Free public service | `GET hashlookup.circl.lu/lookup/sha256/<hash>` |
 | [retire.js](https://retirejs.github.io/retire.js/) | Vendored-JS signature DB + scanner | Apache-2.0 | npm package `retire`, executed locally |
 | [Snyk](https://snyk.io/) (optional) | Additional CVE source via `snyk test --all-projects --json` | Per Snyk EULA; needs a Snyk account | Local CLI `snyk` |
 | [MITRE CWE](https://cwe.mitre.org/) | Weakness category links in the report | Free public reference | Linked by URL only, no API call |
@@ -355,7 +361,7 @@ of thing a security consultant or an ANSSI-PASSI engagement needs.
 
 | | **fad-checker** | OSV-Scanner | Trivy | Grype + Syft | OWASP DC | Snyk OSS |
 | --- | --- | --- | --- | --- | --- | --- |
-| Ecosystems it targets¹ | Maven, npm, Yarn, **pnpm**, Composer, PyPI, NuGet, Go, Ruby + vendored JS | 11+ langs / 19+ lockfiles | 20+ | 20+ | Java/.NET (others exp.) | many |
+| Ecosystems it targets¹ | Maven, npm, Yarn, **pnpm**, Composer, PyPI, NuGet, Go, Ruby + vendored JS + **native binaries** | 11+ langs / 19+ lockfiles | 20+ | 20+ | Java/.NET (others exp.) | many |
 | Reads lockfiles without `install`/build | ✅ | ✅ | ✅ | ✅ | ⚠️ Java needs Maven Central/build | ❌ build required |
 | Best-effort when **no lockfile** (pinned versions) | ✅ | ❌ | ❌ | ❌ | ⚠️ | ⚠️ |
 | Vulnerability sources | CVEProject + OSV + NVD + EPSS + KEV + retire.js (+ Snyk), merged | OSV.dev | Aqua DB | Anchore DB | NVD / CPE | Snyk DB |
