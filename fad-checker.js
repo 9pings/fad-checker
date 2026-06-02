@@ -865,6 +865,15 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const sev = ui.sevColor;
 	const depLabel = d => d.ecosystem === "npm" ? `npm:${d.artifactId}` : `${d.groupId}:${d.artifactId}`;
 	const coordOf = depLabel;   // npm deps show as "npm:name", others as "g:a"
+	// Where a finding's dependency was declared — the pom.xml / package.json / jar
+	// (embedded jars carry a "app.jar!/BOOT-INF/lib/…" manifestPath). Shown so EOL /
+	// obsolete / outdated entries point at the file the reader has to edit.
+	const definedInOf = d => {
+		const paths = (d?.manifestPaths?.length ? d.manifestPaths : d?.pomPaths?.length ? d.pomPaths : []);
+		if (!paths.length) return "";
+		const rel = paths.map(p => { try { return path.relative(options.src, p); } catch { return p; } });
+		return chalk.dim(`  ← ${rel[0]}${rel.length > 1 ? ` (+${rel.length - 1})` : ""}`);
+	};
 	const fmtStats = s => [
 		s.critical ? sev("CRITICAL")(`${s.critical} critical`) : null,
 		s.high ? sev("HIGH")(`${s.high} high`) : null,
@@ -897,15 +906,15 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	}
 
 	heading("EOL frameworks", eolResults.length);
-	for (const e of eolResults.slice(0, 8)) console.log("    " + chalk.yellow(e.product.padEnd(18)) + " " + chalk.dim(`${coordOf(e.dep)}:${e.dep.version}`) + " " + chalk.dim(e.eol === true ? "EOL" : String(e.eol)));
+	for (const e of eolResults.slice(0, 8)) console.log("    " + chalk.yellow(e.product.padEnd(18)) + " " + chalk.dim(`${coordOf(e.dep)}:${e.dep.version}`) + " " + chalk.dim(e.eol === true ? "EOL" : String(e.eol)) + definedInOf(e.dep));
 	if (eolResults.length > 8) console.log(chalk.dim(`    …and ${eolResults.length - 8} more`));
 
 	heading("Obsolete / deprecated", obsoleteResults.length);
-	for (const o of obsoleteResults.slice(0, 8)) console.log("    " + chalk.dim(`${coordOf(o.dep)}:${o.dep.version}`) + " → " + (o.replacement || chalk.dim("n/a")));
+	for (const o of obsoleteResults.slice(0, 8)) console.log("    " + chalk.dim(`${coordOf(o.dep)}:${o.dep.version}`) + " → " + (o.replacement || chalk.dim("n/a")) + definedInOf(o.dep));
 	if (obsoleteResults.length > 8) console.log(chalk.dim(`    …and ${obsoleteResults.length - 8} more`));
 
 	heading("Outdated", outdatedResults.length, options.allLibs ? "" : chalk.dim("pass -a/--allLibs to query registries"));
-	for (const o of outdatedResults.slice(0, 8)) console.log("    " + chalk.dim(coordOf(o.dep)) + ` ${o.dep.version} → ${chalk.green(o.latest)}`);
+	for (const o of outdatedResults.slice(0, 8)) console.log("    " + chalk.dim(coordOf(o.dep)) + ` ${o.dep.version} → ${chalk.green(o.latest)}` + definedInOf(o.dep));
 	if (outdatedResults.length > 8) console.log(chalk.dim(`    …and ${outdatedResults.length - 8} more`));
 
 	if (retireMatches.length) {

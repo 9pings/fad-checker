@@ -356,7 +356,7 @@ of thing a security consultant or an ANSSI-PASSI engagement needs.
 | | **fad-checker** | OSV-Scanner | Trivy | Grype + Syft | OWASP DC | Snyk OSS |
 | --- | --- | --- | --- | --- | --- | --- |
 | Ecosystems it targets¹ | Maven, npm, Yarn, **pnpm**, Composer, PyPI, NuGet, Go, Ruby + vendored JS | 11+ langs / 19+ lockfiles | 20+ | 20+ | Java/.NET (others exp.) | many |
-| Reads lockfiles without `install`/build² | ✅ | ✅ | ✅ | ✅ | ⚠️ Java needs Maven Central/build | ❌ build required |
+| Reads lockfiles without `install`/build | ✅ | ✅ | ✅ | ✅ | ⚠️ Java needs Maven Central/build | ❌ build required |
 | Best-effort when **no lockfile** (pinned versions) | ✅ | ❌ | ❌ | ❌ | ⚠️ | ⚠️ |
 | Vulnerability sources | CVEProject + OSV + NVD + EPSS + KEV + retire.js (+ Snyk), merged | OSV.dev | Aqua DB | Anchore DB | NVD / CPE | Snyk DB |
 | False-positive control | CPE/version cross-check | ecosystem-aware | ecosystem-aware | ecosystem-aware | ⚠️ CPE → noisy | ecosystem-aware |
@@ -369,26 +369,21 @@ of thing a security consultant or an ANSSI-PASSI engagement needs.
 | CI gating (`--fail-on`) + triage | ✅ severity/KEV + ignore/VEX | ✅ | ✅ | ✅ | ⚠️ | ✅ |
 | Auto-remediation / PRs | ❌ (fix recipes only) | ✅ `fix` | ❌ | ❌ | ❌ | ✅ |
 | Offline | ✅ cache | ✅ local DB | ✅ | ✅ | ✅ feed | ❌ mostly online |
-| **Scan without exposing the codebase**³ | ✅ anonymized descriptor | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Scan without exposing the codebase**² | ✅ anonymized descriptor | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Maven private-dep cleanup** (→ Snyk) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Output | **HTML + Word `.doc`** + JSON / SARIF / CycloneDX / CSAF | table/JSON/SARIF | table/JSON/SARIF | table/JSON/SARIF | HTML/XML/JSON | JSON / cloud UI |
 
 ¹ Narrower language coverage — no Rust/Dart/Swift (Go and Ruby are now covered).
-² Reading **lockfiles** without a build is the norm today: OSV-Scanner, Trivy and Grype/Syft
-do it too. For **Maven `pom.xml`** specifically, *every* tool — `fad-checker` included — must
-reach Maven Central (or rely on a real build / CycloneDX SBOM) to resolve transitive versions;
-Trivy can resolve wrong transitive versions in that mode, while `fad-checker` flags what it
-can't resolve in chapter 0. The genuine "no build" win is **vs Snyk** (requires building the
-project) and **OWASP DC** (needs Maven Central access for Java accuracy).
-³ Phase 1 exports only public coordinates; the online scan never sees your source tree —
+
+² Phase 1 exports only public coordinates; the online scan never sees your source tree —
 see [Air-gapped / PASSI](#air-gapped--passi-audits-anonymized-dependency-descriptor). OSV-Scanner
 has an offline mode, but it still needs the **source on the scanning machine**.
 
 **Where it fits:** a one-shot audit of a polyglot checkout you may not be able to build, a
 presentable HTML/Word deliverable, and confidential / air-gapped engagements.
-**Where it doesn't:** continuous CI supply-chain security, container/OS scanning,
-reachability analysis, auto-fix PRs — reach for **Trivy** or **Grype + Syft**. (It now
-*does* emit CycloneDX/CSAF and flag licenses + EPSS/KEV, but it isn't a gating CI daemon.)
+
+**Where it doesn't:** container/OS scanning,
+reachability analysis, auto-fix PRs — reach for **Trivy** or **Grype + Syft**.
 
 You don't have to choose — `fad-checker` takes Snyk's results as input (`--snyk`) and merges them.
 
