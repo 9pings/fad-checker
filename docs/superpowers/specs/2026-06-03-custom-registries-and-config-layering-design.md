@@ -89,6 +89,17 @@ fad-checker -s ./proj --repo npm=https://npm.acme/ --repo maven=https://nexus.ac
   `^<eco>=<url>$`. A bare URL (no `eco=`) is a hard error (no Maven default).
 - `--list-repos` prints each ecosystem's entries in priority order, masking auth.
 
+### Source flag alias (`-s` / `--src` / `--source`)
+
+The internal option key stays `src` (used throughout `fad-checker.js`) — no
+rename. Add `--source <dir>` as an alias alongside the existing `-s, --src <dir>`
+(commander allows only one long name per option, so `--source` is registered as
+a separate hidden option). Immediately after parse, normalize:
+`options.src = options.src ?? options.source`. The file/env layers accept the key
+**`source`** (and `src`); `applyLayers` maps both onto `src`. So `-s`, `--src`,
+`--source`, JSON `"source"`/`"src"`, and `FAD_CHECKER_ENV="--source …"` all feed
+the same value.
+
 ## 3. Layered config (`./.fad-env.json`, `--config`, `FAD_CHECKER_ENV`)
 
 Two different formats, on purpose:
@@ -191,6 +202,8 @@ metadata — we note this in the docs rather than parsing simple-index HTML.
   registry.
 - CLI parsing: `--add-repo <eco> <name> <url>` (incl. bad-eco error), `--repo
   eco=url` (incl. bare-URL error), `--list-repos` grouping, `--remove-repo`.
+- Source alias: `--source` and JSON `"source"` both resolve to `src`; `-s`/
+  `--src` unchanged.
 - All existing tests stay green (375 → grows).
 
 ## Out of scope
