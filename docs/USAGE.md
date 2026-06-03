@@ -57,6 +57,21 @@ fad-checker -s . -e "^@acme/"
 
 The excluded coords are listed at the end of the run so you can audit the regex.
 
+### Ignoring sub-paths (`--exclude-path`)
+
+`-e` drops *dependencies* by coordinate; `--exclude-path` prunes the directory **walk** itself — nothing under a matched path is read, for every ecosystem. Patterns are gitignore-style globs (via `minimatch`, `dot:true`) matched against the path **relative to `--src`**; a pattern matches both the directory and its whole subtree.
+
+```bash
+fad-checker -s . --exclude-path "packages/legacy/**" --exclude-path "**/fixtures/**"
+fad-checker -s . --exclude-path "apps/*/e2e"          # repeatable
+fad-checker -s . --no-default-excludes                # also walk node_modules/vendor/target/.git/…
+```
+
+| Flag | Effect |
+| --- | --- |
+| `--exclude-path <glob...>` | Prune matching sub-paths (relative to `--src`). Repeatable; also settable as `excludePath: [...]` in `.fad-env.json` and unioned across all config layers. |
+| `--no-default-excludes` | Don't prune the built-in ignored dirs (`node_modules`, `bower_components`, `vendor`, `dist`, `build`, `out`, `target`, `.git`, `.gradle`, `__pycache__`, …). Walks everything — slower, but nothing is hidden. |
+
 ## Per-source toggles
 
 Each data source can be disabled independently:
@@ -202,6 +217,7 @@ FAD_CHECKER_ENV='--fail-on high --no-nuget' fad-checker -s ./proj   # flag strin
 {
   "source": "./my-project",            // alias of --src / "src"
   "exclude": "^(com\\.acme|client)\\.",
+  "excludePath": ["packages/legacy/**", "**/fixtures/**"],
   "failOn": "high",
   "noNuget": true,
   "offline": true,

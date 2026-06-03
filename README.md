@@ -84,8 +84,12 @@ fad-checker --set-nvd-key YOUR_KEY
 # Read-only full scan (default: all sources on)
 fad-checker -s ./proj
 
-# Exclude private/internal libs by groupId regex
+# Exclude private/internal libs by groupId/name regex
 fad-checker -s ./proj -e "^(com\.acme|org\.private)\."
+
+# Ignore whole sub-paths during the walk (gitignore-style glob, relative to -s)
+fad-checker -s ./proj --exclude-path "packages/legacy/**" --exclude-path "**/fixtures/**"
+fad-checker -s ./proj --no-default-excludes          # walk everything (incl. node_modules/.git)
 
 # Also write cleaned POMs (private deps stripped, ready for Snyk)
 fad-checker -s ./proj -t ../proj-clean -e "^com\.acme\."
@@ -354,6 +358,7 @@ Effective precedence: **CLI flag > config file > `FAD_CHECKER_ENV` > global conf
 {
   "source": "./my-project",          // alias of --src (so is "src")
   "exclude": "^(com\\.acme|client)\\.",
+  "excludePath": ["packages/legacy/**", "**/fixtures/**"],
   "failOn": "high",
   "noNuget": true,
   "registries": {
@@ -369,6 +374,8 @@ FAD_CHECKER_ENV='--fail-on high --no-nuget --repo npm=https://npm.acme.com/' fad
 ```
 
 The **source directory** accepts three spellings everywhere: `-s`, `--src`, `--source` (and the JSON key `"source"`/`"src"`).
+
+> **`-e/--exclude` vs `--exclude-path`:** `--exclude` is a regex on the **coordinate** (groupId/name) — it drops matching *dependencies*. `--exclude-path` is a gitignore-style glob on the **directory path** (relative to `--src`) — it prunes the *walk* so nothing under it is read. They compose. `--exclude-path` is repeatable, unioned across config layers, and `--no-default-excludes` lets you walk the normally-pruned dirs (`node_modules`, `vendor`, `target`, `.git`, …).
 
 ---
 

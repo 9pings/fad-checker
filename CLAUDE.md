@@ -26,7 +26,7 @@ No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` /
 
 ```bash
 npm install
-npm test                  # 397 unit tests via node --test
+npm test                  # 406 unit tests via node --test
 
 # basic cleanup workflow
 node fad-checker.js -s ./proj                                        # read-only, full report
@@ -108,6 +108,7 @@ lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/ (in
 lib/deps-descriptor.js       Anonymized dep descriptor serialize/deserialize (PASSI offline→online round-trip).
 lib/config.js                Persistent user config in ~/.fad-checker/config.json (mode 0600): NVD key + `registries` map.
 lib/registries.js            Per-ecosystem registry list assembly (union across layers, dedup, public base last) + Basic/Bearer auth + fan-out. Generalizes maven-repo.js to npm/pypi/ruby/go.
+lib/path-filter.js           Shared dir-walk pruning: makeDirFilter({srcRoot,defaultSkip,excludePath,useDefaults}) → skipDir(absChild,name). Default per-walker SKIP sets + gitignore-style --exclude-path globs (minimatch, relative to srcRoot). Consulted by every walker.
 lib/maven-repo.js            Maven HTTP fan-out (POM/metadata/HEAD). buildRepoList reads registries.maven, appends Central last.
 lib/options-env.js           Layered option resolution: --config/.fad-env.json (JSON) + FAD_CHECKER_ENV (CLI-flag string) merged onto commander opts via getOptionValueSource.
 data/                        known-obsolete.json, eol-mapping.json, cpe-coord-map.json, known-public-namespaces.json, license-policy.json
@@ -140,7 +141,7 @@ For the deep dive — pipeline stages, the resolved-deps Map shape, report struc
 ## Testing
 
 ```bash
-node --test test/*.test.js            # full suite (397 tests)
+node --test test/*.test.js            # full suite (406 tests)
 node --test test/core.test.js         # one file
 ```
 
@@ -157,6 +158,7 @@ Test fixtures live in `test/fixtures/`:
 - `endoflife.date` API responses cached 7 days; Maven Central version lookups cached 24 hours. Cache lives in `~/.fad-checker/`.
 - **Persistent config**: `~/.fad-checker/config.json` (mode 0600). Set NVD key via `fad-checker --set-nvd-key <KEY>` (free, instant from <https://nvd.nist.gov/developers/request-an-api-key> — bumps rate limit from 5/30s to 50/30s).
 - **Custom registries (per ecosystem)**: stored under the config key `registries` ({ `<eco>`: [{name,url,auth?,token?}] }) for `maven|npm|pypi|ruby|go`. **No `maven_repos` back-compat** — that key is gone. CRUD via `--add-repo <eco> <name> <url> [--auth user:pass] [--token TOK]`, `--remove-repo <eco> <name>`, `--list-repos` (grouped); one-off `--repo <eco>=<url>` (repeatable). Each codec's `fetch*` (npm/pypi/ruby/go `registry.js`) takes `opts.registries`, tries them first (per-registry auth), public base appended **last** by `registries.withPublic` — byte-identical to the old single-base behaviour when empty. NuGet/Composer private feeds not yet supported. PyPI/Ruby custom bases must speak the same JSON API (not a bare PEP 503 simple index).
+- **Walk pruning (`lib/path-filter.js`)**: every directory walker (Maven `core.js`, `detectCodecs`, npm `parse.js`, composer/go/nuget/pypi/ruby codecs, `maven/jar-scan.js`, `binary/scan.js`) takes a `skipDir(absChild, name)` predicate built by `makeDirFilter`. It combines the walker's own basename `SKIP` set (the **default excludes**, bypassable with `--no-default-excludes` / `defaultExcludes:false`) with user `--exclude-path` globs (gitignore-style via `minimatch`, matched against the path **relative to `srcRoot`**; a glob prunes the dir AND its subtree). `excludePath` is **unioned** across config layers (CLI + file + env + global), like registries. `parallel-walk.js#walkDirs` now passes the child's absolute path to `skipDir`. Each `codec.collect(dir, opts)` receives `opts.excludePath` + `opts.defaultExcludes` and builds the filter (`srcRoot = opts.srcRoot || dir`).
 - **Layered options (`lib/options-env.js`)**: precedence **CLI flag > config file (`--config <file.json>` / `./.fad-env.json`, JSON keyed by camelCase option names) > `FAD_CHECKER_ENV` (a CLI-flag string, parsed via a throwaway commander clone) > `~/.fad-checker/config.json` > commander defaults**. A file/env value fills an option only when `program.getOptionValueSource(name)` is `default`/undefined (user didn't pass it). `registries` are **unioned** across layers, never overridden. Source flag has aliases: `-s`/`--src`/`--source` + JSON `source`/`src` → internal `src` (no code-wide rename). Wired in `fad-checker.js` right after `program.parse()`; `regMap`/`registriesFor(eco)` threaded into `runReportFlow`.
 - **`--offline` umbrella flag**: skips every network call (CVE/OSV/NVD/EPSS/KEV/Maven Central/endoflife/npm-registry/retire). Falls back to whatever is already cached. Per-source variants (`--cve-offline`, `--no-osv`, `--no-nvd`, `--no-epss`, `--no-kev`, `--no-licenses`, `--no-retire`, `--no-transitive`) and per-codec toggles (`--no-maven`/`--no-npm`/`--no-yarn`/`--no-nuget`/`--no-composer`/`--no-pypi`, `--no-js`) still work independently. npm registry deprecation always runs when online; npm (and Maven) outdated is gated by `--no-all-libs`. License detection piggybacks on the registry passes (no extra fetch) + Maven cached POMs.
 - **Machine-readable exports**: `--report-sbom [f]` writes a CycloneDX 1.6 SBOM with vulnerabilities inline (VDR); `--report-csaf [f]` writes a CSAF 2.0 VEX. Both use the full match set (prod+dev+embedded+cpeFiltered; cpeFiltered marked as a property/note rather than dropped). purls are built by `lib/purl.js`.

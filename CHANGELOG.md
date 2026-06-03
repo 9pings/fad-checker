@@ -20,6 +20,11 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   **CLI flag > config file > `FAD_CHECKER_ENV` > `~/.fad-checker/config.json` >
   defaults**; `registries` are unioned across every layer. New `lib/options-env.js`.
 - **`--source` alias** for `-s`/`--src` (and the JSON config key `"source"`/`"src"`).
+- **`--exclude-path <glob...>`** — ignore sub-paths during the directory walk,
+  gitignore-style (matched relative to `--src`, prunes the dir + its subtree),
+  across every ecosystem. Repeatable; also `excludePath: [...]` in `.fad-env.json`,
+  unioned across config layers. **`--no-default-excludes`** walks the normally
+  pruned dirs (`node_modules`, `vendor`, `target`, `.git`, …). New `lib/path-filter.js`.
 
 ### Changed
 - **BREAKING:** the persisted-registry store moved from the Maven-only
