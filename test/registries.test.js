@@ -1,0 +1,54 @@
+const { test } = require("node:test");
+const assert = require("node:assert");
+const os = require("os"); const fs = require("fs"); const path = require("path");
+const R = require("../lib/registries");
+
+test("SUPPORTED lists the five ecosystems", () => {
+	assert.deepStrictEqual([...R.SUPPORTED].sort(), ["go", "maven", "npm", "pypi", "ruby"]);
+});
+
+test("authHeaderFor: token → Bearer, auth → Basic, none → null", () => {
+	assert.strictEqual(R.authHeaderFor({ token: "abc" }), "Bearer abc");
+	assert.strictEqual(R.authHeaderFor({ auth: "u:p" }), "Basic " + Buffer.from("u:p").toString("base64"));
+	assert.strictEqual(R.authHeaderFor({}), null);
+});
+
+test("buildRegistryList: unions layers, dedups by URL, splits inline auth, public NOT appended", () => {
+	const list = R.buildRegistryList("npm", [
+		[{ name: "a", url: "https://r1/" }],
+		[{ name: "b", url: "https://u:p@r2" }, { name: "dup", url: "https://r1" }],
+	]);
+	assert.strictEqual(list.length, 2);
+	assert.strictEqual(list[0].url, "https://r1/");
+	assert.strictEqual(list[1].url, "https://r2/");
+	assert.strictEqual(list[1].auth, "u:p");
+});
+
+test("withPublic appends the ecosystem public base last", () => {
+	const bases = R.withPublic("npm", [{ name: "a", url: "https://r1/" }]);
+	assert.strictEqual(bases.length, 2);
+	assert.strictEqual(bases[1].url, R.PUBLIC_BASES.npm);
+	assert.strictEqual(bases[1].name, "public");
+});
+
+test("config registries CRUD round-trips via a temp HOME", () => {
+	const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fad-cfg-"));
+	const prev = os.homedir; os.homedir = () => tmp;
+	delete require.cache[require.resolve("../lib/config")];
+	const config = require("../lib/config");
+	try {
+		config.addRegistry("npm", "verda", "https://npm.acme/", { token: "t" });
+		config.addRegistry("maven", "nexus", "https://nexus.acme/m2/", { auth: "u:p" });
+		assert.strictEqual(config.getRegistries("npm")[0].token, "t");
+		assert.strictEqual(config.getRegistryMap().maven[0].auth, "u:p");
+		assert.strictEqual(config.removeRegistry("npm", "verda"), true);
+		assert.strictEqual(config.getRegistries("npm").length, 0);
+	} finally { os.homedir = prev; delete require.cache[require.resolve("../lib/config")]; fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+const { buildRepoList } = require("../lib/maven-repo");
+test("maven buildRepoList still appends Central last and dedups", () => {
+	const repos = buildRepoList([{ name: "nexus", url: "https://nexus/m2" }], [{ url: "https://nexus/m2" }]);
+	assert.strictEqual(repos[repos.length - 1].name, "central");
+	assert.strictEqual(repos.filter(r => r.name === "nexus").length, 1);
+});
