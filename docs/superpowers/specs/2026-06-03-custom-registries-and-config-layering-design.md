@@ -15,8 +15,10 @@ Two related capabilities:
    discovery — a follow-up).
 
 2. **Layered configuration** so options (including registries) don't have to be
-   retyped each run: a project-local `./.fad-env.json`, an explicit `--config
-   <file.json>`, and a `FAD_CHECKER_ENV` environment variable carrying the same JSON.
+   retyped each run: a project-local `./.fad-env.json` (JSON), an explicit
+   `--config <file.json>` (JSON), and a `FAD_CHECKER_ENV` environment variable
+   carrying a **string of CLI flags** (exactly what you'd type after
+   `fad-checker`, e.g. `--fail-on high --ecosystem maven,npm --repo npm=https://npm.acme/`).
 
 **No backward compatibility is kept.** The legacy `maven_repos` config key and
 the 2-arg `--add-repo <name> <url>` Maven shortcut are removed/replaced.
@@ -89,30 +91,40 @@ fad-checker -s ./proj --repo npm=https://npm.acme/ --repo maven=https://nexus.ac
 
 ## 3. Layered config (`./.fad-env.json`, `--config`, `FAD_CHECKER_ENV`)
 
-A JSON object whose keys mirror CLI option names (commander camelCase, e.g.
-`failOn`, `ecosystem`, `exclude`, `noNuget`, `reportSbom`, plus `registries`).
+Two different formats, on purpose:
+- **File layer** (`--config <file.json>` / `./.fad-env.json`): a **JSON object**
+  whose keys mirror commander camelCase option names (e.g. `failOn`, `ecosystem`,
+  `exclude`, `noNuget`, `reportSbom`, plus `registries`).
+- **Env layer** (`FAD_CHECKER_ENV`): a **string of CLI flags**, exactly as typed
+  on the command line (e.g. `--fail-on high --ecosystem maven,npm --repo npm=https://npm.acme/`).
 
 ### New module: `lib/options-env.js`
 
-- `loadConfigFile(path)` → parsed object or `null` (with a clear error on
+- `loadConfigFile(path)` → parsed JSON object or `null` (with a clear error on
   malformed JSON — do not silently swallow).
-- `loadEnvConfig({ cwd, configPath })` → resolves the **file layer** and the
-  **env layer** and returns `{ fileLayer, envLayer }`:
+- `parseEnvFlags(str, program)` → an options object derived from a CLI-flag
+  string. Tokenizes quote-aware (a tiny shell-style splitter; supports
+  single/double quotes and `\` escapes), then runs a **throwaway clone of the
+  commander `program`** over those tokens with `{ from: 'user' }`, and returns
+  only the options whose `getOptionValueSource(name)` is **not** `'default'`
+  (i.e. the ones the env string actually set). Registries from `--repo` in the
+  env string are captured for the union.
+- `loadLayers({ cwd, configPath, envStr, program })` → `{ fileLayer, envLayer }`:
   - file layer = `--config <path>` if given, else `./.fad-env.json` if present,
     else `{}`.
-  - env layer = `FAD_CHECKER_ENV` parsed as inline JSON if set, else `{}`. (If `FAD_CHECKER_ENV`
-    is a path to an existing file, load that file — convenience, but inline JSON
-    is the documented form.)
-- `applyLayers(cliOptions, program, layers, configStore)` → effective options.
-  Uses commander's `program.getOptionValueSource(name)`: a layer value fills an
-  option **only when the CLI source is `'default'` or undefined** (i.e. the user
-  did not pass it). Registries are merged separately (union, see §1).
+  - env layer = `parseEnvFlags(FAD_CHECKER_ENV, program)` if set, else `{}`.
+- `applyLayers(program, layers, configStore)` → effective options.
+  Uses commander's `program.getOptionValueSource(name)` on the **real** parse: a
+  layer value fills an option **only when the CLI source is `'default'` or
+  undefined** (the user did not pass it), trying file layer first, then env
+  layer, then the global `configStore`. Registries are merged separately (union,
+  see §1) across all layers + CLI `--repo`.
 
 ### Precedence (highest → lowest)
 
 1. **CLI flags** (explicitly passed)
 2. **Config file** — `--config <file>` (if given) **else** `./.fad-env.json`
-3. **`FAD_CHECKER_ENV`** env var (inline JSON)
+3. **`FAD_CHECKER_ENV`** env var (string of CLI flags)
 4. **`~/.fad-checker/config.json`** (global persisted store: NVD key + registries)
 5. Built-in commander defaults
 
@@ -121,7 +133,8 @@ Registries: unioned across layers 2–4 + CLI `--repo`, never overridden.
 ### Wiring in `fad-checker.js`
 
 After `program.parse()`, before building repo lists / running:
-`options = applyLayers(program.opts(), program, loadEnvConfig({cwd, configPath: opts.config}), config.load())`.
+`const layers = loadLayers({ cwd, configPath: program.opts().config, envStr: process.env.FAD_CHECKER_ENV, program });`
+`const options = applyLayers(program, layers, config.load());`
 Then registry lists are built per ecosystem from the merged `registries` and
 threaded into each codec's `checkRegistry`.
 
@@ -169,7 +182,8 @@ metadata — we note this in the docs rather than parsing simple-index HTML.
 ## 6. Tests (node:test)
 
 - `lib/options-env.js`: file+env+CLI precedence; `--config` overrides
-  auto-discovery; malformed JSON errors; registry union across layers.
+  auto-discovery; malformed JSON errors; `parseEnvFlags` quote/escape
+  tokenizing + only-set-options capture; registry union across layers.
 - `lib/registries.js`: per-ecosystem list assembly, dedup-by-URL, auth/token →
   header, inline `user:pass@` split, public-base-last ordering.
 - Per-codec registry fan-out: custom registry tried first, public fallback on
