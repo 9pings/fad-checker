@@ -104,6 +104,11 @@ fad-checker -s ./proj --ecosystem maven            # Maven only
 fad-checker -s ./proj --ecosystem maven,npm,pypi   # several
 fad-checker -s ./proj --no-nuget --no-composer     # or opt out per codec
 fad-checker -s ./proj --no-binaries                # skip the native-binary scan
+
+# Private registry + reusable defaults (see "Configuration file & environment")
+fad-checker --add-repo npm verdaccio https://npm.acme.com/ --token "$NPM_TOKEN"
+fad-checker --config ./ci/fad-env.json             # all options from a JSON file
+fad-checker --source ./proj                        # --source / --src are aliases
 ```
 
 Run `fad-checker --help` for the full flag list.
@@ -186,7 +191,20 @@ fad-checker --completion zsh  > ~/.zsh/completions/_fad-checker
 
 ## How it scans without any build tool
 
-This is the surprising bit. The whole point is that you can run `fad-checker` against a *checkout* with no build environment.
+**TL;DR** — `fad-checker` never runs your build. For each ecosystem it reads the **lockfile** (or, failing that, the manifest's pinned versions) straight off disk to learn the exact dependency versions, then matches those coordinates against vulnerability/EOL/registry data over the network (cached, `--offline`-able). No `mvn`, `npm install`, `pip`, `dotnet restore`, `go build` or `bundle` — and no `node_modules/`.
+
+| Ecosystem | Read directly | Transitive versions come from |
+| --- | --- | --- |
+| Maven | `pom.xml` (+ parents, BOMs, profiles) | child POMs fetched from Maven Central (cached) |
+| npm / Yarn / pnpm | `package-lock.json` · `yarn.lock` (v1+Berry) · `pnpm-lock.yaml` | the lockfile itself |
+| Composer | `composer.lock` (else `composer.json`) | the lockfile |
+| PyPI | `poetry.lock` · `Pipfile.lock` · `uv.lock` · `pdm.lock` (else `pyproject.toml`/`requirements.txt`) | the lockfile |
+| NuGet | `packages.lock.json` (else `*.csproj`/`packages.config`) | the lockfile |
+| Go | `go.mod` (`// indirect` → transitive; `go.sum` fallback) | the module graph in `go.mod` |
+| Ruby | `Gemfile.lock` (`specs:`) | the lockfile |
+| Vendored JS / binaries | the committed `.js` / `.jar` / `.so` files themselves | n/a (read in place) |
+
+The rest of this section is the detail behind that table.
 
 - **Maven** — `pom.xml` files are parsed with xml2js. Property substitution (`${jackson.version}`), parent inheritance, local BOM imports (`<scope>import</scope>`) and every profile are resolved in-process. Transitive deps are walked by fetching child POMs from Maven Central (cached forever — POMs are immutable). When the project uses an **external BOM** (`spring-boot-dependencies` etc.), the deps whose version comes from that BOM can't be resolved without `mvn` itself — those are surfaced in chapter 0 as "unresolved-versions" so you know what's missing.
 - **npm / Yarn / pnpm** — `package-lock.json` (v1, v2, v3), `yarn.lock` (v1 + Berry/v2+, via `js-yaml`) and `pnpm-lock.yaml` (v5/v6/v9, via `js-yaml`) are parsed directly. Lockfiles already contain every transitive version. No `node_modules/` traversal, no `npm install`.
@@ -292,24 +310,65 @@ DB is warmed online (phase 2) and carried by `--export-cache`.
 
 ---
 
-## Custom Maven repositories
+## Custom repositories & registries
 
-Out of the box `fad-checker` queries Maven Central for transitive POMs and latest versions. If your project depends on artifacts that live on a private Nexus / Artifactory / JBoss repo, add them so transitive resolution and outdated checks work end-to-end.
+Out of the box `fad-checker` queries each ecosystem's **public** registry (Maven Central, registry.npmjs.org, PyPI, RubyGems, the Go module proxy). If your project pulls artifacts from a private **Nexus / Artifactory / JBoss** (Maven), **Verdaccio / GitHub Packages** (npm), **devpi / Artifactory** (PyPI), **Gemfury / Geminabox** (Ruby) or a private **GOPROXY / Athens** (Go), register them so transitive resolution, outdated checks, deprecation and license lookups work end-to-end.
+
+Custom registries for **`maven`, `npm`, `pypi`, `ruby`, `go`**:
 
 ```bash
-# Persist a repo (lives in ~/.fad-checker/config.json)
-fad-checker --add-repo nexus       https://nexus.acme.com/repository/maven-public/
-fad-checker --add-repo nexus-priv  https://nexus.acme.com/repository/maven-private/  --auth alice:s3cr3t
-fad-checker --list-repos
-fad-checker --remove-repo nexus-priv
+# Persist a registry (lives in ~/.fad-checker/config.json, keyed by ecosystem)
+fad-checker --add-repo maven nexus     https://nexus.acme.com/repository/maven-public/ --auth alice:s3cr3t
+fad-checker --add-repo npm   verdaccio https://npm.acme.com/                            --token "$NPM_TOKEN"
+fad-checker --add-repo pypi  devpi     https://pypi.acme.com/root/pypi/+simple/         --auth alice:s3cr3t
+fad-checker --list-repos                 # grouped by ecosystem
+fad-checker --remove-repo npm verdaccio
 
-# One-off (not persisted) — repeatable
-fad-checker -s ./proj --repo https://nexus.acme.com/repository/maven-public/
+# One-off (not persisted) — repeatable, always ecosystem-scoped as <eco>=<url>
+fad-checker -s ./proj --repo npm=https://npm.acme.com/ --repo maven=https://nexus.acme.com/repository/maven-public/
 # Inline auth in the URL also works:
-fad-checker -s ./proj --repo https://alice:s3cr3t@nexus.acme.com/repository/maven-public/
+fad-checker -s ./proj --repo maven=https://alice:s3cr3t@nexus.acme.com/repository/maven-public/
 ```
 
-Repos are tried **in declared order, Maven Central last**. Auth is sent as a `Basic <base64>` header. POMs and `maven-metadata.xml` are cached per coord, so subsequent runs are free even against a private repo.
+Registries are tried **in declared order, the public registry last**. Auth is `--auth user:pass` → `Basic <base64>` or `--token TOK` → `Bearer TOK` (inline `https://user:pass@host/` also works). Responses are cached per coordinate, so subsequent runs are free even against a private registry.
+
+> **PyPI / Ruby caveat:** the custom base must expose the **same JSON API** as the public one (`<base>/<pkg>/json`, `<base>/<gem>.json`). A pure PEP 503 *simple-index* mirror that only lists files won't yield latest/yanked/license metadata — point at the JSON-capable endpoint (Artifactory/devpi/Nexus all have one). **NuGet** and **Composer** private feeds aren't supported yet (their service-index / `packages.json` discovery is a separate follow-up).
+
+---
+
+## Configuration file & environment
+
+Don't retype flags every run. `fad-checker` reads defaults from three places, **lowest priority first**, all overridable on the command line:
+
+| Layer | Where | Format |
+| --- | --- | --- |
+| **CLI flags** | the command line | flags (always win) |
+| **Config file** | `--config <file.json>`, else `./.fad-env.json` | **JSON** object, keys = option names |
+| **`FAD_CHECKER_ENV`** | environment variable | a **string of CLI flags** (what you'd type) |
+| **Global config** | `~/.fad-checker/config.json` | persisted NVD key + `registries` |
+
+Effective precedence: **CLI flag > config file > `FAD_CHECKER_ENV` > global config > built-in defaults.** A file/env value only fills an option you did *not* pass on the CLI; **registries are merged (unioned) across every layer**, never overridden.
+
+```jsonc
+// ./.fad-env.json — JSON, keys mirror the CLI options (camelCase)
+{
+  "source": "./my-project",          // alias of --src (so is "src")
+  "exclude": "^(com\\.acme|client)\\.",
+  "failOn": "high",
+  "noNuget": true,
+  "registries": {
+    "npm":  [{ "name": "verdaccio", "url": "https://npm.acme.com/", "token": "…" }],
+    "maven":[{ "name": "nexus", "url": "https://nexus.acme.com/repository/maven-public/", "auth": "user:pass" }]
+  }
+}
+```
+
+```bash
+fad-checker --config ./ci/fad-env.json          # explicit file (beats ./.fad-env.json)
+FAD_CHECKER_ENV='--fail-on high --no-nuget --repo npm=https://npm.acme.com/' fad-checker -s ./proj
+```
+
+The **source directory** accepts three spellings everywhere: `-s`, `--src`, `--source` (and the JSON key `"source"`/`"src"`).
 
 ---
 

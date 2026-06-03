@@ -3,6 +3,31 @@
 All notable changes to `fad-checker` are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Custom registries for npm, PyPI, Ruby and Go** (previously Maven-only). Point
+  fad-checker at private Verdaccio/Artifactory/GitHub Packages (npm), devpi (PyPI),
+  Gemfury/Geminabox (Ruby) or a private GOPROXY/Athens (Go). They are tried in
+  declared order, the public registry last; auth via `--auth user:pass` (→ Basic)
+  or `--token TOK` (→ Bearer), inline `https://user:pass@host/` also accepted.
+  CRUD: `--add-repo <eco> <name> <url>`, `--remove-repo <eco> <name>`,
+  `--list-repos` (grouped by ecosystem); one-off repeatable `--repo <eco>=<url>`.
+  New `lib/registries.js`; per-codec fetchers honour `opts.registries`.
+- **Layered configuration.** Defaults can come from a JSON config file
+  (`--config <file.json>`, else auto-discovered `./.fad-env.json`) and from the
+  `FAD_CHECKER_ENV` environment variable (a string of CLI flags). Precedence:
+  **CLI flag > config file > `FAD_CHECKER_ENV` > `~/.fad-checker/config.json` >
+  defaults**; `registries` are unioned across every layer. New `lib/options-env.js`.
+- **`--source` alias** for `-s`/`--src` (and the JSON config key `"source"`/`"src"`).
+
+### Changed
+- **BREAKING:** the persisted-registry store moved from the Maven-only
+  `maven_repos` config key + 2-arg `--add-repo <name> <url>` to a per-ecosystem
+  `registries` map + `--add-repo <ecosystem> <name> <url>`. `--repo` now requires
+  the `<ecosystem>=<url>` form (a bare URL is rejected). Re-add any private Maven
+  repos with `--add-repo maven <name> <url>`.
+
 ## [2.1.0]
 
 ### Added

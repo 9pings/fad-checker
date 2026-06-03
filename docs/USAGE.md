@@ -168,6 +168,52 @@ drops manifest paths, registry URLs, integrity hashes and parent chains. The pha
 report is itself path-free; vendored-JS (retire.js) findings come from phase 3 (retire
 needs the actual `.js` files), using the signature DB warmed in phase 2.
 
+## Custom registries (private repos)
+
+`fad-checker` queries each ecosystem's public registry by default. Register private ones for **`maven`, `npm`, `pypi`, `ruby`, `go`** so transitive resolution, outdated/deprecation and license lookups reach them. (NuGet & Composer private feeds are not supported yet.)
+
+| Flag | Effect |
+| --- | --- |
+| `--add-repo <eco> <name> <url> [--auth user:pass] [--token TOK]` | Persist a registry (in `~/.fad-checker/config.json` under `registries.<eco>`). |
+| `--remove-repo <eco> <name>` | Remove a persisted registry. |
+| `--list-repos` | List configured registries, grouped by ecosystem (auth masked). |
+| `--repo <eco>=<url>` | One-off, not persisted; **repeatable**; auth via inline `https://user:pass@host/`. |
+
+```bash
+fad-checker --add-repo maven nexus     https://nexus.acme.com/repository/maven-public/ --auth alice:s3cr3t
+fad-checker --add-repo npm   verdaccio https://npm.acme.com/                            --token "$NPM_TOKEN"
+fad-checker --list-repos
+fad-checker -s ./proj --repo npm=https://npm.acme.com/ --repo maven=https://nexus.acme.com/repository/maven-public/
+```
+
+Registries are tried **in declared order, the public registry last** (first 2xx wins). `--auth user:pass` → `Basic <base64>`; `--token TOK` → `Bearer TOK`. Responses are cached per coordinate. **PyPI/Ruby** custom bases must expose the same JSON API as the public one (`<base>/<pkg>/json`, `<base>/<gem>.json`), not a bare PEP 503 simple index.
+
+## Configuration file & environment
+
+Reusable defaults come from (lowest priority first): **`~/.fad-checker/config.json`** (global) → **`FAD_CHECKER_ENV`** (a CLI-flag string) → **config file** (`--config <file.json>`, else `./.fad-env.json`, JSON) → **CLI flags** (always win). A file/env value only fills an option you did not pass on the CLI; `registries` are unioned across all layers.
+
+```bash
+fad-checker --config ./ci/fad-env.json                         # JSON file of defaults
+FAD_CHECKER_ENV='--fail-on high --no-nuget' fad-checker -s ./proj   # flag string of defaults
+```
+
+```jsonc
+// ./.fad-env.json — keys mirror the CLI options (camelCase)
+{
+  "source": "./my-project",            // alias of --src / "src"
+  "exclude": "^(com\\.acme|client)\\.",
+  "failOn": "high",
+  "noNuget": true,
+  "offline": true,
+  "registries": {
+    "npm":   [{ "name": "verdaccio", "url": "https://npm.acme.com/", "token": "…" }],
+    "maven": [{ "name": "nexus", "url": "https://nexus.acme.com/repository/maven-public/", "auth": "user:pass" }]
+  }
+}
+```
+
+The source directory accepts `-s`, `--src`, `--source` and the JSON key `"source"`/`"src"` interchangeably.
+
 ## NVD API key
 
 NVD's public rate limit is 5 requests / 30s without a key. The free key bumps it to 50 / 30s — **10× faster** for the enrichment step.

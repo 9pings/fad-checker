@@ -237,6 +237,7 @@
       <div class="card reveal"><div class="ic">07</div><h3>Air-gapped / PASSI</h3><p>Export an <b>anonymized</b> descriptor (public coordinates only), enrich online, report offline. The confidential codebase never leaves the enclave.</p></div>
       <div class="card reveal"><div class="ic">08</div><h3>Maven private-dep cleanup</h3><p>Strip private/internal dependencies into a parallel tree of <b>cleaned POMs</b>, ready to feed straight into Snyk.</p></div>
       <div class="card reveal"><div class="ic">09</div><h3>Native binaries, by checksum</h3><p>Committed <span class="mono">.dll</span>/<span class="mono">.exe</span>/<span class="mono">.so</span>/<span class="mono">.dylib</span> (magic-byte confirmed — images/assets are never picked up) are <b>identified by hash</b> via <b>deps.dev</b> + <b>CIRCL</b>: flags tampered/<b>unknown</b> files and libraries that <b>should be declared dependencies</b>. No malware/AV lane.</p></div>
+      <div class="card reveal"><div class="ic">10</div><h3>Private registries &amp; config files</h3><p>Point it at private <b>Nexus/Artifactory</b> (Maven), <b>Verdaccio/GitHub Packages</b> (npm), <b>devpi</b> (PyPI), <b>Gemfury</b> (Ruby) or <b>GOPROXY</b> (Go) — tried first, public last, Basic or Bearer auth. Stash reusable defaults in <span class="mono">.fad-env.json</span> / <span class="mono">--config</span> or the <span class="mono">FAD_CHECKER_ENV</span> variable.</p></div>
     </div>
   </section>
 </main>
