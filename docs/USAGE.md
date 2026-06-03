@@ -313,13 +313,3 @@ fad-checker -s ./real-project --offline
 
 See the **Anonymized descriptor** section above for what the descriptor contains and why
 the round-trip produces a complete report without leaking environment information.
-
-### Monorepo with Maven + JS + vendored JS
-
-The reference-project-style project (Java backend, React frontend in `web/`, vendored jQuery/PDF.js under `web/src/main/webapp/`):
-
-```bash
-fad-checker -s . -e "^(com\.captcha|org\.voxaly|com\.voxaly)\."
-# → finds CVE in Maven deps, in web/package-lock.json deps,
-#   AND in the vendored .js files under webapp/.
-```

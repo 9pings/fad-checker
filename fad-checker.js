@@ -186,7 +186,9 @@ program
 	.option("-s, --src <src>", "root directory containing pom.xml files")
 	.option("--source <src>", "alias of --src (also the JSON config key 'source')")
 	.option("--config <file>", "load default options from a JSON config file (else ./.fad-env.json)")
-	.option("-e, --exclude <exclude>", "regex of groupId to exclude, e.g. '^(client|private)\\.'")
+	.option("-e, --exclude <exclude>", "regex of groupId/name to exclude, e.g. '^(client|private)\\.'")
+	.option("--exclude-path <glob...>", "ignore sub-paths during the walk (gitignore-style glob, relative to --src). Repeatable. e.g. 'packages/legacy/**' '**/fixtures/**'")
+	.option("--no-default-excludes", "don't prune the built-in ignored dirs (node_modules, vendor, target, .git, …) — walk everything")
 	.option("-v, --verbose", "verbose")
 	// Defaults: report + transitive + allLibs all ON. Use --no-* to disable.
 	.option("--no-report", "write NO output files at all — the scan, terminal summary and --fail-on gate still run (gate-only / CI mode)")
@@ -417,11 +419,25 @@ async function timedPhase(label, fn) {
 	}
 	const registriesFor = eco => regMap[eco] || [];
 	const mavenRepos = buildRepoList(regMap.maven || [], []); // appends Maven Central last
+
+	// Walk-pruning: union --exclude-path globs across every config layer (CLI + file
+	// + env + global), like registries. `defaultExcludes` (a scalar, false via
+	// --no-default-excludes) already flowed through applyLayers.
+	const excludePath = [...new Set([
+		...(options.excludePath || []),
+		...((_layers.fileLayer && _layers.fileLayer.excludePath) || []),
+		...((_layers.envLayer && _layers.envLayer.excludePath) || []),
+		...(require("./lib/config").get("excludePath") || []),
+	].filter(Boolean))];
+	const defaultExcludes = options.defaultExcludes !== false;
+	const walkOpts = { excludePath, defaultExcludes };
 	const runMode = options.importAnonymized ? "import descriptor" : (options.offline ? "offline" : "online");
 	if (options.src) ui.kv("source", chalk.white(options.src));
 	if (mavenRepos.length > 1) ui.kv("repos", chalk.white(mavenRepos.map(r => r.name).join(chalk.dim(" → "))));
 	const otherRegs = Object.keys(regMap).filter(e => e !== "maven" && regMap[e].length);
 	if (otherRegs.length) ui.kv("registries", chalk.white(otherRegs.map(e => `${e}:${regMap[e].length}`).join(" ")));
+	if (excludePath.length) ui.kv("exclude-path", chalk.white(excludePath.join(chalk.dim(", "))));
+	if (!defaultExcludes) ui.kv("default-excludes", chalk.yellow("off (walking node_modules/vendor/.git/…)"));
 	ui.kv("mode", chalk.white(runMode));
 
 	let wrotePom = 0;
@@ -456,7 +472,7 @@ async function timedPhase(label, fn) {
 	const { resolveActiveCodecs } = require("./lib/codecs/select");
 	const eco = (options.ecosystem || "auto").toLowerCase();
 	const detected = (eco === "auto")
-		? (await timedPhase("detecting ecosystems", () => detectCodecs(options.src))).map(c => c.id)
+		? (await timedPhase("detecting ecosystems", () => detectCodecs(options.src, walkOpts))).map(c => c.id)
 		: allCodecs().map(c => c.id);
 	// The binary scanner is a cross-cutting catch-all (committed native libs in ANY
 	// project), and detectCodecs' manifest-glob matcher misses versioned sonames
@@ -481,7 +497,7 @@ async function timedPhase(label, fn) {
 		const codec = getCodec(id);
 		let res;
 		try {
-			res = await timedPhase(`collecting ${codec.label || id}`, () => codec.collect(options.src, { ignoreTest: !!options.ignoreTest, deps2Exclude, verbose, scanJars: options.jars !== false, srcRoot: options.src, onJarProgress: makeJarProgress(), onBinaryProgress: null }));
+			res = await timedPhase(`collecting ${codec.label || id}`, () => codec.collect(options.src, { ignoreTest: !!options.ignoreTest, deps2Exclude, verbose, scanJars: options.jars !== false, srcRoot: options.src, excludePath, defaultExcludes, onJarProgress: makeJarProgress(), onBinaryProgress: null }));
 		} catch (err) {
 			console.warn(chalk.red(`❌  ${id} collect failed:`), chalk.dim(err.message));
 			continue;
