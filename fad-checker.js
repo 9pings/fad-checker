@@ -226,6 +226,7 @@ program
 	.option("--cve-offline", "use cached CVE index only (no download)")
 	.option("--snyk", "run snyk on cleaned POMs and merge into report (requires --target)")
 	.option("--no-retire", "skip retire.js vendored-JS scan")
+	.option("--no-vendored-js-inventory", "don't list ALL identified vendored JS libs (chapter 1D) — keep only the vulnerable ones (chapter 2)")
 	.option("--retire-refresh", "ignore retire cache and re-scan")
 	.option("--transitive-depth <n>", "max transitive depth", "6")
 	.option("--ecosystem <list>", "codecs to run: auto|all|<comma list> e.g. maven,npm,nuget,composer,pypi,go,ruby (default: auto = detected)", "auto")
@@ -885,6 +886,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// vendored .js (which can live in a Maven project's resources too). The
 	// scanner is owned by the npm codec but runs whenever --retire is on.
 	let retireMatches = [];
+	let vendoredJsInventory = [];
 	if (willRetire) {
 		const st = progress.start("retire.js (vendored JS)");
 		const sc = (getCodec("npm").nativeScanners || []).find(s => s.kind === "vendored");
@@ -894,7 +896,9 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			try {
 				const r = await sc.scan(resolved, { src: options.src, verbose, retireRefresh: !!options.retireRefresh, offline });
 				retireMatches = r.matches || [];
-				st.done(`${retireMatches.length} finding(s)`);
+				if (options.vendoredJsInventory !== false) vendoredJsInventory = r.meta?.inventory || [];
+				const invN = vendoredJsInventory.length;
+				st.done(`${retireMatches.length} finding(s)${invN ? ` · ${invN} lib(s) inventoried` : ""}`);
 			} catch (err) { st.fail(err.message); }
 		}
 	}
@@ -1114,7 +1118,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	if (out.html || out.doc) {
 		await ensureDir(out.html); await ensureDir(out.doc);
 		const { htmlPath, docPath } = await writeReports({
-			cveMatches: prodMatches, devCveMatches: devMatches, embeddedMatches, retireMatches,
+			cveMatches: prodMatches, devCveMatches: devMatches, embeddedMatches, retireMatches, vendoredJsInventory,
 			eolResults, obsoleteResults, outdatedResults, licenseResults,
 			resolvedDeps: resolved, projectInfo, warnings: reportWarnings,
 			htmlPath: out.html, docPath: out.doc,
@@ -1145,7 +1149,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		try {
 			const { writeFindings } = require("./lib/json-export");
 			await ensureDir(out.json);
-			writeFindings({ cveMatches, retireMatches, eolResults, obsoleteResults, outdatedResults, licenseResults, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version }, out.json);
+			writeFindings({ cveMatches, retireMatches, vendoredJsInventory, eolResults, obsoleteResults, outdatedResults, licenseResults, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version }, out.json);
 			wrote.push(["Findings JSON", out.json]);
 		} catch (err) { ui.warn(`JSON export failed: ${err.message}`); }
 	}
