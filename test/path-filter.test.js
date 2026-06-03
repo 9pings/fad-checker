@@ -39,3 +39,12 @@ test("globs combine with default skips", () => {
 test("compileGlobs trims and drops empties", () => {
 	assert.strictEqual(compileGlobs([" a ", "", null, "b"]).length, 2);
 });
+
+test("leading / and ./ are equivalent to bare (all anchored to srcRoot)", () => {
+	for (const g of ["truc", "/truc", "./truc", "/truc/**", "./truc/**"]) {
+		const skip = makeDirFilter({ srcRoot: root, excludePath: [g] });
+		assert.strictEqual(skip(abs("truc")), true, `${g} should match the dir`);
+		assert.strictEqual(skip(abs("truc/x")), true, `${g} should match the subtree`);
+		assert.strictEqual(skip(abs("other")), false, `${g} must not over-match`);
+	}
+});
