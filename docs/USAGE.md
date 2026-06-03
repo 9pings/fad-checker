@@ -61,6 +61,8 @@ The excluded coords are listed at the end of the run so you can audit the regex.
 
 `-e` drops *dependencies* by coordinate; `--exclude-path` prunes the directory **walk** itself — nothing under a matched path is read, for every ecosystem. Patterns are gitignore-style globs (via `minimatch`, `dot:true`) matched against the path **relative to `--src`**; a pattern matches both the directory and its whole subtree.
 
+All patterns are **anchored to the `--src` root** — `truc`, `/truc` and `./truc` are equivalent (a leading `/` or `./` is stripped). To match a name at any depth, use `**/` (e.g. `**/fixtures/**`).
+
 ```bash
 fad-checker -s . --exclude-path "packages/legacy/**" --exclude-path "**/fixtures/**"
 fad-checker -s . --exclude-path "apps/*/e2e"          # repeatable
