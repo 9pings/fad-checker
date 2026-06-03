@@ -1,6 +1,6 @@
 {
   "name": "fad-checker",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "description": "Scan ALL Maven, npm, Yarn, Composer, Python, C#/.NET, Go & Ruby dependencies — plus embedded JARs (fat-jars/war/ear) — in a source tree ONE SHOT without mvn/python/etc — CVE (EPSS/KEV-prioritised), EOL, obsolete, outdated & licenses, with SBOM/CSAF/SARIF/JSON exports, CI gating and fix recos",
   "keywords": [
     "sca",
