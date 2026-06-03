@@ -89,6 +89,7 @@ Each data source can be disabled independently:
 | `--no-kev` | Skip CISA KEV (known-exploited) enrichment |
 | `--no-licenses` | Skip license detection + the copyleft-policy chapter |
 | `--no-retire` | Skip retire.js vendored-JS scan |
+| `--no-vendored-js-inventory` | Keep only **vulnerable** vendored JS (chapter 2); skip the full **inventory** of all identified standalone JS libs (chapter 1D). The inventory is a cyber-hygiene constat — unmanaged third-party JS regardless of CVEs — on by default. |
 | `--no-jars` | Skip scanning embedded `.jar`/`.war`/`.ear` binaries for Maven coordinates (chapter 1B) |
 | `--no-binaries` | Skip scanning committed native binaries (`.dll`/`.exe`/`.so`/`.dylib`) — no checksum identity/integrity (chapter 1C) |
 | `--ignore-test` | Drop test-scoped Maven deps and dev npm deps from the scan entirely (chapter 2 will be empty) |

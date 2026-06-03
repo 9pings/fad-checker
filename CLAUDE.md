@@ -26,7 +26,7 @@ No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` /
 
 ```bash
 npm install
-npm test                  # 411 unit tests via node --test
+npm test                  # 413 unit tests via node --test
 
 # basic cleanup workflow
 node fad-checker.js -s ./proj                                        # read-only, full report
@@ -99,7 +99,7 @@ lib/transitive.js            Maven Central POM walker (transitive resolution).
 lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
 lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configurations).
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
-lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser.
+lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser. Runs with --verbose; extractVendoredInventory() lists ALL identified libs (vuln or not) → report chapter 1D; scanWithRetireFull() returns {matches, inventory}.
 lib/scan-completeness.js     Warnings for deps fad-checker couldn't fully resolve.
 lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 + Berry, pnpm-lock.yaml (v5/6/9) parsers.
 lib/codecs/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
@@ -141,7 +141,7 @@ For the deep dive — pipeline stages, the resolved-deps Map shape, report struc
 ## Testing
 
 ```bash
-node --test test/*.test.js            # full suite (411 tests)
+node --test test/*.test.js            # full suite (413 tests)
 node --test test/core.test.js         # one file
 ```
 

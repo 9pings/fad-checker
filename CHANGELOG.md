@@ -20,6 +20,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   **CLI flag > config file > `FAD_CHECKER_ENV` > `~/.fad-checker/config.json` >
   defaults**; `registries` are unioned across every layer. New `lib/options-env.js`.
 - **`--source` alias** for `-s`/`--src` (and the JSON config key `"source"`/`"src"`).
+- **Vendored-JS inventory (report chapter 1D + JSON `vendoredJs`).** retire.js now
+  runs with `--verbose`, so fad lists **every** identified standalone JS library
+  committed into the tree (jQuery, Bootstrap, PDF.js, …) — **vulnerable or not** —
+  as a cyber-hygiene inventory of unmanaged third-party code (the JS twin of the
+  native-binary chapter 1C). Each entry: component, version, file, detection
+  method, and vulnerability status. Vulnerable libs remain detailed in chapter 2.
+  On by default; `--no-vendored-js-inventory` keeps only the vulnerable findings.
 - **`--exclude-path <glob...>`** — ignore sub-paths during the directory walk,
   gitignore-style (matched relative to `--src`, prunes the dir + its subtree),
   across every ecosystem. Repeatable; also `excludePath: [...]` in `.fad-env.json`,
