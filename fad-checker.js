@@ -61,8 +61,9 @@ if (process.argv.includes("--show-config")) {
 	const cfg = config.load();
 	const masked = { ...cfg };
 	if (masked.nvd_api_key) masked.nvd_api_key = masked.nvd_api_key.slice(0, 8) + "…" + masked.nvd_api_key.slice(-4);
-	if (Array.isArray(masked.maven_repos)) {
-		masked.maven_repos = masked.maven_repos.map(r => ({ ...r, auth: r.auth ? "***" : undefined }));
+	if (masked.registries && typeof masked.registries === "object") {
+		masked.registries = Object.fromEntries(Object.entries(masked.registries).map(([eco, list]) =>
+			[eco, (list || []).map(r => ({ ...r, auth: r.auth ? "***" : undefined, token: r.token ? "***" : undefined }))]));
 	}
 	console.log(JSON.stringify(masked, null, 2));
 	console.log(chalk.gray("Config file: " + config.CONFIG_PATH));
@@ -72,44 +73,58 @@ if (process.argv.includes("--show-config")) {
 // -------- --add-repo / --remove-repo / --list-repos (run before program.parse) --------
 if (process.argv.includes("--add-repo") || process.argv.includes("--remove-repo") || process.argv.includes("--list-repos")) {
 	const config = require("./lib/config");
+	const { SUPPORTED } = require("./lib/registries");
+	const ecoErr = eco => {
+		if (!SUPPORTED.includes(eco)) {
+			console.error(chalk.red(`❌  unknown ecosystem "${eco}". Supported: ${SUPPORTED.join(", ")}`));
+			process.exit(1);
+		}
+	};
 	if (process.argv.includes("--list-repos")) {
-		const repos = config.getMavenRepos();
-		if (!repos.length) {
-			console.log(chalk.gray("No custom Maven repos configured (Maven Central is always used as fallback)."));
+		const map = config.getRegistryMap();
+		const ecos = Object.keys(map).filter(e => (map[e] || []).length);
+		if (!ecos.length) {
+			console.log(chalk.gray("No custom registries configured (public registries are always the fallback)."));
 		} else {
-			console.log(chalk.bold("Configured Maven repos (tried in order, then Central):"));
-			for (const r of repos) {
-				const authMark = r.auth ? chalk.yellow(" [auth]") : "";
-				console.log(`  • ${chalk.cyan(r.name)} → ${r.url}${authMark}`);
+			for (const eco of ecos) {
+				console.log(chalk.bold(`${eco} (tried in order, then public):`));
+				for (const r of map[eco]) {
+					const authMark = (r.auth || r.token) ? chalk.yellow(" [auth]") : "";
+					console.log(`  • ${chalk.cyan(r.name)} → ${r.url}${authMark}`);
+				}
 			}
 		}
 		process.exit(0);
 	}
 	if (process.argv.includes("--add-repo")) {
 		const idx = process.argv.indexOf("--add-repo");
-		const name = process.argv[idx + 1];
-		const url = process.argv[idx + 2];
-		if (!name || name.startsWith("-") || !url || url.startsWith("-")) {
-			console.error(chalk.red("❌  --add-repo requires <name> <url>"));
-			console.error("   Example: fad-checker --add-repo nexus https://nexus.acme.com/repository/maven-public/");
-			console.error("   Optional auth: --add-repo nexus https://nexus.acme.com/repository/maven-public/ --auth user:pass");
+		const [eco, name, url] = [process.argv[idx + 1], process.argv[idx + 2], process.argv[idx + 3]];
+		if (!eco || !name || !url || [eco, name, url].some(a => a.startsWith("-"))) {
+			console.error(chalk.red("❌  --add-repo requires <ecosystem> <name> <url>"));
+			console.error("   Example: fad-checker --add-repo npm verdaccio https://npm.acme/ --token TOK");
+			console.error("   Maven:   fad-checker --add-repo maven nexus https://nexus.acme/maven-public/ --auth user:pass");
 			process.exit(1);
 		}
+		ecoErr(eco);
 		const authIdx = process.argv.indexOf("--auth");
-		const auth = authIdx > -1 ? process.argv[authIdx + 1] : null;
-		config.addMavenRepo(name, url, auth);
-		console.log(chalk.green(`✅ Added Maven repo "${name}" → ${url}${auth ? " (with auth)" : ""}`));
+		const tokIdx = process.argv.indexOf("--token");
+		config.addRegistry(eco, name, url, {
+			auth: authIdx > -1 ? process.argv[authIdx + 1] : null,
+			token: tokIdx > -1 ? process.argv[tokIdx + 1] : null,
+		});
+		console.log(chalk.green(`✅ Added ${eco} registry "${name}" → ${url}`));
 		process.exit(0);
 	}
 	if (process.argv.includes("--remove-repo")) {
 		const idx = process.argv.indexOf("--remove-repo");
-		const name = process.argv[idx + 1];
-		if (!name || name.startsWith("-")) {
-			console.error(chalk.red("❌  --remove-repo requires <name>"));
+		const [eco, name] = [process.argv[idx + 1], process.argv[idx + 2]];
+		if (!eco || !name || [eco, name].some(a => a.startsWith("-"))) {
+			console.error(chalk.red("❌  --remove-repo requires <ecosystem> <name>"));
 			process.exit(1);
 		}
-		const removed = config.removeMavenRepo(name);
-		console.log(removed ? chalk.green(`✅ Removed Maven repo "${name}"`) : chalk.yellow(`⚠️  No Maven repo named "${name}"`));
+		ecoErr(eco);
+		const removed = config.removeRegistry(eco, name);
+		console.log(removed ? chalk.green(`✅ Removed ${eco} registry "${name}"`) : chalk.yellow(`⚠️  No ${eco} registry named "${name}"`));
 		process.exit(removed ? 0 : 1);
 	}
 }
@@ -169,6 +184,8 @@ program
 	.option("-t, --target <target>", "output directory (will be rm before written). If omitted, the run is read-only.")
 	// Not a requiredOption: --import-anonymized scans a descriptor with no source tree.
 	.option("-s, --src <src>", "root directory containing pom.xml files")
+	.option("--source <src>", "alias of --src (also the JSON config key 'source')")
+	.option("--config <file>", "load default options from a JSON config file (else ./.fad-env.json)")
 	.option("-e, --exclude <exclude>", "regex of groupId to exclude, e.g. '^(client|private)\\.'")
 	.option("-v, --verbose", "verbose")
 	// Defaults: report + transitive + allLibs all ON. Use --no-* to disable.
@@ -221,14 +238,32 @@ program
 	.option("--no-binaries", "skip scanning committed native binaries (.dll/.exe/.so/.dylib)")
 	.option("--no-jars", "skip scanning embedded .jar/.war/.ear binaries for Maven coordinates")
 	.option("--no-js", "alias: skip JS/npm/yarn manifests even if present (Maven-only)")
-	.option("--repo <url...>", "extra Maven repository URL(s) to try before Maven Central. Supports https://user:pass@host/path/. Repeatable.")
-	.option("--add-repo <name>", "persist a Maven repo: --add-repo <name> <url> [--auth user:pass]")
-	.option("--remove-repo <name>", "remove a persisted Maven repo by name")
-	.option("--list-repos", "list configured Maven repos and exit")
+	.option("--repo <eco=url...>", "extra registry as <ecosystem>=<url> (e.g. npm=https://npm.acme/) tried before the public one. Repeatable. Supports https://user:pass@host/.")
+	.option("--add-repo <eco>", "persist a registry: --add-repo <ecosystem> <name> <url> [--auth user:pass] [--token TOK]")
+	.option("--remove-repo <eco>", "remove a persisted registry: --remove-repo <ecosystem> <name>")
+	.option("--list-repos", "list configured registries (grouped by ecosystem) and exit")
+	.option("--auth <user:pass>", "Basic auth for --add-repo")
+	.option("--token <token>", "Bearer token for --add-repo")
 	.option("--completion <shell>", "print shell completion script (bash|zsh)");
 program.parse(process.argv);
 
 const options = program.opts();
+// Layered config: CLI flags > config file (--config / ./.fad-env.json, JSON) >
+// FAD_CHECKER_ENV (a CLI-flag string) > global ~/.fad-checker/config.json >
+// commander defaults. A file/env value fills an option only if the CLI didn't
+// set it. `registries` are unioned separately (below). Source has src/source aliases.
+const { loadLayers, applyLayers } = require("./lib/options-env");
+let _layers = { fileLayer: {}, envLayer: {}, envRepos: [] };
+try {
+	_layers = loadLayers({ cwd: process.cwd(), configPath: options.config, envStr: process.env.FAD_CHECKER_ENV, program });
+} catch (err) {
+	console.error(chalk.red(`❌  ${err.message}`));
+	process.exit(1);
+}
+Object.assign(options, applyLayers(program, _layers, require("./lib/config").load()));
+// --source CLI alias → src (applyLayers already maps the file/env JSON 'source' key).
+if (!options.src && options.source) options.src = options.source;
+
 const deps2Exclude = options.exclude ? new RegExp(options.exclude) : null;
 const verbose = !!options.verbose;
 
@@ -363,13 +398,30 @@ async function timedPhase(label, fn) {
 	// Build the Maven repo list once: persisted repos (from ~/.fad-checker/config.json)
 	// + ad-hoc --repo URLs + Maven Central as final fallback. Used by transitive
 	// resolution, outdated-version check, and existence check.
-	const { getMavenRepos } = require("./lib/config");
+	const { getRegistryMap } = require("./lib/config");
 	const { buildRepoList } = require("./lib/maven-repo");
-	const extraRepos = (options.repo || []).map(url => ({ url }));
-	const mavenRepos = buildRepoList(getMavenRepos(), extraRepos);
+	const { buildRegistryList } = require("./lib/registries");
+	// One-off --repo eco=url (from the CLI and the env layer), grouped by ecosystem.
+	const cliRepoMap = {};
+	for (const spec of [...(options.repo || []), ...(_layers.envRepos || [])]) {
+		const m = /^([a-z]+)=(.+)$/i.exec(String(spec));
+		if (!m) { console.error(chalk.red(`❌  --repo expects <ecosystem>=<url>, got "${spec}"`)); process.exit(1); }
+		(cliRepoMap[m[1]] ||= []).push({ url: m[2] });
+	}
+	// Union the registry sources: global config + config-file JSON + CLI/env one-offs.
+	const fileRegMap = (_layers.fileLayer && _layers.fileLayer.registries) || {};
+	const globalRegMap = getRegistryMap();
+	const regMap = {};
+	for (const eco of new Set([...Object.keys(globalRegMap), ...Object.keys(fileRegMap), ...Object.keys(cliRepoMap)])) {
+		regMap[eco] = buildRegistryList(eco, [globalRegMap[eco], fileRegMap[eco], cliRepoMap[eco]]);
+	}
+	const registriesFor = eco => regMap[eco] || [];
+	const mavenRepos = buildRepoList(regMap.maven || [], []); // appends Maven Central last
 	const runMode = options.importAnonymized ? "import descriptor" : (options.offline ? "offline" : "online");
 	if (options.src) ui.kv("source", chalk.white(options.src));
 	if (mavenRepos.length > 1) ui.kv("repos", chalk.white(mavenRepos.map(r => r.name).join(chalk.dim(" → "))));
+	const otherRegs = Object.keys(regMap).filter(e => e !== "maven" && regMap[e].length);
+	if (otherRegs.length) ui.kv("registries", chalk.white(otherRegs.map(e => `${e}:${regMap[e].length}`).join(" ")));
 	ui.kv("mode", chalk.white(runMode));
 
 	let wrotePom = 0;
@@ -395,7 +447,7 @@ async function timedPhase(label, fn) {
 			const { warmRetireSignatures } = require("./lib/retire");
 			await warmRetireSignatures({ verbose });
 		}
-		await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds: [], mavenRepos, collectWarnings: [] });
+		await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds: [], mavenRepos, regMap, collectWarnings: [] });
 		return;
 	}
 
@@ -577,7 +629,7 @@ async function timedPhase(label, fn) {
 	// The scan always runs — it feeds the terminal summary, the file outputs and the
 	// CI gate. Which files get written is decided by the --report-* family inside
 	// (HTML + .doc by default; --no-report writes nothing).
-	await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds, mavenRepos, collectWarnings });
+	await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings });
 	if (!readOnly) {
 		ui.section("Next step");
 		ui.info(`run Snyk on the cleaned tree:`);
@@ -586,7 +638,8 @@ async function timedPhase(label, fn) {
 })();
 
 async function runReportFlow(resolved, ecoFlags = {}) {
-	const { activeIds = [], runMaven = true, runNpm = false, privateLibIds = [], mavenRepos = [], collectWarnings = [] } = ecoFlags;
+	const { activeIds = [], runMaven = true, runNpm = false, privateLibIds = [], mavenRepos = [], regMap = {}, collectWarnings = [] } = ecoFlags;
+	const registriesFor = eco => regMap[eco] || [];
 	const { expandWithTransitives } = require("./lib/cve-match");
 	const { writeReports, computeStats } = require("./lib/cve-report");
 	const { getCodec } = require("./lib/codecs");
@@ -709,7 +762,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		const st = progress.start("npm registry");
 		try {
 			const { checkNpmRegistryDeps } = require("./lib/codecs/npm/registry");
-			const npmReg = await checkNpmRegistryDeps(resolved, { verbose, offline, allLibs: options.allLibs, onProgress: (p, t) => st.tick(p, t) });
+			const npmReg = await checkNpmRegistryDeps(resolved, { verbose, offline, allLibs: options.allLibs, registries: registriesFor("npm"), onProgress: (p, t) => st.tick(p, t) });
 			obsoleteResults = obsoleteResults.concat(npmReg.deprecated);
 			outdatedResults = outdatedResults.concat(npmReg.outdated);
 			licenseFindings = licenseFindings.concat(npmReg.licensed || []);
@@ -722,7 +775,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		const codec = getCodec(id);
 		const st = progress.start(`${codec.label || id} registry`);
 		try {
-			const reg = await codec.checkRegistry(resolved, { verbose, offline, allLibs: options.allLibs, onProgress: (p, t) => st.tick(p, t) });
+			const reg = await codec.checkRegistry(resolved, { verbose, offline, allLibs: options.allLibs, registries: registriesFor(id), onProgress: (p, t) => st.tick(p, t) });
 			obsoleteResults = obsoleteResults.concat(reg.deprecated || []);
 			outdatedResults = outdatedResults.concat(reg.outdated || []);
 			licenseFindings = licenseFindings.concat(reg.licensed || []);
