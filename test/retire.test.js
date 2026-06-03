@@ -52,3 +52,17 @@ test("extractVendoredInventory tolerates empty / missing input", () => {
 	assert.deepStrictEqual(R.extractVendoredInventory(null, "/p"), []);
 	assert.deepStrictEqual(R.extractVendoredInventory({ data: [] }, "/p"), []);
 });
+
+test("vendored paths are relative to --src even when -s is a relative path", () => {
+	const cwd = process.cwd();
+	const abs = path.join(cwd, "sub", "rel-src");
+	const raw = { data: [
+		{ file: path.join(abs, "web/js/jquery-1.6.1.min.js"), results: [{ component: "jquery", version: "1.6.1", detection: "filename", vulnerabilities: [{ severity: "high", identifiers: { CVE: ["CVE-X"] } }] }] },
+	] };
+	// relative srcDir (what -s ./sub/rel-src yields)
+	const relSrc = path.join("sub", "rel-src");
+	const inv = R.extractVendoredInventory(raw, relSrc);
+	assert.strictEqual(inv[0].file, path.join("web", "js", "jquery-1.6.1.min.js"));
+	const matches = R.normaliseRetireResults(raw, relSrc);
+	assert.strictEqual(matches[0].dep.vendoredFile, path.join("web", "js", "jquery-1.6.1.min.js"));
+});

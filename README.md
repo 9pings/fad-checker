@@ -9,6 +9,7 @@
 
 `fad-checker` scans **Maven**, **npm**, **Yarn**, **Composer (PHP)**, **PyPI (Python)**, **NuGet (C#/.NET)**, **Go**, **Ruby**, **vendored JavaScript** and **committed native binaries** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE (prioritised by **EPSS + CISA KEV**), EOL, obsolete, outdated and **license** findings, plus per-ecosystem fix recipes. It also exports a **CycloneDX 1.6 SBOM** and a **CSAF 2.0 VEX**.
 
+
 🌐 **[Project site & docs →](https://n8tz.github.io/fad-checker/)**
 
 <p align="center"><img src="docs/assets/cli.png" alt="fad-checker terminal output — a [n/N] checklist warming each vulnerability database, then CVE findings coloured by severity" width="760"></p>
