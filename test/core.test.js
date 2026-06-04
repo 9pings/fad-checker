@@ -151,3 +151,28 @@ test("parent version in rewritten POM uses parent's version, not child's", async
 	assert.equal(appOut.project.parent[0].version[0], "1.0.0", "parent.version must equal parent's version");
 	fs.rmSync(tmp, { recursive: true, force: true });
 });
+
+test("rewritePoms interpolates ${project.groupId} in dep coords (no false 'private' lib)", async () => {
+	// Reactor: module-a depends on sibling module-b via ${project.groupId}. The private-lib
+	// classifier reads store.anyMissingById — a literal "${project.groupId}:module-b" there
+	// would be mis-reported as absent-from-Central/private. Regression for outTest's
+	// "${project.groupId}:cnaps-core".
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-projgid-core-"));
+	const W = (rel, xml) => { fs.mkdirSync(path.join(dir, path.dirname(rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), xml); };
+	W("parent/pom.xml", `<?xml version="1.0"?><project><modelVersion>4.0.0</modelVersion>
+		<groupId>com.acme</groupId><artifactId>parent</artifactId><version>1.0</version><packaging>pom</packaging></project>`);
+	W("module-a/pom.xml", `<?xml version="1.0"?><project><modelVersion>4.0.0</modelVersion>
+		<parent><groupId>com.acme</groupId><artifactId>parent</artifactId><version>1.0</version><relativePath>../parent/pom.xml</relativePath></parent>
+		<artifactId>module-a</artifactId>
+		<dependencies><dependency><groupId>\${project.groupId}</groupId><artifactId>module-b</artifactId><version>\${project.version}</version></dependency></dependencies></project>`);
+	W("module-b/pom.xml", `<?xml version="1.0"?><project><modelVersion>4.0.0</modelVersion>
+		<parent><groupId>com.acme</groupId><artifactId>parent</artifactId><version>1.0</version><relativePath>../parent/pom.xml</relativePath></parent>
+		<artifactId>module-b</artifactId></project>`);
+
+	const { store, props, pomFiles } = await pipeline(dir);
+	for (const f of pomFiles) await core.rewritePoms(f, store, props, { srcRoot: dir, targetRoot: undefined, deps2Exclude: null, readOnly: true });
+
+	assert.ok(!Object.keys(store.anyMissingById).some(k => k.includes("${")), "no unresolved ${...} coord indexed as missing/private");
+	assert.ok(store.byId["com.acme:module-b"], "sibling module-b is known locally → would be filtered from the private-lib list");
+	fs.rmSync(dir, { recursive: true, force: true });
+});
