@@ -12,7 +12,7 @@
 
 🌐 **[Project site & docs →](https://n8tz.github.io/fad-checker/)**
 
-<p align="center"><img src="docs/assets/cli.png" alt="fad-checker terminal output — a [n/N] checklist warming each vulnerability database, then CVE findings coloured by severity" width="760"></p>
+<p align="center"><img src="docs/assets/cli.png" alt="fad-checker terminal output — a [n/N] checklist warming each vulnerability database, then CVE findings coloured by severity" height="760"></p>
 
 It runs against the source files alone. **No `mvn`, no `npm install`, no `composer install`, no `pip`, no `dotnet restore`, no Docker.** It reads `pom.xml`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `composer.lock`, `poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`/`pyproject.toml`/`requirements.txt`, and `packages.lock.json`/`*.csproj`/`*.fsproj`/`*.vbproj`/`packages.config` directly.
 
