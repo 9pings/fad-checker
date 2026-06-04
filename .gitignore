@@ -18,6 +18,7 @@ sample-reference-project-report/
 
 # Session-local agent state
 .claude/
+docs/superpowers/
 
 # OS junk
 Thumbs.db

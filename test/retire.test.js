@@ -66,3 +66,25 @@ test("vendored paths are relative to --src even when -s is a relative path", () 
 	const matches = R.normaliseRetireResults(raw, relSrc);
 	assert.strictEqual(matches[0].dep.vendoredFile, path.join("web", "js", "jquery-1.6.1.min.js"));
 });
+
+test("retire findings cache is versioned: legacy entry (no _schema) is a cache MISS, _schema:2 round-trips", () => {
+	const fs = require("fs");
+	// Unique src path so the md5 cache key never collides with a real run.
+	const srcDir = "/tmp/fad-cache-version-test-" + process.pid;
+	const cachePath = path.join(R.RETIRE_CACHE_DIR, R.cacheKey(srcDir));
+	const body = { data: [{ file: "/x/jquery.js", results: [{ component: "jquery", version: "3.7.1", vulnerabilities: [] }] }] };
+	try {
+		// (1) A legacy entry written by a pre-verbose version: fresh timestamp, NO _schema.
+		fs.mkdirSync(R.RETIRE_CACHE_DIR, { recursive: true });
+		fs.writeFileSync(cachePath, JSON.stringify({ _fetchedAt: Date.now(), body }));
+		assert.strictEqual(R.readCache(srcDir), null, "legacy (no _schema) entry must be a cache miss");
+
+		// (2) writeCache stamps _schema:2 and the entry round-trips.
+		R.writeCache(srcDir, body);
+		const onDisk = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+		assert.strictEqual(onDisk._schema, 2, "writeCache stamps _schema:2");
+		assert.deepStrictEqual(R.readCache(srcDir), body, "_schema:2 entry round-trips");
+	} finally {
+		try { fs.unlinkSync(cachePath); } catch { /* best effort */ }
+	}
+});

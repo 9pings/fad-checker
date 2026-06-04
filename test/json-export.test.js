@@ -52,3 +52,30 @@ test("buildFindings counts suppressed matches separately", () => {
 	assert.equal(doc.summary.cve.total, 1); // suppressed excluded
 	assert.equal(doc.cve.find(c => c.id === "CVE-A").suppressed, true);
 });
+
+test("buildFindings carries EOL origin (productSlug/via/viaKey) for traceability", () => {
+	const dep = makeDepRecord({ ecosystem: "maven", namespace: "org.springframework.boot", name: "spring-boot", version: "2.1.0" });
+	const doc = buildFindings({
+		cveMatches: [],
+		eolResults: [{ dep, product: "Spring Boot", productSlug: "spring-boot", via: "group-prefix", viaKey: "org.springframework.boot", eol: "2020-11-05" }],
+		resolvedDeps: new Map([[dep.coordKey, dep]]),
+		projectInfo: { name: "x", src: "/x" },
+	});
+	assert.equal(doc.eol[0].productSlug, "spring-boot");
+	assert.equal(doc.eol[0].via, "group-prefix");
+	assert.equal(doc.eol[0].viaKey, "org.springframework.boot");
+});
+
+test("buildFindings includes the embedded inventory (coords with and without CVE)", () => {
+	const clean = makeDepRecord({ ecosystem: "maven", namespace: "com.google.guava", name: "guava", version: "30.1-jre", manifestPath: "dist/app.jar!/BOOT-INF/lib/guava-30.1-jre.jar", provenance: "embedded" });
+	const vuln = makeDepRecord({ ecosystem: "maven", namespace: "org.apache.logging.log4j", name: "log4j-core", version: "2.14.0", manifestPath: "dist/app.jar!/BOOT-INF/lib/log4j-core-2.14.0.jar", provenance: "embedded" });
+	const doc = buildFindings({
+		cveMatches: [{ dep: vuln, source: "osv", cve: { id: "CVE-2021-44228", severity: "CRITICAL" } }],
+		resolvedDeps: new Map([[clean.coordKey, clean], [vuln.coordKey, vuln]]),
+		projectInfo: { name: "x", src: "/x" },
+	});
+	assert.equal(doc.summary.embedded, 2);
+	assert.equal(doc.embedded.length, 2);
+	assert.ok(doc.embedded.some(e => e.artifactId === "guava" && e.vulnCount === 0));
+	assert.ok(doc.embedded.some(e => e.artifactId === "log4j-core" && e.vulnCount === 1));
+});

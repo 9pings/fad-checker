@@ -99,3 +99,33 @@ test("findEolProduct maps WebJars (client-side JS shipped as Maven artifacts)", 
 test("findEolProduct returns null for an unmapped WebJar artifact", () => {
 	assert.equal(findEolProduct({ groupId: "org.webjars", artifactId: "datatables" }), null);
 });
+
+test("findEolProduct reports the matched rule + key (origin traceability)", () => {
+	const ga = findEolProduct({ groupId: "org.springframework.boot", artifactId: "spring-boot-starter-parent" });
+	assert.equal(ga.via, "group-artifact");
+	assert.equal(ga.viaKey, "org.springframework.boot:spring-boot-starter-parent");
+
+	const prefix = findEolProduct({ groupId: "org.springframework.security", artifactId: "made-up" });
+	assert.equal(prefix.via, "group-prefix");
+	assert.equal(prefix.viaKey, "org.springframework.security");
+
+	const npmName = findEolProduct({ ecosystem: "npm", artifactId: "jquery" });
+	assert.equal(npmName.via, "npm-name");
+	assert.equal(npmName.viaKey, "jquery");
+
+	const npmScope = findEolProduct({ ecosystem: "npm", artifactId: "@angular/core" });
+	assert.equal(npmScope.via, "npm-scope");
+	assert.equal(npmScope.viaKey, "@angular/");
+
+	const webjar = findEolProduct({ groupId: "org.webjars", artifactId: "angularjs", version: "1.8.3" });
+	assert.equal(webjar.via, "webjar");
+	assert.equal(webjar.viaKey, "angularjs");
+
+	const composer = findEolProduct({ ecosystem: "composer", namespace: "laravel", name: "framework" });
+	assert.equal(composer.via, "composer-name");
+	assert.equal(composer.viaKey, "laravel/framework");
+
+	// Returned object must be a COPY — never mutate the shared EOL_MAPPING entry.
+	const { EOL_MAPPING } = require("../lib/outdated");
+	assert.equal(EOL_MAPPING.by_npm_name.jquery.via, undefined, "must not pollute the shared mapping");
+});

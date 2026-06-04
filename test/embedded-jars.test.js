@@ -61,3 +61,38 @@ test("SBOM gives an embedded copy a bom-ref distinct from the declared same-coor
 	assert.ok(embComp, "embedded component carries fad:provenance");
 	assert.ok((embComp.properties || []).some(p => p.name === "fad:location"));
 });
+
+test("buildEmbeddedInventory lists embedded coords with NO CVE, cross-refs CVE count", () => {
+	const { buildEmbeddedInventory } = require("../lib/cve-report");
+	const clean = makeDepRecord({ ecosystem: "maven", namespace: "com.google.guava", name: "guava", version: "30.1-jre", manifestPath: "dist/app.jar!/BOOT-INF/lib/guava-30.1-jre.jar", provenance: "embedded" });
+	const vuln = makeDepRecord({ ecosystem: "maven", namespace: "org.apache.logging.log4j", name: "log4j-core", version: "2.14.0", manifestPath: "dist/app.jar!/BOOT-INF/lib/log4j-core-2.14.0.jar", provenance: "embedded" });
+	const declared = makeDepRecord({ ecosystem: "maven", namespace: "com.acme", name: "svc", version: "1.0.0", manifestPath: "pom.xml" });
+	const resolved = new Map([[clean.coordKey, clean], [vuln.coordKey, vuln], [declared.coordKey, declared]]);
+	const embeddedMatches = [{ dep: vuln, source: "osv", cve: { id: "CVE-2021-44228", severity: "CRITICAL", score: 10 } }];
+
+	const inv = buildEmbeddedInventory(resolved, embeddedMatches);
+	assert.equal(inv.length, 2, "only embedded coords, declared dep excluded");
+	const g = inv.find(e => e.artifactId === "guava");
+	assert.ok(g, "clean (no-CVE) embedded coord is listed");
+	assert.equal(g.vulnCount, 0);
+	const l = inv.find(e => e.artifactId === "log4j-core");
+	assert.equal(l.vulnCount, 1);
+	assert.equal(l.maxSeverity, "CRITICAL");
+	// vulnerable sorts first
+	assert.equal(inv[0].artifactId, "log4j-core");
+	assert.equal(inv[0].archive, "dist/app.jar");
+});
+
+test("HTML chapter 1B renders the FULL embedded inventory even with zero CVE matches", () => {
+	const clean = makeDepRecord({ ecosystem: "maven", namespace: "com.google.guava", name: "guava", version: "30.1-jre", manifestPath: "dist/app.jar!/BOOT-INF/lib/guava-30.1-jre.jar", provenance: "embedded" });
+	const html = generateHtmlReport({
+		cveMatches: [], devCveMatches: [], embeddedMatches: [],
+		retireMatches: [], eolResults: [], obsoleteResults: [], outdatedResults: [], licenseResults: {},
+		resolvedDeps: new Map([[clean.coordKey, clean]]),
+		projectInfo: { name: "svc", src: "/x", generatedAt: "now" },
+		warnings: [],
+	});
+	assert.match(html, /1B\. Embedded binaries/);
+	assert.match(html, /com\.google\.guava:guava:30\.1-jre/);
+	assert.match(html, /no known CVE/i);
+});
