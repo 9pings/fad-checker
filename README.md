@@ -56,7 +56,7 @@ Exactly **one** runtime dependencies must be on PATH (or installed automatically
 | **4. EOL frameworks** | endoflife.date | Spring Boot 2.5, Hibernate 4.x, EOL JDKs, AngularJS, Laravel/Symfony, Django, .NET, etc. |
 | **5. Obsolete libraries** | curated list (Maven) + registry maintainer flags | log4j 1.x, jackson-mapper-asl, joda-time, …; npm `deprecated`, Composer `abandoned`, PyPI `yanked`/inactive, NuGet `deprecation` |
 | **6. Outdated libraries** | Maven Central + npm / Packagist / PyPI / NuGet registries | Available newer versions, with release dates |
-| **7. Licenses** | registry metadata + Maven POMs → SPDX policy | Each dep's license normalised to SPDX and classified; copyleft (GPL/AGPL/LGPL/MPL), proprietary and unknown flagged for review |
+| **7. Licenses** *(opt-in: `--licenses`)* | registry metadata + Maven POMs → SPDX policy | Each dep's license normalised to SPDX and classified; copyleft (GPL/AGPL/LGPL/MPL), proprietary and unknown flagged for review |
 | **8. Fix Recommendations** | computed | Per-ecosystem pin recipes: Maven `<dependencyManagement>`, npm `overrides`, yarn `resolutions`, `composer require`, `pip install`, `dotnet add package` |
 
 The HTML report opens in any browser, contains every detail (CVSS vectors, references, full descriptions, CPE configurations, via-paths for transitives) and ships a Word-compatible `.doc` twin. Every match carries a **composite priority** (KEV-exploited > EPSS likelihood > CVSS severity), and the run can additionally emit a **CycloneDX 1.6 SBOM** (`--report-sbom`, vulnerabilities inline) and a **CSAF 2.0 VEX** (`--report-csaf`) for downstream tooling.
@@ -105,6 +105,9 @@ fad-checker -s ./proj --no-all-libs --no-transitive
 # Fully offline (uses cached data only)
 fad-checker -s ./proj --offline
 
+# License + copyleft-policy chapter (off by default)
+fad-checker -s ./proj --licenses
+
 # Pick ecosystems — --ecosystem is a list: auto (default) | all | comma list
 fad-checker -s ./proj --ecosystem maven            # Maven only
 fad-checker -s ./proj --ecosystem maven,npm,pypi   # several
@@ -128,36 +131,22 @@ Run `fad-checker --help` for the full flag list.
 The console prints a summary; the full detail lives in the self-contained HTML/`.doc`:
 
 ```
+╭───────────────────────────────────────────────────╮
+│ fad-checker v2.2.1 · Autonomous Dependency Checker │
+╰───────────────────────────────────────────────────╯
 Executive Summary [CRITICAL] — 1708 dependencies scanned
   • 81 CVE in production deps (critical=5, high=53, medium=12, low=11)
-  • 32 CVE in dev/test deps
-  • 17 vulnerable vendored JS finding(s) (retire.js)
-  • 2 end-of-life frameworks
-  • 13 obsolete / deprecated libs
-  • 172 outdated libs
+  • 32 CVE in dev/test deps · 17 vulnerable vendored JS (retire.js)
+  • 2 EOL frameworks · 13 obsolete/deprecated · 172 outdated
   • 4 scan-completeness alerts — see chapter 0
-
-0. Warnings & scan-completeness (4)
-1. CVE Vulnerabilities — production (81)
-   1.a Maven (49)
-      1.a.0 All (49)
-      By pom.xml (14 files)
-         build/building/pom.xml (17)
-         services/api/pom.xml (17)
-         … 12 more
-   1.b npm (package-lock) (32)
-      1.b.0 All (32)
-      By package-lock.json (1 file)
-         web/package-lock.json (32)
-2. CVE in dev dependencies (32)
-3. Vendored JS scan — retire.js (17)
-4. End-of-Life Frameworks (2)
-5. Obsolete / Deprecated Libraries (13)
-6. Outdated Libraries (172)
-7. Fix Recommendations
 ```
 
-Each CVE row shows: severity badge · CVE / GHSA id · dep coord & version · which manifest file declares it · source(s) (CVEProject / OSV / NVD / Snyk / retire / fad) · fix-version · summary. Click a row for the full panel (CVSS vectors, NVD references categorised by type, transitive paths, CPE configurations).
+The HTML report organises this into chapters (0 Warnings, 1 CVE prod, 1B embedded JARs,
+1C native binaries, 1D vendored-JS inventory, 2 vendored-JS vulns, 3 dev CVE, 4 EOL,
+5 obsolete, 6 outdated, 7 Licenses *(opt-in)*, 8 Fix Recommendations), each grouped by
+ecosystem and manifest. Every CVE row carries: severity badge · CVE/GHSA id · coord &
+version · declaring manifest · source(s) · fix-version · priority (KEV/EPSS) — click for
+the full panel (CVSS vectors, references, transitive paths, CPE configs).
 
 ---
 
@@ -210,54 +199,17 @@ fad-checker --completion zsh  > ~/.zsh/completions/_fad-checker
 | Ruby | `Gemfile.lock` (`specs:`) | the lockfile |
 | Vendored JS / binaries | the committed `.js` / `.jar` / `.so` files themselves | n/a (read in place) |
 
-The rest of this section is the detail behind that table.
+Highlights of the matching layer: **three CVE sources merged** (CVEProject + OSV.dev + NVD), **CPE/version cross-check** to drop false positives, **EPSS + CISA KEV** prioritisation, lockfile-first with a **best-effort pinned-version fallback** when no lockfile, in-memory **embedded-JAR** unzip (no disk, no zip-slip), and **checksum identity** for native binaries. Outputs: HTML + `.doc` by default, plus opt-in `--report-sbom`/`-csaf`/`-json`/`-sarif`; CI gating via `--fail-on` with `--ignore`/`--vex` triage.
 
-- **Maven** — `pom.xml` files are parsed with xml2js. Property substitution (`${jackson.version}`), parent inheritance, local BOM imports (`<scope>import</scope>`) and every profile are resolved in-process. Transitive deps are walked by fetching child POMs from Maven Central (cached forever — POMs are immutable). When the project uses an **external BOM** (`spring-boot-dependencies` etc.), the deps whose version comes from that BOM can't be resolved without `mvn` itself — those are surfaced in chapter 0 as "unresolved-versions" so you know what's missing.
-- **npm / Yarn / pnpm** — `package-lock.json` (v1, v2, v3), `yarn.lock` (v1 + Berry/v2+, via `js-yaml`) and `pnpm-lock.yaml` (v5/v6/v9, via `js-yaml`) are parsed directly. Lockfiles already contain every transitive version. No `node_modules/` traversal, no `npm install`.
-- **Composer (PHP)** — `composer.lock` (`packages` + `packages-dev`) gives concrete + transitive versions; `composer.json` alone is best-effort.
-- **PyPI (Python)** — `poetry.lock` / `Pipfile.lock` / `uv.lock` / `pdm.lock` are parsed (TOML via `smol-toml`, or JSON); `pyproject.toml` (PEP 621 `[project]` + `[tool.poetry]`) and `requirements.txt` (following `-r`/`-c` includes recursively, with `-c` constraint pins applied to ranges) are best-effort on exact pins. Package names are PEP 503-normalised (`Flask-SQLAlchemy` → `flask-sqlalchemy`).
-- **NuGet (C#/.NET)** — `packages.lock.json` is authoritative; otherwise `*.csproj` / `*.fsproj` / `*.vbproj` `<PackageReference>` (resolving Central Package Management against `Directory.Packages.props`) and legacy `packages.config`. Ids are case-insensitive.
-- **Go** — `go.mod` `require` entries are the selected versions (full pruned graph on Go ≥1.17; `// indirect` → transitive), `go.sum` as fallback. OSV "Go" ecosystem for recall, the Go module proxy for outdated.
-- **Ruby** — `Gemfile.lock` `specs:` give the resolved gem set. OSV "RubyGems" for recall, the RubyGems API for outdated + licenses.
-- **Lockfile-first, best-effort fallback** — when a lockfile is present it wins. When it's absent, the loose manifest (`package.json` / `composer.json` / `pyproject.toml` / `requirements.txt` / `*.csproj`) is still parsed for its **pinned exact versions**, with ranges skipped and a `no-lockfile` warning in chapter 0 flagging the partial coverage.
-- **Vendored JavaScript** — `retire.js` shells out (with `--verbose`) and scans `.js` / `.min.js` files by signature. Two outputs: a full **inventory of every identified standalone lib** — jQuery, Bootstrap, Angular, PDF.js copies that no lockfile knows about, *vulnerable or not* (chapter 1D, a cyber-hygiene constat on unmanaged third-party code; `--no-vendored-js-inventory` to skip) — and the **vulnerable subset** with its CVEs/advisories (chapter 2).
-- **Embedded JARs** — committed `.jar` / `.war` / `.ear` archives are unzipped **in memory** (via `fflate` — nested fat-jar libs are recursed without ever touching disk, so there's no zip-slip risk) and each artifact's Maven coordinate is read from `META-INF/maven/.../pom.properties` (authoritative), then `MANIFEST.MF`, then the file name. Those coordinates run through the same CVE/OSV/NVD matching as declared deps but report in their own **Embedded binaries** chapter, grouped by containing archive. An archive whose coordinate can't be resolved is flagged in chapter 0 rather than scanned blindly. Auto when archives are present; disable with `--no-jars`. (Embedded coords don't trigger Maven Central transitive resolution — a fat-jar already ships its dependencies, which the recursion finds directly.)
-- **Committed native binaries** — `.dll` / `.exe` / `.so` / `.dylib` files are found by a magic-byte-confirmed walk (extension **and** PE/ELF/Mach-O signature must agree, so an image renamed `.so` or any asset is rejected), hashed (SHA-1 + SHA-256), then **identified by checksum** online: **deps.dev** query-by-hash returns the exact package coordinate (so the file is byte-identical to a published artifact → *pristine*, and ought to be a declared dependency), and **CIRCL hashlookup** recognises known OS/distro/CDN/NSRL files (→ *known-good*) plus a free `KnownMalicious` flag. Files no source knows are flagged *unknown*; a filename that disagrees with the resolved identity is flagged *name≠checksum*. Reported in their own **Unmanaged / vendored binaries** chapter (1C) and the JSON export. Cached + `--offline`-aware; disable with `--no-binaries`. No malware/AV lane and no binary-metadata parsing — identity is hash-lookup, integrity is hash-comparison.
-- **CVE data** — three independent sources merged:
-  - **CVEProject** (the canonical `cvelistV5` bundle, filtered to Maven-relevant entries)
-  - **OSV.dev** (Google + GitHub Security Lab, multi-ecosystem)
-  - **NVD** (official NIST records, used for enrichment: full CVSS, references, CPE configurations)
-- **CPE refinement** — once a CVE is matched, its NVD CPE configurations are checked against the dep version range. A match outside the vulnerable range is flagged `cpeFiltered: true` (likely false positive). A curated `data/cpe-coord-map.json` maps CPE `vendor:product` to Maven `g:a` (60+ entries seeded: log4j, jackson, spring, tomcat, jetty, netty, …).
-- **Prioritization** — each matched CVE is enriched with **EPSS** (FIRST.org exploit-prediction percentile) and **CISA KEV** (known-exploited catalogue), then scored: KEV (exploited in the wild) outranks EPSS-weighted CVSS. The report sorts by this composite priority and badges KEV/EPSS.
-- **Licenses** — each dependency's license is resolved (registry metadata, no extra request; Maven from cached POMs), normalised to SPDX and classified against a copyleft policy (`data/license-policy.json`) — permissive / weak / strong / network copyleft / proprietary / unknown.
-- **Unified outputs** — one `--report-<type>` flag per output, each with an OPTIONAL path (omit it → a default name under `--report-output`): `--report-html`, `--report-doc`, plus the machine-readable `--report-sbom` (**CycloneDX 1.6**, vulnerabilities inline / VDR), `--report-csaf` (**CSAF 2.0 VEX**), `--report-json` (flat findings, diff-friendly) and `--report-sarif` (**SARIF 2.1.0** for GitHub/GitLab code scanning). With no `--report-*` flag, HTML + `.doc` are written by default; `--no-report` writes nothing (gate-only). purls per ecosystem.
-- **CI gating & triage** — `--fail-on <low|medium|high|critical|kev>` sets a non-zero exit code (`kev` = fail only on a CISA-known-exploited finding). `--ignore <file>` (CVE/coord/glob rules) and `--vex <file>` (ingest a CSAF VEX) suppress accepted-risk / false-positive findings from the report and the gate, while keeping them flagged in the exports — so re-audits stay signal-rich.
+> Full per-ecosystem and per-stage detail lives in **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** and **[`docs/USAGE.md`](docs/USAGE.md)**.
 
 ---
 
 ## Caching
 
-All cached data lives in `~/.fad-checker/`:
-
-| Cache | Path | TTL |
-| --- | --- | --- |
-| Maven CVE index (CVEProject bundle, filtered) | `cve-data/maven-cve-index.json` | 24 h |
-| OSV per-dep lookups | `osv-cache/<ecosystem>__<g>__<a>__<v>.json` | 12 h |
-| OSV vuln details | `osv-cache/vuln_<id>.json` | 12 h |
-| NVD CVE records | `nvd-cache/<cveId>.json` | 7 d |
-| EPSS scores (FIRST.org) | `epss-cache.json` | 24 h |
-| CISA KEV catalogue | `kev-cache.json` | 24 h |
-| Go module proxy (latest) | `go-proxy-cache.json` | 24 h |
-| RubyGems (latest + licenses) | `rubygems-cache.json` | 24 h |
-| Binary identity (deps.dev + CIRCL by hash) | `hash-id-cache.json` | 24 h |
-| endoflife.date cycles | `eol-cache.json` | 7 d |
-| Maven Central latest versions | `version-cache.json` | 24 h |
-| Transitive POMs from Maven Central | `poms-cache/<g>__<a>__<v>.pom` | ∞ (immutable) |
-| retire.js findings | `retire-cache/<md5(src)>.json` | 24 h |
-| retire.js signature DB | `retire-signatures/jsrepository-v5.json` | warmed online, used offline |
-| User config (NVD key) | `config.json` (mode 0600) | — |
-
-Export the lot to share between machines:
+All cached data lives in `~/.fad-checker/` — every source is hit at most once per its
+TTL (12 h–7 d, transitive POMs forever as they're immutable). Full per-cache TTL table
+in [`docs/USAGE.md`](docs/USAGE.md). Export the lot to share between machines:
 
 ```bash
 fad-checker --export-cache fad-cache.tar.gz
@@ -318,66 +270,28 @@ DB is warmed online (phase 2) and carried by `--export-cache`.
 
 ## Custom repositories & registries
 
-Out of the box `fad-checker` queries each ecosystem's **public** registry (Maven Central, registry.npmjs.org, PyPI, RubyGems, the Go module proxy). If your project pulls artifacts from a private **Nexus / Artifactory / JBoss** (Maven), **Verdaccio / GitHub Packages** (npm), **devpi / Artifactory** (PyPI), **Gemfury / Geminabox** (Ruby) or a private **GOPROXY / Athens** (Go), register them so transitive resolution, outdated checks, deprecation and license lookups work end-to-end.
-
-Custom registries for **`maven`, `npm`, `pypi`, `ruby`, `go`**:
+Register private **Nexus / Artifactory / Verdaccio / devpi / GOPROXY** registries (for **`maven`, `npm`, `pypi`, `ruby`, `go`**) so transitive resolution, outdated/deprecation and license lookups reach them:
 
 ```bash
-# Persist a registry (lives in ~/.fad-checker/config.json, keyed by ecosystem)
-fad-checker --add-repo maven nexus     https://nexus.acme.com/repository/maven-public/ --auth alice:s3cr3t
-fad-checker --add-repo npm   verdaccio https://npm.acme.com/                            --token "$NPM_TOKEN"
-fad-checker --add-repo pypi  devpi     https://pypi.acme.com/root/pypi/+simple/         --auth alice:s3cr3t
-fad-checker --list-repos                 # grouped by ecosystem
-fad-checker --remove-repo npm verdaccio
-
-# One-off (not persisted) — repeatable, always ecosystem-scoped as <eco>=<url>
-fad-checker -s ./proj --repo npm=https://npm.acme.com/ --repo maven=https://nexus.acme.com/repository/maven-public/
-# Inline auth in the URL also works:
-fad-checker -s ./proj --repo maven=https://alice:s3cr3t@nexus.acme.com/repository/maven-public/
+fad-checker --add-repo maven nexus https://nexus.acme.com/repository/maven-public/ --auth alice:s3cr3t
+fad-checker --add-repo npm   verdaccio https://npm.acme.com/ --token "$NPM_TOKEN"
+fad-checker -s ./proj --repo npm=https://npm.acme.com/        # one-off, repeatable
 ```
 
-Registries are tried **in declared order, the public registry last**. Auth is `--auth user:pass` → `Basic <base64>` or `--token TOK` → `Bearer TOK` (inline `https://user:pass@host/` also works). Responses are cached per coordinate, so subsequent runs are free even against a private registry.
-
-> **PyPI / Ruby caveat:** the custom base must expose the **same JSON API** as the public one (`<base>/<pkg>/json`, `<base>/<gem>.json`). A pure PEP 503 *simple-index* mirror that only lists files won't yield latest/yanked/license metadata — point at the JSON-capable endpoint (Artifactory/devpi/Nexus all have one). **NuGet** and **Composer** private feeds aren't supported yet (their service-index / `packages.json` discovery is a separate follow-up).
+Tried in declared order, public registry last; auth via `--auth user:pass` / `--token TOK` / inline URL; responses cached per coordinate. NuGet/Composer private feeds aren't supported yet. **Full details, the PyPI/Ruby JSON-API caveat and `--list-repos`/`--remove-repo` → [`docs/USAGE.md`](docs/USAGE.md).**
 
 ---
 
 ## Configuration file & environment
 
-Don't retype flags every run. `fad-checker` reads defaults from three places, **lowest priority first**, all overridable on the command line:
-
-| Layer | Where | Format |
-| --- | --- | --- |
-| **CLI flags** | the command line | flags (always win) |
-| **Config file** | `--config <file.json>`, else `./.fad-env.json` | **JSON** object, keys = option names |
-| **`FAD_CHECKER_ENV`** | environment variable | a **string of CLI flags** (what you'd type) |
-| **Global config** | `~/.fad-checker/config.json` | persisted NVD key + `registries` |
-
-Effective precedence: **CLI flag > config file > `FAD_CHECKER_ENV` > global config > built-in defaults.** A file/env value only fills an option you did *not* pass on the CLI; **registries are merged (unioned) across every layer**, never overridden.
-
-```jsonc
-// ./.fad-env.json — JSON, keys mirror the CLI options (camelCase)
-{
-  "source": "./my-project",          // alias of --src (so is "src")
-  "exclude": "^(com\\.acme|client)\\.",
-  "excludePath": ["packages/legacy/**", "**/fixtures/**"],
-  "failOn": "high",
-  "noNuget": true,
-  "registries": {
-    "npm":  [{ "name": "verdaccio", "url": "https://npm.acme.com/", "token": "…" }],
-    "maven":[{ "name": "nexus", "url": "https://nexus.acme.com/repository/maven-public/", "auth": "user:pass" }]
-  }
-}
-```
+Don't retype flags every run. Precedence: **CLI flag > `--config <file.json>` / `./.fad-env.json` (JSON, keys = camelCase options) > `FAD_CHECKER_ENV` (a string of CLI flags) > `~/.fad-checker/config.json` > defaults.** A file/env value only fills an option you didn't pass; **registries are merged across every layer**.
 
 ```bash
-fad-checker --config ./ci/fad-env.json          # explicit file (beats ./.fad-env.json)
-FAD_CHECKER_ENV='--fail-on high --no-nuget --repo npm=https://npm.acme.com/' fad-checker -s ./proj
+fad-checker --config ./ci/fad-env.json
+FAD_CHECKER_ENV='--fail-on high --no-nuget' fad-checker -s ./proj
 ```
 
-The **source directory** accepts three spellings everywhere: `-s`, `--src`, `--source` (and the JSON key `"source"`/`"src"`).
-
-> **`-e/--exclude` vs `--exclude-path`:** `--exclude` is a regex on the **coordinate** (groupId/name) — it drops matching *dependencies*. `--exclude-path` is a gitignore-style glob on the **directory path** (relative to `--src`) — it prunes the *walk* so nothing under it is read. They compose. `--exclude-path` is repeatable, unioned across config layers, and `--no-default-excludes` lets you walk the normally-pruned dirs (`node_modules`, `vendor`, `target`, `.git`, …).
+`-s` / `--src` / `--source` are aliases. **`-e/--exclude`** is a regex on the **coordinate** (drops deps); **`--exclude-path`** is a gitignore-style glob on the **path** (prunes the walk). Full `.fad-env.json` schema → [`docs/USAGE.md`](docs/USAGE.md).
 
 ---
 

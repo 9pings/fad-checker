@@ -448,7 +448,12 @@ async function timedPhase(label, fn) {
 	].filter(Boolean))];
 	const defaultExcludes = options.defaultExcludes !== false;
 	const walkOpts = { excludePath, defaultExcludes };
-	const runMode = options.importAnonymized ? "import descriptor" : (options.offline ? "offline" : "online");
+	// PASSI phase 1 (--export-anonymized) is a purely local operation — parse the tree,
+	// emit public coordinates, exit. Force offline so no source ever touches the network.
+	if (options.exportAnonymized) options.offline = true;
+	const runMode = options.exportAnonymized ? "offline (PASSI phase 1 · export descriptor)"
+		: options.importAnonymized ? "import descriptor"
+		: (options.offline ? "offline" : "online");
 	if (options.src) ui.kv("source", chalk.white(options.src));
 	if (mavenRepos.length > 1) ui.kv("repos", chalk.white(mavenRepos.map(r => r.name).join(chalk.dim(" → "))));
 	const otherRegs = Object.keys(regMap).filter(e => e !== "maven" && regMap[e].length);
@@ -560,6 +565,17 @@ async function timedPhase(label, fn) {
 		ui.ok(`${chalk.bold(descriptor.summary.total)} dep(s) (${ecoSummary || "none"}) → ${chalk.white(options.exportAnonymized)}`);
 		ui.info(chalk.dim("public coordinates only — no paths/URLs/host info. Review before transfer."));
 		if (!descriptor.summary.total) ui.warn("no dependencies collected — descriptor is empty");
+		// Guide the operator through the remaining two phases (the descriptor file +
+		// this run's --src are filled in so the commands are copy-paste ready).
+		const descFile = options.exportAnonymized;
+		const srcShown = options.src || "./proj";
+		ui.section("Next steps");
+		ui.info(`${chalk.dim("Phase 2 —")} ${chalk.cyan("ONLINE")} ${chalk.dim("(any box, no --src): warm the caches, then bundle them")}`);
+		ui.info("  " + chalk.white(`fad-checker --import-anonymized ${descFile}`));
+		ui.info("  " + chalk.white("fad-checker --export-cache fad-cache.tar.gz"));
+		ui.info(`${chalk.dim("Phase 3 —")} ${chalk.cyan("OFFLINE")} ${chalk.dim("(back here): import the cache, then run the full report")}`);
+		ui.info("  " + chalk.white("fad-checker --import-cache fad-cache.tar.gz"));
+		ui.info("  " + chalk.white(`fad-checker -s ${srcShown} --offline`));
 		return;
 	}
 
