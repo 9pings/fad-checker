@@ -1078,7 +1078,12 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		ui.warn(`${scanWarnings.length} scan-completeness note(s) — a real Maven/Snyk run may surface more:`);
 		for (const w of scanWarnings) {
 			ui.info(chalk.dim(`[${w.type}] ${w.message}`));
-			for (const it of (w.items || []).slice(0, 4)) console.log("      " + chalk.dim(`· ${it}`));
+			// Items may be plain strings or { id, manifestPaths } objects (the
+			// unresolved-versions warning carries the defining manifest paths).
+			for (const it of (w.items || []).slice(0, 4)) {
+				const id = typeof it === "string" ? it : it.id;
+				console.log("      " + chalk.dim(`· ${id}`));
+			}
 			if ((w.items || []).length > 4) console.log("      " + chalk.dim(`· …and ${w.items.length - 4} more`));
 		}
 	}
