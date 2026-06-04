@@ -236,6 +236,8 @@ program
 	.option("--ignore-test", "skip test-scoped dependencies in report")
 	.option("--cve-refresh", "force re-download of CVE database")
 	.option("--cve-offline", "use cached CVE index only (no download)")
+	.option("--osv-db", "import + match the full local OSV database (Maven) — offline-complete recall, independent of the per-dep OSV cache")
+	.option("--osv-db-refresh", "force re-download of the local OSV database")
 	.option("--snyk", "run snyk on cleaned POMs and merge into report (requires --target)")
 	.option("--no-retire", "skip retire.js vendored-JS scan")
 	.option("--no-vendored-js-inventory", "don't list ALL identified vendored JS libs (chapter 1D) — keep only the vulnerable ones (chapter 2)")
@@ -750,6 +752,9 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		? require("./lib/maven-bom").collectImportBoms(mavenPropsByPom) : [];
 	const willBom = importBoms.length > 0;
 	const willOsv = !!options.osv;
+	// Local OSV DB import (Maven): offline-complete OSV recall, independent of the per-dep
+	// OSV.dev cache. Opt-in (downloads ~9 MB once); then matches online or offline.
+	const willOsvDb = !!options.osvDb && runMaven;
 	const willOutdated = !!options.allLibs;
 	const willNvd = !!options.nvd;
 	const willEpss = !!options.epss;
@@ -760,7 +765,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const willBinaryId = [...resolved.values()].some(d => d.provenance === "binary");
 	// License detection piggybacks on the registry passes (same fetched metadata),
 	// so it adds no progress step of its own.
-	const totalSteps = [willBom, willTransitive, willOverlay, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willNvd, willEpss, willKev, willRetire, willBinaryId].filter(Boolean).length;
+	const totalSteps = [willBom, willTransitive, willOverlay, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willOsvDb, willNvd, willEpss, willKev, willRetire, willBinaryId].filter(Boolean).length;
 	const progress = new ui.Progress(totalSteps);
 
 	if (willBom) {
@@ -910,6 +915,25 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		} catch (err) {
 			st.fail(err.message);
 		}
+	}
+
+	// 4b'. Local OSV database (Maven) — offline-COMPLETE recall. The per-dep OSV.dev
+	// queries above only cover deps cached online; the imported full OSV DB matches every
+	// dep offline, deterministically, regardless of cache warmth (the OSV-Scanner model).
+	if (willOsvDb) {
+		const st = progress.start("OSV database (local, Maven)");
+		try {
+			const { ensureOsvDb, matchOsvDbDeps } = require("./lib/osv-db");
+			const index = await ensureOsvDb({ offline, refresh: !!options.osvDbRefresh, verbose, ecosystem: "maven" });
+			if (!index) {
+				st.done(offline ? "no local OSV DB (run once online with --osv-db)" : "unavailable");
+			} else {
+				const dbMatches = matchOsvDbDeps(resolved, index);
+				const before = cveMatches.length;
+				cveMatches = mergeBySource(cveMatches, dbMatches);
+				st.done(`${index.count} advisories · ${dbMatches.length} matched · +${cveMatches.length - before} new`);
+			}
+		} catch (err) { st.fail(err.message); }
 	}
 
 	// 4c. NVD enrichment — canonical description + full CVSS for matched CVEs.

@@ -27,6 +27,7 @@ lib/embedded.js              buildEmbeddedInventory(): full inventory of provena
 lib/transitive.js            Maven Central POM walker (transitive resolution).
 lib/version-overlay.js       Per-module version-mediation overlay (recovers transitive versions the global pass masks via cross-module depMgmt bleed; additive).
 lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
+lib/osv-db.js                Offline-complete OSV matching from an imported local OSV DB (Maven; `--osv-db`).
 lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configurations).
 lib/epss.js                  EPSS (FIRST.org) percentile/score enrichment (24h cache).
 lib/kev.js                   CISA KEV catalogue membership enrichment (24h cache).
@@ -122,6 +123,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
    - `possible`: product-only match
    Dedupes by `(dep, cve.id)` and sorts by severity. npm deps are skipped here — they're scanned by OSV instead.
 5. **OSV** (default on) — `queryOsvForDeps()` POSTs batched queries to `api.osv.dev/v1/querybatch` (Maven ecosystem for Maven deps, npm ecosystem for npm deps). Per-dep stub list cached 12h; per-vuln details cached 12h.
+5b. **OSV local DB** (`--osv-db`, Maven) — `lib/osv-db.js` imports the full OSV Maven `all.zip` once (online) into a compact local index, then matches EVERY dep against it (`matchOsvDbDeps`, range eval via `maven-version`), merged via `mergeBySource`. Online it adds nothing (the live OSV query above already covers it), but **offline it makes Maven recall complete and cache-independent** — when the per-dep OSV cache is cold (different machine, TTL-expired, offline-discovered deps) it lifts reference-project from 6→117 covered. The OSV-Scanner air-gap model.
 6. **NVD enrichment** (default on) — for every CVE id matched, fetch the full NVD record (description, CVSS vectors, references categorised by tag, CPE configurations). Rate-limited per NIST policy (5/30s unauthenticated, 50/30s with `NVD_API_KEY`).
 7. **CPE refinement** — `refineMatchesWithCpe()` walks NVD's `configurations[].nodes[]` against each matched dep:
    - Confirms the dep version actually falls in the vulnerable range (else `cpeFiltered: true` — likely false positive).
