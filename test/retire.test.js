@@ -117,3 +117,18 @@ test("retireFailureReason extracts the meaningful error line, not a stack frame"
 	assert.strictEqual(R.retireFailureReason("", "the-fallback"), "the-fallback");
 	assert.strictEqual(R.retireFailureReason("   \n  \n", "fb"), "fb");
 });
+
+test("chooseRetireLauncher: node uses local bin, compiled binary self-invokes, else PATH", () => {
+	// node dev (node_modules present) → run the local retire CLI directly, no env flag.
+	assert.deepStrictEqual(
+		R.chooseRetireLauncher({ localBin: "/p/node_modules/.bin/retire", isBun: false, execPath: "/usr/bin/node" }),
+		{ cmd: "/p/node_modules/.bin/retire", env: null });
+	// compiled bun binary (no node_modules) → re-exec THIS binary in retire mode.
+	assert.deepStrictEqual(
+		R.chooseRetireLauncher({ localBin: null, isBun: true, execPath: "/usr/local/bin/fad" }),
+		{ cmd: "/usr/local/bin/fad", env: { __FAD_RETIRE__: "1" } });
+	// last resort: retire on PATH.
+	assert.deepStrictEqual(
+		R.chooseRetireLauncher({ localBin: null, isBun: false, execPath: "/usr/bin/node" }),
+		{ cmd: "retire", env: null });
+});

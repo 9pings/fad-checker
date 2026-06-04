@@ -158,6 +158,14 @@ The cache archive bundles everything under `~/.fad-checker/` (except `config.jso
 including retire.js findings **and** the warmed retire.js signature DB, so an importing
 machine can scan vendored JavaScript fully offline.
 
+> **Compiled binary, no `node`/`retire` needed:** the bun-compiled single binary
+> (`dist/fad-checker-linux`, `.exe`, `-macos`) statically bundles the retire.js CLI and
+> re-execs itself to run it — so vendored-JS scanning (chapters 1D / 2) works from the
+> lone binary on an air-gapped box with no Node.js and no `retire` on `PATH`. The only
+> input it needs is the signature DB warmed in phase 2 (carried in the cache archive).
+> If retire still can't run, the failure is reported as a chapter-0 warning (run `-v`
+> for the exact reason) instead of an empty chapter.
+
 ## Anonymized descriptor (PASSI / air-gapped audits)
 
 For an offline/confidential system that can't reach the vuln databases, split the scan

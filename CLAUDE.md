@@ -26,7 +26,7 @@ No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` /
 
 ```bash
 npm install
-npm test                  # 425 unit tests via node --test
+npm test                  # 426 unit tests via node --test
 
 # basic cleanup workflow
 node fad-checker.js -s ./proj                                        # read-only, full report
@@ -100,7 +100,7 @@ lib/transitive.js            Maven Central POM walker (transitive resolution).
 lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
 lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configurations).
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
-lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser. Runs with --verbose; extractVendoredInventory() lists ALL identified libs (vuln or not) → report chapter 1D; scanWithRetireFull() returns {matches, inventory, error}. A real scan FAILURE (retire crashed / empty-unparseable output) sets `error` (via diag) → surfaced as a chapter-0 `retire-failed` warning instead of a silent empty 1D. Cache body carries `_schema:2`; an entry without it (pre-verbose build) is a cache MISS so the inventory isn't silently emptied offline.
+lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser. Runs with --verbose; extractVendoredInventory() lists ALL identified libs (vuln or not) → report chapter 1D; scanWithRetireFull() returns {matches, inventory, error}. A real scan FAILURE (retire crashed / empty-unparseable output) sets `error` (via diag) → surfaced as a chapter-0 `retire-failed` warning instead of a silent empty 1D. Cache body carries `_schema:2`; an entry without it (pre-verbose build) is a cache MISS so the inventory isn't silently emptied offline. **Launcher** (`findRetireLauncher`/`chooseRetireLauncher`): node dev runs `node_modules/.bin/retire`; the **bun-compiled single binary** has no node_modules and an air-gapped box has no `retire` on PATH, so it **re-execs ITSELF** with `__FAD_RETIRE__=1` — `fad-checker.js`'s top guard then hands off to the statically-bundled `retire/lib/cli.js` (self-runs on require). So vendored-JS scanning works fully offline from the one binary; the only external input is the phase-2-warmed signature DB passed via `--jsrepo`.
 lib/scan-completeness.js     Warnings for deps fad-checker couldn't fully resolve.
 lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 + Berry, pnpm-lock.yaml (v5/6/9) parsers.
 lib/codecs/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
@@ -142,7 +142,7 @@ For the deep dive — pipeline stages, the resolved-deps Map shape, report struc
 ## Testing
 
 ```bash
-node --test test/*.test.js            # full suite (425 tests)
+node --test test/*.test.js            # full suite (426 tests)
 node --test test/core.test.js         # one file
 ```
 

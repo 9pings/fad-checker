@@ -25,6 +25,18 @@ const core = require("./lib/core");
 // (from $bunfs/root) and crashes with ENOENT. Keeps the bun builds fully standalone.
 const pkg = require("./package.json");
 
+// -------- compiled-binary retire mode --------
+// The bun-compiled single binary has no node_modules to spawn the retire CLI from,
+// and an air-gapped box has no `retire` on PATH. So lib/retire.js re-execs THIS
+// binary with __FAD_RETIRE__ set; here we hand off to the statically-bundled retire
+// CLI (it self-runs, reading process.argv — bun's argv mirrors node's). The entire
+// normal CLI body is gated behind `else` so fad's own commander setup never runs in
+// retire mode (retire shares commander's singleton `program`). Lets vendored-JS
+// scanning work fully offline from the one binary, no external retire needed.
+if (process.env.__FAD_RETIRE__) {
+	require("retire/lib/cli.js");
+} else {
+
 // -------- bash/zsh completion shortcut (must run before required-options parse) --------
 if (process.argv.includes("--completion")) {
 	const shellIdx = process.argv.indexOf("--completion") + 1;
@@ -1240,3 +1252,5 @@ function mergeBySource(existing, additions) {
 	});
 	return merged;
 }
+
+} // end: compiled-binary retire-mode guard (see top of file)
