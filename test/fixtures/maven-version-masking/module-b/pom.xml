@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Separate reactor ISLAND: different groupId, NO <parent>, so it inherits NONE of
+     parent's pins. Declares oldlib:1.0, which transitively brings the OLD, vulnerable
+     org.apache.poi:poi:3.11. Real Maven keeps 3.11 here; fad's global pass masks it to
+     5.4.1. The overlay must recover 3.11. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>com.island</groupId>
+	<artifactId>module-b</artifactId>
+	<version>1.0.0</version>
+
+	<dependencies>
+		<dependency>
+			<groupId>com.test.fixtures</groupId>
+			<artifactId>oldlib</artifactId>
+			<version>1.0</version>
+		</dependency>
+	</dependencies>
+</project>

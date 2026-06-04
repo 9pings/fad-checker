@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Child of parent: INHERITS the poi 5.4.1 + safe 2.0 pins. Declares poi (→5.4.1)
+     and viaA:1.0, which transitively brings safe:1.0. Because module-a inherits the
+     safe 2.0 pin, Maven keeps safe at 2.0 here — the overlay must NOT surface 1.0. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.test</groupId>
+		<artifactId>parent</artifactId>
+		<version>1.0.0</version>
+		<relativePath>../parent/pom.xml</relativePath>
+	</parent>
+	<artifactId>module-a</artifactId>
+
+	<dependencies>
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.test.fixtures</groupId>
+			<artifactId>viaA</artifactId>
+			<version>1.0</version>
+		</dependency>
+	</dependencies>
+</project>

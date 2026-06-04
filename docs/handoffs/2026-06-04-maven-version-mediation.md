@@ -1,8 +1,40 @@
 # Handoff — Maven *global version mediation* masks vulnerable transitive versions
 
-Status: **OPEN / unsolved.** Two in-process fixes were attempted and reverted (see
-"Failed approaches"). This doc is a clean-slate brief so the next attempt doesn't
-repeat them. Date: 2026-06-04.
+Status: **RESOLVED (2026-06-04)** via **Option A — additive per-module overlay**
+(`lib/version-overlay.js`). The original brief (problem, constraints, failed approaches)
+is kept below for the record.
+
+## Resolution
+
+`expandPerModuleOverlay` (`lib/version-overlay.js`) runs in `runReportFlow` right AFTER
+the global `expandWithTransitives` (so the global base — and its 156 — can't regress).
+It re-resolves **each module independently** with ONLY that module's effective depMgmt,
+rebuilt by climbing the module's **local parent chain** (`core.resolveParentPath`) plus
+its external `<parent>`/import-BOMs (via `transitive.js#effectivePom`, memoised by a new
+opt-in `effCache`). Any concrete `(g:a, version)` it finds that isn't already in the
+coord's `versions[]` is **appended** (with `maskedVersions[]` provenance). Purely
+additive — it can only ADD coverage, and the version it surfaces is the one genuinely on
+that module's classpath (true positive, not force-elevated).
+
+**Measured on reference-project** (offline, warm `poms-cache`, ~7 s):
+
+| metric | baseline | fixed | bar |
+|---|---|---|---|
+| Snyk findings covered | 156 | **181** | ≥163 ✅ |
+| missed | 46 | **21** | ✅ |
+| 7 target coords recovered | 0/7 | **7/7** ✅ | |
+| fad-only Maven findings (FP proxy) | 64 | **65** (+1) | flat ✅ |
+| **version-contradictions** (over-attribution FPs) | 0 | **0** | ✅ |
+| unit tests | 435 | **438** (+3) green | ✅ |
+
+All 7 recovered exactly as predicted (`poi 3.11`, `commons-collections 3.2.1`, … all via
+`stress-tests/jmeter-cipher-plugin`, the island that inherits none of the reactor's pins).
+The +25 covered (not just 7) are masked versions of other coords in the same island. The
+**false-positive direction the algorithm theoretically has does NOT materialise** (+1
+fad-only, 0 version-contradictions) because per-module mediation gives each module its
+*real* version set — so **Option C was not needed.** Regression test:
+`test/version-overlay.test.js` + fixture `test/fixtures/maven-version-masking/` (network-free;
+asserts both RECALL of the island's `poi 3.11` and FP-SAFETY of an inherited pin).
 
 ---
 

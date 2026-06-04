@@ -694,7 +694,7 @@ async function timedPhase(label, fn) {
 	// The scan always runs — it feeds the terminal summary, the file outputs and the
 	// CI gate. Which files get written is decided by the --report-* family inside
 	// (HTML + .doc by default; --no-report writes nothing).
-	await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings, mavenPropsByPom: mavenCtx?.propsByPom });
+	await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings, mavenPropsByPom: mavenCtx?.propsByPom, mavenStore: mavenCtx?.store });
 	if (!readOnly) {
 		ui.section("Next step");
 		ui.info(`run Snyk on the cleaned tree:`);
@@ -703,7 +703,7 @@ async function timedPhase(label, fn) {
 })();
 
 async function runReportFlow(resolved, ecoFlags = {}) {
-	const { activeIds = [], runMaven = true, runNpm = false, privateLibIds = [], mavenRepos = [], regMap = {}, collectWarnings = [], mavenPropsByPom = null } = ecoFlags;
+	const { activeIds = [], runMaven = true, runNpm = false, privateLibIds = [], mavenRepos = [], regMap = {}, collectWarnings = [], mavenPropsByPom = null, mavenStore = null } = ecoFlags;
 	const registriesFor = eco => regMap[eco] || [];
 	const { expandWithTransitives } = require("./lib/cve-match");
 	const { writeReports, computeStats } = require("./lib/cve-report");
@@ -738,6 +738,10 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const otherRegistryIds = activeIds.filter(id => id !== "maven" && id !== "npm" && id !== "yarn" && getCodec(id)?.checkRegistry);
 	const willCve = !!cveScanner && (!(options.cveOffline || offline) || cveIndexExists);
 	const willTransitive = !!(options.transitive && runMaven);
+	// Per-module version mediation overlay: recover transitive versions the global
+	// transitive pass masks via cross-module depMgmt bleed. Runs after (and only when)
+	// the global pass runs, and needs the parsed store + per-module props.
+	const willOverlay = willTransitive && !!mavenPropsByPom && !!mavenStore;
 	// External import BOMs (e.g. spring-boot-dependencies): resolve their managed
 	// versions to backfill declared deps that pin no version of their own (the usual
 	// Spring Boot setup). Cached via poms-cache; offline-aware (uses warmed POMs,
@@ -756,7 +760,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const willBinaryId = [...resolved.values()].some(d => d.provenance === "binary");
 	// License detection piggybacks on the registry passes (same fetched metadata),
 	// so it adds no progress step of its own.
-	const totalSteps = [willBom, willTransitive, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willNvd, willEpss, willKev, willRetire, willBinaryId].filter(Boolean).length;
+	const totalSteps = [willBom, willTransitive, willOverlay, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willNvd, willEpss, willKev, willRetire, willBinaryId].filter(Boolean).length;
 	const progress = new ui.Progress(totalSteps);
 
 	if (willBom) {
@@ -778,6 +782,24 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			repos: mavenRepos,
 		});
 		st.done(`+${resolved.size - directCount} transitive (total ${resolved.size})`);
+	}
+
+	if (willOverlay) {
+		const st = progress.start("Per-module version mediation (masked transitives)");
+		try {
+			const { expandPerModuleOverlay } = require("./lib/version-overlay");
+			const ov = await expandPerModuleOverlay(resolved, mavenStore, mavenPropsByPom, {
+				verbose,
+				offline,
+				maxDepth: parseInt(options.transitiveDepth, 10) || 6,
+				includeTestDeps: !options.ignoreTest,
+				repos: mavenRepos,
+			});
+			st.done(`+${ov.appended} masked version(s) recovered across ${ov.modules} module(s)`);
+			if (verbose && ov.recovered.length) {
+				for (const r of ov.recovered) console.log(`   ↳ ${r.coord}: +${r.version} (had ${r.had})  via ${r.module}`);
+			}
+		} catch (err) { st.fail(err.message); }
 	}
 
 	// Scan-completeness signals — computed NOW (after BOM backfill) so only the deps

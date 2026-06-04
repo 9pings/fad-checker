@@ -25,6 +25,7 @@ lib/cpe.js                   CPE 2.3 parsing + NVD configurations evaluator (pos
 lib/outdated.js              EOL (endoflife.date — `findEolProduct` tags each match with via/viaKey origin), obsolete (curated), outdated (Maven Central).
 lib/embedded.js              buildEmbeddedInventory(): full inventory of provenance:"embedded" coords (vuln or not) → report chapter 1B + JSON. Pure.
 lib/transitive.js            Maven Central POM walker (transitive resolution).
+lib/version-overlay.js       Per-module version-mediation overlay (recovers transitive versions the global pass masks via cross-module depMgmt bleed; additive).
 lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
 lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configurations).
 lib/epss.js                  EPSS (FIRST.org) percentile/score enrichment (24h cache).
@@ -112,7 +113,8 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 ## Report pipeline (driven by `fad-checker.js` when `--report` is set)
 
 1. **Collect** — `collectResolvedDeps()` dedupes by `groupId:artifactId`, keeps the highest version on conflict, includes external parent POMs as `scope='parent'`. `--ignore-test` honored. For npm, `collectNpmDeps()` walks JS manifests (lockfile-only — `package.json` without sibling lockfile is skipped + warned).
-2. **Transitive expansion** (optional, `--transitive`) — `expandWithTransitives()` walks the Maven Central POM graph honouring exclusions, root depMgmt overrides, nearest-wins on version conflict, `--transitive-depth` cap. Skips test + optional scopes by default.
+2. **Transitive expansion** (optional, `--transitive`) — `expandWithTransitives()` walks the Maven Central POM graph honouring exclusions, root depMgmt overrides, nearest-wins on version conflict, `--transitive-depth` cap. Skips test + optional scopes by default. This pass is **global** (one tree, one `rootDepMgmt` = highest version per coord).
+2b. **Per-module version mediation** (`lib/version-overlay.js`, runs when step 2 does) — the global pass above applies any module's depMgmt pin across the WHOLE reactor, masking a *different* module's older (often vulnerable) transitive of the same coord. `expandPerModuleOverlay()` re-resolves **each module independently** with ONLY its own effective depMgmt (local parent chain via `core.resolveParentPath` + external parent/import-BOMs via `effectivePom`, `effCache`-memoised) and **appends** any genuinely-present version not already in `versions[]` (with `maskedVersions[]` provenance). Purely additive — never removes, never reseeds, so it can only ADD coverage. On reference-project: 156 → 181 Snyk-covered, 0 over-attribution FPs.
 3. **CVE index** — `ensureCveIndex()` downloads the daily CVEProject zip (via `curl + unzip`, or falls back to `fetch()` + `unzip` / PowerShell `Expand-Archive`), filters to Maven-relevant entries, caches the compact index to `~/.fad-checker/cve-data/maven-cve-index.json`. Fresh for 24h. `--cve-refresh` forces rebuild, `--cve-offline` uses cache only.
 4. **CVE matching** — `matchDepsAgainstCves()` runs three tiers:
    - `exact`: `byPackageName["g:a"]` hit
