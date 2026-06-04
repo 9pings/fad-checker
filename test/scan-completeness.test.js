@@ -14,7 +14,21 @@ test("flags a Maven dep with no concrete version", () => {
 	));
 	assert.strictEqual(w.length, 1);
 	assert.strictEqual(w[0].type, "unresolved-versions");
-	assert.match(w[0].items[0], /org\.acme:lib/);
+	assert.match(w[0].items[0].id, /org\.acme:lib/);
+});
+
+test("unresolved-version items carry WHERE they are defined (manifestPaths), merged across modules", () => {
+	const w = detectScanCompletenessWarnings(mapOf(
+		{ ecosystem: "maven", groupId: "g", artifactId: "a", version: "${jackson.version}", coordKey: "g:a", pomPaths: ["/p/mod-a/pom.xml"] },
+		{ ecosystem: "maven", groupId: "g", artifactId: "a", version: "${jackson.version}", coordKey: "g:a#2", pomPaths: ["/p/mod-b/pom.xml"] },
+		{ ecosystem: "maven", groupId: "g", artifactId: "b", version: null, coordKey: "g:b", manifestPaths: ["/p/mod-c/pom.xml"] },
+	));
+	const item = w[0].items.find(i => i.id.startsWith("g:a"));
+	assert.ok(item, "item is an object with an id");
+	// both modules that declare g:a are listed, deduped
+	assert.deepStrictEqual(item.manifestPaths.sort(), ["/p/mod-a/pom.xml", "/p/mod-b/pom.xml"]);
+	const b = w[0].items.find(i => i.id.startsWith("g:b"));
+	assert.deepStrictEqual(b.manifestPaths, ["/p/mod-c/pom.xml"]);
 });
 
 test("flags an unresolved ${property} version", () => {

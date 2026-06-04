@@ -42,6 +42,7 @@ _fad_check() {
 		'--no-pypi[skip the PyPI codec]'
 		'--no-js[alias: skip JS/npm/yarn]'
 		'--no-retire[skip retire.js vendored-JS scan]'
+		'--licenses[run license detection + copyleft policy (off by default)]'
 		'--completion[print shell completion]:shell:(bash zsh)'
 	)
 	_arguments $opts

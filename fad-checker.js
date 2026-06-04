@@ -222,7 +222,7 @@ program
 	.option("--fail-on <level>", "exit non-zero if a production finding meets <level>: low|medium|high|critical|kev|none", "none")
 	.option("--ignore <file>", "suppress findings listed in <file> (CVE ids / coords / globs, one per line)")
 	.option("--vex <file>", "ingest a CSAF VEX: suppress CVEs marked not_affected/fixed")
-	.option("--no-licenses", "skip license detection + copyleft policy check")
+	.option("--licenses", "run license detection + copyleft policy check (off by default)")
 	.option("--offline", "no network: use cached CVE/OSV/NVD/EPSS/KEV/POM data only")
 	.option("--set-nvd-key <key>", "save NVD API key to ~/.fad-checker/config.json (10× faster NVD enrichment)")
 	.option("--show-config", "print the persisted ~/.fad-checker/config.json")
@@ -260,6 +260,10 @@ program
 	.option("--auth <user:pass>", "Basic auth for --add-repo")
 	.option("--token <token>", "Bearer token for --add-repo")
 	.option("--completion <shell>", "print shell completion script (bash|zsh)");
+// Back-compat: license detection is now OFF by default (enable with --licenses).
+// A legacy `--no-licenses` is therefore a no-op — drop it so old invocations don't
+// trip commander's unknown-option error.
+if (process.argv.includes("--no-licenses")) process.argv = process.argv.filter(a => a !== "--no-licenses");
 program.parse(process.argv);
 
 const options = program.opts();

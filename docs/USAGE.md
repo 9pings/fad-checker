@@ -87,7 +87,7 @@ Each data source can be disabled independently:
 | `--no-nvd` | Skip NVD enrichment (no full CVSS, no CPE refinement) |
 | `--no-epss` | Skip EPSS (FIRST.org) exploit-prediction enrichment |
 | `--no-kev` | Skip CISA KEV (known-exploited) enrichment |
-| `--no-licenses` | Skip license detection + the copyleft-policy chapter |
+| `--licenses` | Run license detection + the copyleft-policy chapter (**off by default**; legacy `--no-licenses` is a no-op) |
 | `--no-retire` | Skip retire.js vendored-JS scan |
 | `--no-vendored-js-inventory` | Keep only **vulnerable** vendored JS (chapter 2); skip the full **inventory** of all identified standalone JS libs (chapter 1D). The inventory is a cyber-hygiene constat — unmanaged third-party JS regardless of CVEs — on by default. |
 | `--no-jars` | Skip scanning embedded `.jar`/`.war`/`.ear` binaries for Maven coordinates (chapter 1B) |
