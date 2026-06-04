@@ -136,6 +136,25 @@ Suppressed findings are dropped from the report chapters and from `--fail-on`, b
 fad-checker -s . --fail-on kev --ignore .fadignore --report-sarif fad.sarif
 ```
 
+## Supply-chain risk (malware / typosquat)
+
+Two signals beyond known CVEs:
+
+- **Known-malicious packages** — any OSV `MAL-…` / malicious advisory that matches a
+  resolved dep is flagged `malicious` in the report + JSON, and **always blocks the gate**
+  (any `--fail-on` level, like a compromise). Always on; no flag needed.
+- **Typosquats** (`--typosquat`, opt-in) — a *heuristic*: flags an npm/PyPI dependency
+  whose name is one Damerau edit (incl. an adjacent transposition: `lodahs`↔`lodash`) from
+  a popular package in `data/popular-packages.json`. Catches typosquat/"slopsquat" names
+  no vuln DB knows yet. Conservative (distance 1, length ≥ 5, non-scoped) — on a clean
+  25-module project it flagged 0 of 1331 deps — but it **is** a heuristic: review each
+  hit, and add legitimate near-misses to the popular list to suppress them.
+
+```bash
+fad-checker -s . --typosquat                       # add the typosquat heuristic
+fad-checker -s . --fail-on critical                # malware blocks even below 'critical'
+```
+
 ## Offline / cache control
 
 ```bash

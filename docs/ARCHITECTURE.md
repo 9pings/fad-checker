@@ -28,6 +28,7 @@ lib/transitive.js            Maven Central POM walker (transitive resolution).
 lib/version-overlay.js       Per-module version-mediation overlay (recovers transitive versions the global pass masks via cross-module depMgmt bleed; additive).
 lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
 lib/osv-db.js                Offline-complete OSV matching from an imported local OSV DB (Maven; `--osv-db`).
+lib/malware.js               Supply-chain risk lane: known-malicious (MAL-) flagging + offline typosquat heuristic (`--typosquat`).
 lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configurations).
 lib/epss.js                  EPSS (FIRST.org) percentile/score enrichment (24h cache).
 lib/kev.js                   CISA KEV catalogue membership enrichment (24h cache).
