@@ -887,6 +887,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// scanner is owned by the npm codec but runs whenever --retire is on.
 	let retireMatches = [];
 	let vendoredJsInventory = [];
+	let retireWarnings = [];
 	if (willRetire) {
 		const st = progress.start("retire.js (vendored JS)");
 		const sc = (getCodec("npm").nativeScanners || []).find(s => s.kind === "vendored");
@@ -898,8 +899,15 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 				retireMatches = r.matches || [];
 				if (options.vendoredJsInventory !== false) vendoredJsInventory = r.meta?.inventory || [];
 				const invN = vendoredJsInventory.length;
-				st.done(`${retireMatches.length} finding(s)${invN ? ` · ${invN} lib(s) inventoried` : ""}`);
-			} catch (err) { st.fail(err.message); }
+				if (r.meta?.error) {
+					// A genuine scan failure — surface it instead of letting an empty
+					// vendored-JS chapter look like "nothing found".
+					st.fail(r.meta.error);
+					retireWarnings.push({ type: "retire-failed", message: `${r.meta.error} — the vendored-JS scan (chapters 1D / 2) could not run, so any vendored \`.js\` (jQuery, Bootstrap, …) is NOT covered. Re-run with \`-v\` for the exact error; check the \`--src\` path exists and is readable.` });
+				} else {
+					st.done(`${retireMatches.length} finding(s)${invN ? ` · ${invN} lib(s) inventoried` : ""}`);
+				}
+			} catch (err) { st.fail(err.message); retireWarnings.push({ type: "retire-failed", message: `retire.js scan failed: ${err.message} — vendored-JS chapters (1D / 2) not covered.` }); }
 		}
 	}
 
@@ -1102,6 +1110,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		}] : []),
 		...npmWarnings,
 		...scanWarnings,
+		...retireWarnings,
 		...(privateLibIds.length ? [{
 			type: "private-libs",
 			count: privateLibIds.length,

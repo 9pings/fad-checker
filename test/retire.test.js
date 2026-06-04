@@ -88,3 +88,32 @@ test("retire findings cache is versioned: legacy entry (no _schema) is a cache M
 		try { fs.unlinkSync(cachePath); } catch { /* best effort */ }
 	}
 });
+
+test("scanWithRetireFull surfaces a scan failure instead of silently returning empty", async () => {
+	const fs = require("fs");
+	// Needs local signatures to actually reach the scan path (offline). Mirrors the
+	// conditional style of the ensureSignatures test above.
+	if (!fs.existsSync(R.RETIRE_SIG_FILE)) return;
+	// A non-existent source dir makes retire crash (walkdir ENOENT) → empty output.
+	// That must be reported, not turned into a clean "nothing found" (the bug that
+	// hid a vendored-JS chapter when the scan actually died).
+	const r = await R.scanWithRetireFull("/no/such/path-" + process.pid + "-" + process.ppid, { offline: true, force: true });
+	assert.strictEqual(r.inventory.length, 0);
+	assert.strictEqual(r.matches.length, 0);
+	assert.ok(r.error, "a retire scan failure must be reported in the result, not swallowed");
+});
+
+test("retireFailureReason extracts the meaningful error line, not a stack frame", () => {
+	const stderr = [
+		"Exception caught:  Error: error reading first path in the walk /proj/cnaps",
+		"Error: ENOENT: no such file or directory, lstat '/proj/cnaps'",
+		"    at EventEmitter.<anonymous> (/x/walkdir.js:265:28)",
+		"    at FSReqCallback.oncomplete (node:fs:195:21)",
+	].join("\n");
+	const reason = R.retireFailureReason(stderr, "fallback");
+	assert.match(reason, /ENOENT|no such file/i);
+	assert.ok(!/^\s*at /.test(reason), "must not be a stack frame");
+	// Empty stderr → fallback.
+	assert.strictEqual(R.retireFailureReason("", "the-fallback"), "the-fallback");
+	assert.strictEqual(R.retireFailureReason("   \n  \n", "fb"), "fb");
+});
