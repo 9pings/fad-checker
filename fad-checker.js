@@ -239,6 +239,7 @@ program
 	.option("--osv-db", "import + match the full local OSV database (Maven) — offline-complete recall, independent of the per-dep OSV cache")
 	.option("--osv-db-refresh", "force re-download of the local OSV database")
 	.option("--snyk", "run snyk on cleaned POMs and merge into report (requires --target)")
+	.option("--typosquat", "flag npm/PyPI deps whose name is one edit from a popular package (heuristic typosquat/slopsquat detection)")
 	.option("--no-retire", "skip retire.js vendored-JS scan")
 	.option("--no-vendored-js-inventory", "don't list ALL identified vendored JS libs (chapter 1D) — keep only the vulnerable ones (chapter 2)")
 	.option("--retire-refresh", "ignore retire cache and re-scan")
@@ -1043,6 +1044,22 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		}
 	}
 
+	// 6b. Supply-chain risk lane (pure + offline): flag KNOWN-MALICIOUS advisories
+	// (OSV MAL-… already in the match set) always, and detect suspected TYPOSQUATS
+	// (opt-in --typosquat, heuristic — names one edit from a popular package).
+	const { flagMalicious, detectTyposquats } = require("./lib/malware");
+	const maliciousCount = flagMalicious(cveMatches);
+	const typosquats = options.typosquat ? detectTyposquats(resolved) : [];
+	if (maliciousCount || typosquats.length) {
+		ui.section("Supply-chain risk");
+		if (maliciousCount) ui.warn(chalk.red.bold(`${maliciousCount} KNOWN-MALICIOUS package advisory(ies) (MAL-…) — treat the build as compromised`));
+		if (typosquats.length) {
+			ui.warn(`${typosquats.length} suspected typosquat(s) — heuristic, verify each is intentional:`);
+			for (const t of typosquats.slice(0, 15)) console.log("    " + chalk.yellow(t.name) + chalk.dim(` (${t.ecosystem}) ≈ ${t.resembles}`));
+			if (typosquats.length > 15) console.log(chalk.dim(`    …and ${typosquats.length - 15} more (see JSON export)`));
+		}
+	}
+
 	// Split prod vs dev based on the dep's isDev flag (set at collection time
 	// from Maven scope=test/provided and npm dev/devOptional/optional). Keep the
 	// full per-bucket list (including cpeFiltered) so the HTML report can render
@@ -1277,7 +1294,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		try {
 			const { writeFindings } = require("./lib/json-export");
 			await ensureDir(out.json);
-			writeFindings({ cveMatches, retireMatches, vendoredJsInventory, eolResults, obsoleteResults, outdatedResults, licenseResults, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version }, out.json);
+			writeFindings({ cveMatches, retireMatches, vendoredJsInventory, eolResults, obsoleteResults, outdatedResults, licenseResults, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version, typosquats }, out.json);
 			wrote.push(["Findings JSON", out.json]);
 		} catch (err) { ui.warn(`JSON export failed: ${err.message}`); }
 	}
@@ -1304,9 +1321,12 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		const { evaluateGate } = require("./lib/gate");
 		// Embedded-binary findings are real production risk → gate on them too.
 		const gate = evaluateGate([...prodActive, ...embeddedActive], options.failOn);
-		if (gate.failed) {
+		// A known-malicious package always blocks, regardless of the --fail-on level.
+		const maliciousActive = [...prodActive, ...embeddedActive].filter(m => m.malicious);
+		if (gate.failed || maliciousActive.length) {
 			ui.section("Gate");
-			console.log(chalk.red(`✗ --fail-on ${options.failOn}: ${gate.reason}`));
+			if (maliciousActive.length) console.log(chalk.red.bold(`✗ ${maliciousActive.length} known-malicious package(s) detected — always blocks`));
+			if (gate.failed) console.log(chalk.red(`✗ --fail-on ${options.failOn}: ${gate.reason}`));
 			process.exitCode = 1;
 		} else if (verbose) {
 			ui.info(chalk.dim(`--fail-on ${options.failOn}: no blocking finding`));

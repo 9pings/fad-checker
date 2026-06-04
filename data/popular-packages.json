@@ -1,0 +1,39 @@
+{
+  "_comment": "Curated list of widely-used npm + PyPI packages used as TYPOSQUAT TARGETS by lib/malware.js#detectTyposquats. A resolved dep whose name is edit-distance 1 from one of these (but isn't it) is flagged as a suspected typosquat/slopsquat. Not exhaustive — focused on the most-impersonated packages. Add names here to widen proactive coverage.",
+  "npm": [
+    "react", "react-dom", "lodash", "express", "axios", "chalk", "commander", "request",
+    "debug", "async", "moment", "underscore", "jquery", "webpack", "babel-core", "vue",
+    "angular", "typescript", "eslint", "prettier", "jest", "mocha", "chai", "bluebird",
+    "yargs", "glob", "minimist", "colors", "dotenv", "body-parser", "cors", "mongoose",
+    "redux", "next", "gatsby", "rxjs", "classnames", "prop-types", "uuid", "bcrypt",
+    "jsonwebtoken", "passport", "nodemon", "node-fetch", "cross-env", "rimraf", "fs-extra",
+    "semver", "validator", "winston", "morgan", "helmet", "sequelize", "knex", "mysql",
+    "redis", "ioredis", "dayjs", "date-fns", "ramda", "immutable", "styled-components",
+    "tailwindcss", "postcss", "autoprefixer", "browserify", "rollup", "parcel", "esbuild",
+    "husky", "lint-staged", "concurrently", "nanoid", "form-data", "tslib", "core-js",
+    "socket.io", "nodemailer", "puppeteer", "playwright", "cheerio", "inquirer", "ora",
+    "execa", "chokidar", "ws", "got", "undici", "zod", "yup", "formik", "react-router",
+    "react-router-dom", "react-redux", "vuex", "pinia", "svelte", "preact", "ant-design",
+    "bootstrap", "jquery-ui", "three", "d3", "chart.js", "leaflet", "highlight.js",
+    "marked", "handlebars", "ejs", "pug", "nunjucks", "graphql", "apollo-server",
+    "mongodb", "pg", "typeorm", "prisma", "jsdom", "supertest", "sinon", "nyc", "ava",
+    "babel-loader", "ts-loader", "css-loader", "style-loader", "html-webpack-plugin",
+    "colord"
+  ],
+  "pypi": [
+    "requests", "numpy", "pandas", "flask", "django", "scipy", "matplotlib", "pillow",
+    "setuptools", "wheel", "urllib3", "certifi", "pytest", "six", "click", "jinja2",
+    "werkzeug", "sqlalchemy", "boto3", "botocore", "pyyaml", "cryptography",
+    "beautifulsoup4", "lxml", "scikit-learn", "tensorflow", "keras", "scrapy",
+    "celery", "psycopg2", "pymongo", "fastapi", "uvicorn", "pydantic", "aiohttp",
+    "httpx", "tqdm", "colorama", "rich", "typer", "python-dateutil", "pytz", "attrs",
+    "packaging", "idna", "charset-normalizer", "markupsafe", "openpyxl", "tornado",
+    "gunicorn", "redis", "selenium", "paramiko", "fabric", "pyjwt", "passlib", "bcrypt",
+    "marshmallow", "flask-sqlalchemy", "flask-cors", "flask-restful", "django-rest-framework",
+    "djangorestframework", "gevent", "greenlet", "asgiref", "starlette", "anyio",
+    "httpcore", "sniffio", "wrapt", "decorator", "more-itertools", "toml", "tomli",
+    "pyparsing", "jsonschema", "protobuf", "grpcio", "boto", "awscli", "google-api-python-client",
+    "opencv-python", "imageio", "networkx", "sympy", "statsmodels", "seaborn", "plotly",
+    "dash", "streamlit", "jupyter", "ipython", "notebook", "nbconvert", "cython"
+  ]
+}
