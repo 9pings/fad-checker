@@ -9,7 +9,7 @@ fad-checker -s <src> [-t <target>] [-e <regex>] [other options]
 ```
 
 - `-s, --src <src>` — **required**. Root of the source tree to scan. Contains `pom.xml` and/or `package(-lock).json` / `yarn.lock`.
-- `-t, --target <dir>` — optional. If given, write a parallel directory of "cleaned" POMs (private/excluded deps stripped) to `<dir>` — useful as Snyk input. Without `-t`, the run is read-only.
+- `-t, --target <dir>` — optional. If given, write a parallel directory of "cleaned" POMs (private/excluded deps stripped) to `<dir>` **and mirror every non-Maven lockfile/manifest** (`package-lock.json`/`yarn.lock`/`pnpm-lock.yaml`, `composer.lock`, `poetry.lock`/`Pipfile.lock`/…, `*.csproj`/`packages.lock.json`, `go.mod`/`go.sum`, `Gemfile.lock`, …) into it — so `snyk test --all-projects` on `<dir>` scans **every** ecosystem, not just Maven. Without `-t`, the run is read-only.
 
 ## Output
 

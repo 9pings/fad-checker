@@ -597,6 +597,18 @@ async function timedPhase(label, fn) {
 		}
 	}
 
+	// Mirror every non-Maven lockfile/manifest (npm/yarn/pnpm, composer, pypi, nuget,
+	// go, ruby) into the cleaned tree so `snyk test --all-projects` scans the WHOLE
+	// polyglot project, not just the cleaned POMs. Maven POMs are the rewrite above.
+	let copiedManifests = 0;
+	if (!readOnly) {
+		try {
+			const { copyEcosystemManifests } = require("./lib/manifest-copy");
+			const r = await copyEcosystemManifests(options.src, options.target, { excludePath, defaultExcludes });
+			copiedManifests = r.copied;
+		} catch (err) { console.error(chalk.red("  ✗ manifest copy failed:"), err.message); }
+	}
+
 	// ---------- Maven POM analysis summary (parents missing / excluded) ----------
 	let privateLibIds = [];
 	if (runMaven && mavenCtx) {
@@ -672,6 +684,10 @@ async function timedPhase(label, fn) {
 
 		if (!readOnly) ui.ok(`${chalk.bold(wrotePom)} cleaned POM(s) written → ${chalk.white(options.target)}`);
 		else ui.info(chalk.dim(`${wrotePom} POM(s) cleanable (read-only — pass -t <dir> to write them)`));
+	}
+
+	if (!readOnly && copiedManifests) {
+		ui.ok(`${chalk.bold(copiedManifests)} non-Maven lockfile/manifest(s) mirrored → ${chalk.white(options.target)} ${chalk.dim("(so snyk --all-projects scans every ecosystem)")}`);
 	}
 
 	// ---------- Scan flow (CVE / EOL / Obsolete) ----------

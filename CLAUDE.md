@@ -6,7 +6,7 @@ Code-level orientation for contributors and Claude Code sessions on this repo.
 
 `fad-checker` — **Fucking Autonomous Dependency Checker**. Node.js CLI (`fad-checker`, or short alias `fad`) that:
 
-1. Walks a multi-module Maven tree, removes private/excluded dependencies (regex on groupId), writes a parallel directory of "cleaned" POMs that can be fed to Snyk.
+1. Walks a multi-module Maven tree, removes private/excluded dependencies (regex on groupId), writes a parallel directory of "cleaned" POMs that can be fed to Snyk — and **mirrors every non-Maven lockfile/manifest** (npm/yarn/pnpm, composer, pypi, nuget, go, ruby) into that same tree (`lib/manifest-copy.js`) so `snyk test --all-projects` on the cleaned tree scans every ecosystem, not just Maven.
 2. Walks every JS package (`package.json` + `package-lock.json` v1/v2/v3, `yarn.lock` v1 **or Berry/v2+**, or `pnpm-lock.yaml` v5/v6/v9), every PHP package (`composer.lock`, or `composer.json` best-effort), and every Python project (`poetry.lock`/`Pipfile.lock`/`uv.lock`/`pdm.lock`, or `pyproject.toml`/`requirements.txt` best-effort), and every .NET project (`packages.lock.json`, or `*.csproj`/`*.fsproj`/`*.vbproj`+`Directory.Packages.props`/`packages.config` best-effort), every Go module (`go.mod`/`go.sum`) and every Ruby app (`Gemfile.lock`) in the same source tree. Each ecosystem is a **codec** (`lib/codecs/`): maven, npm, yarn, composer, pypi, nuget, go, ruby, binary. Adding one is adding a codec. The Maven codec additionally scans **embedded binaries** — committed `.jar`/`.war`/`.ear` archives (vendored libs, Spring-Boot fat-jars, shaded uber-jars) are unzipped in-memory (via `fflate`, recursing into nested jars without touching disk) and their Maven coordinates read from `META-INF/maven/.../pom.properties` → `MANIFEST.MF` → file name. These get `provenance: "embedded"` and are listed in their own **report chapter 1B** — a full inventory of *every* embedded coordinate (vulnerable or not, the JAR twin of chapters 1C/1D), with CVE status cross-referenced per coord and the full CVE detail for vulnerable ones (`--no-jars` to disable; built by `lib/embedded.js#buildEmbeddedInventory`, shared by the HTML report + JSON export). The **binary codec** finds committed **native binaries** — `.dll`/`.exe`/`.so`/`.dylib` that no package manager governs — selected by extension **and** magic-byte confirmation (PE/ELF/Mach-O; images/fonts/assets are rejected even with a spoofed extension), hashed (SHA-1 + SHA-256, `provenance: "binary"`), then **identified by checksum** online (deps.dev query-by-hash → exact package coordinate; CIRCL hashlookup → known OS/distro/CDN/NSRL file + free `KnownMalicious` flag) to answer two questions: is it **unmodified/known** (integrity), and does it **exist in a registry and therefore belong as a declared dependency** (governance). Surfaced in report **chapter 1C (Unmanaged / vendored binaries)** (`--no-binaries` to disable). No malware/antivirus lane and no binary-metadata parsing — identity is hash-lookup, integrity is hash-comparison.
 3. Scans the union against:
    - the CVEProject `cvelistV5` Maven-relevant index (built locally),
@@ -26,7 +26,7 @@ No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` /
 
 ```bash
 npm install
-npm test                  # 433 unit tests via node --test
+npm test                  # 435 unit tests via node --test
 
 # basic cleanup workflow
 node fad-checker.js -s ./proj                                        # read-only, full report
@@ -98,6 +98,7 @@ lib/suppress.js              Triage: parse --ignore rules + --vex (CSAF) → sup
 lib/outdated.js              EOL (endoflife.date), obsolete (curated), outdated (Maven Central).
 lib/transitive.js            Maven Central POM walker (transitive resolution) + effectivePom() (BOM/parent merge).
 lib/maven-bom.js             External import-BOM (spring-boot-dependencies, …) resolution → backfill versionless declared deps. Online+cached, offline-aware.
+lib/manifest-copy.js         `-t` cleaned-tree write: mirror non-Maven lockfiles/manifests (npm/composer/pypi/nuget/go/ruby) → target so `snyk --all-projects` scans every ecosystem.
 lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
 lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configurations).
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
@@ -143,7 +144,7 @@ For the deep dive — pipeline stages, the resolved-deps Map shape, report struc
 ## Testing
 
 ```bash
-node --test test/*.test.js            # full suite (433 tests)
+node --test test/*.test.js            # full suite (435 tests)
 node --test test/core.test.js         # one file
 ```
 
