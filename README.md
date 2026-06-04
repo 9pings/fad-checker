@@ -5,7 +5,8 @@
 [![license](https://img.shields.io/npm/l/fad-checker.svg)](https://github.com/n8tz/fad-checker/blob/main/package.json)
 [![node](https://img.shields.io/node/v/fad-checker.svg)](https://nodejs.org)
 
-> **F**ucking **A**utonomous **D**ependency **C**hecker
+> **F**abulous **A**utonomous **D**ependency **C**hecker<br>
+> AKA **F**uckin' **A**utonomous **D**ependency **C**hecker<br>
 
 `fad-checker` scans **Maven**, **npm**, **Yarn**, **Composer (PHP)**, **PyPI (Python)**, **NuGet (C#/.NET)**, **Go**, **Ruby**, **vendored JavaScript** and **committed native binaries** in any source tree — multi-module, monorepo, polyglot, whatever you've got — and produces a single self-contained HTML report with CVE (prioritised by **EPSS + CISA KEV**), EOL, obsolete, outdated and **license** findings, plus per-ecosystem fix recipes. It also exports a **CycloneDX 1.6 SBOM** and a **CSAF 2.0 VEX**.
 
@@ -53,6 +54,7 @@ Exactly **one** runtime dependencies must be on PATH (or installed automatically
 | **1D. Unmanaged / vendored JavaScript** | [retire.js](https://retirejs.github.io/) (`--verbose`) | **Inventory of every standalone JS lib** committed into the tree (jQuery, Bootstrap, PDF.js, …) that no package manager governs — vulnerable *or not*. A cyber-hygiene constat: unknown provenance/integrity/patch story. `--no-vendored-js-inventory` to skip |
 | **2. Vendored JS (vulnerable)** | [retire.js](https://retirejs.github.io/) | The subset of the above with known CVEs/advisories — old jQuery/Bootstrap/Angular/PDF.js copies with no lockfile |
 | **3. CVE in dev deps** | same | Same as chapter 1, but for `test`/`provided` (Maven) and `dev`/`optional`/`peer` (npm) |
+| **Supply-chain risk** | OSV `MAL-…` + name heuristic | **Known-malicious** packages (always block the CI gate, any `--fail-on` level) and **suspected typosquats** (`--typosquat`: an npm/PyPI name one edit from a popular package — `lodahs`↔`lodash`) |
 | **4. EOL frameworks** | endoflife.date | Spring Boot 2.5, Hibernate 4.x, EOL JDKs, AngularJS, Laravel/Symfony, Django, .NET, etc. |
 | **5. Obsolete libraries** | curated list (Maven) + registry maintainer flags | log4j 1.x, jackson-mapper-asl, joda-time, …; npm `deprecated`, Composer `abandoned`, PyPI `yanked`/inactive, NuGet `deprecation` |
 | **6. Outdated libraries** | Maven Central + npm / Packagist / PyPI / NuGet registries | Available newer versions, with release dates |
@@ -102,8 +104,16 @@ fad-checker -s ./proj -t ../proj-clean -e "^com\.acme\." --snyk
 # Faster: skip Maven Central / no transitive walk
 fad-checker -s ./proj --no-all-libs --no-transitive
 
-# Fully offline (uses cached data only)
+# Fully offline (uses cached data only) — zero network, guaranteed (see Air-gapped below)
 fad-checker -s ./proj --offline
+
+# Offline-COMPLETE OSV recall (Maven): import the full OSV DB once, then match offline
+# regardless of the per-dep cache (the OSV-Scanner air-gap model)
+fad-checker -s ./proj --osv-db                     # online: download (~9 MB) + match
+fad-checker -s ./proj --osv-db --offline           # offline: match against the imported DB
+
+# Supply-chain risk: known-malicious packages always flagged; add the typosquat heuristic
+fad-checker -s ./proj --typosquat
 
 # License + copyleft-policy chapter (off by default)
 fad-checker -s ./proj --licenses
@@ -200,6 +210,11 @@ fad-checker --completion zsh  > ~/.zsh/completions/_fad-checker
 | Vendored JS / binaries | the committed `.js` / `.jar` / `.so` files themselves | n/a (read in place) |
 
 Highlights of the matching layer: **three CVE sources merged** (CVEProject + OSV.dev + NVD), **CPE/version cross-check** to drop false positives, **EPSS + CISA KEV** prioritisation, lockfile-first with a **best-effort pinned-version fallback** when no lockfile, in-memory **embedded-JAR** unzip (no disk, no zip-slip), and **checksum identity** for native binaries. Outputs: HTML + `.doc` by default, plus opt-in `--report-sbom`/`-csaf`/`-json`/`-sarif`; CI gating via `--fail-on` with `--ignore`/`--vex` triage.
+
+Two things set the Maven path apart for multi-module / air-gapped work:
+
+- **Per-module version mediation** (automatic). The global transitive pass resolves the whole reactor as one tree; that can let a `<dependencyManagement>` pin in one module hide an *older, vulnerable* transitive of the same library in another module. fad re-resolves each module with **only its own** effective depMgmt and recovers those masked versions — on a real 25-module project that lifted Snyk-corroborated coverage **156 → 181**, recovering CVEs (e.g. `poi 3.11` / CVE-2017-12626) that a single Snyk scan of the tree missed.
+- **Offline-complete OSV** (`--osv-db`). Imports the full OSV database (Maven) once, then matches every dep against it offline — so air-gapped recall no longer depends on which deps the per-dep OSV cache happened to warm (the [OSV-Scanner](https://github.com/google/osv-scanner) `--download-offline-databases` model). On a cold-cache offline run that's the difference between **6** and **117** of 202 findings covered.
 
 > Full per-ecosystem and per-stage detail lives in **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** and **[`docs/USAGE.md`](docs/USAGE.md)**.
 
@@ -367,6 +382,7 @@ of thing a security consultant or an ANSSI-PASSI engagement needs.
 | CI gating (`--fail-on`) + triage | ✅ severity/KEV + ignore/VEX | ✅ | ✅ | ✅ | ⚠️ | ✅ |
 | Auto-remediation / PRs | ❌ (fix recipes only) | ✅ `fix` | ❌ | ❌ | ❌ | ✅ |
 | Offline | ✅ cache | ✅ local DB | ✅ | ✅ | ✅ feed | ❌ mostly online |
+| Offline Maven **transitive** graph³ | ✅ cached POMs | ❌ disabled offline | ❌ | ❌ | ⚠️ mirror | ❌ |
 | **Scan without exposing the codebase**² | ✅ anonymized descriptor | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Maven private-dep cleanup** (→ Snyk) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Output | **HTML + Word `.doc`** + JSON / SARIF / CycloneDX / CSAF | table/JSON/SARIF | table/JSON/SARIF | table/JSON/SARIF | HTML/XML/JSON | JSON / cloud UI |
@@ -376,6 +392,11 @@ of thing a security consultant or an ANSSI-PASSI engagement needs.
 ² Phase 1 exports only public coordinates; the online scan never sees your source tree —
 see [Air-gapped / PASSI](#air-gapped--passi-audits-anonymized-dependency-descriptor). OSV-Scanner
 has an offline mode, but it still needs the **source on the scanning machine**.
+
+³ Measured on a 25-module Spring/JSF project, fully air-gapped: fad covered **181/202**
+Snyk-corroborated findings vs OSV-Scanner v2.3.8's **64/202** — **0 on Maven**, because its
+transitive resolution is disabled without network. fad resolves the Maven graph from cached
+POMs (and `--osv-db` makes its offline OSV recall cache-independent).
 
 **Where it fits:** a one-shot audit of a polyglot checkout you may not be able to build, a
 presentable HTML/Word deliverable, and confidential / air-gapped engagements.
