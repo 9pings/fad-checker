@@ -127,6 +127,7 @@ For the deep dive — pipeline stages, the resolved-deps Map shape, report struc
 ## Important conventions
 
 - **`coord()` always trims**: real-world POMs occasionally contain whitespace around `<artifactId>`. Every coord-derived lookup goes through `coord()` in `lib/core.js`.
+- **Coordinates are `${…}`-interpolated, not just versions**: a declared dep's `groupId`/`artifactId` can be a Maven expression too — reactor sibling deps routinely use `${project.groupId}`/`${project.artifactId}` (built-ins, present in each pom's `props` via `core.js` `localVars`). `collectResolvedDeps` (and `version-overlay`) run `resolveDepVersion()` over **g/a/v**, so coords resolve to `com.acme:sibling`, never a literal `${project.groupId}:…`. (Raw `${…}` is kept in the rewritten cleaned POM on purpose — Snyk's own `mvn` resolves it.)
 - **`byId` keys are never polluted with `undefined`**: only indexed when both `groupId` and `artifactId` are present. Enforced by test.
 - **All profiles are merged, never prompted for**: every profile's deps are unioned so Snyk sees every dep any profile could pull in. `activeByDefault` wins only for property value conflicts.
 - **No `process.exit(1)` mid-pipeline**: a parse/rewrite failure for one POM logs and continues so the summary still prints.
