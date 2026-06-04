@@ -147,6 +147,12 @@ fad-checker -s . --cve-offline                  # use cached CVE index only
 fad-checker -s . --cve-refresh                  # force re-download of CVE bundle
 fad-checker -s . --retire-refresh               # force re-scan with retire.js (ignore cache)
 
+# Offline-COMPLETE OSV (Maven): import the full OSV database once, then match offline
+# regardless of the per-dep OSV cache (the OSV-Scanner air-gap model).
+fad-checker -s . --osv-db                        # online: download (~9 MB) + match
+fad-checker -s . --osv-db --offline              # offline: match against the imported DB
+fad-checker -s . --osv-db --osv-db-refresh       # force re-download of the OSV DB
+
 # Cache export / import (useful for air-gapped boxes)
 fad-checker --export-cache fad-cache.tar.gz
 fad-checker --export-cache fad-cache.tar.gz --include-config   # bundle NVD key too

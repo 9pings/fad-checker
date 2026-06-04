@@ -101,6 +101,7 @@ lib/maven-bom.js             External import-BOM (spring-boot-dependencies, …)
 lib/version-overlay.js       Per-module version-mediation overlay: re-resolves EACH module with ONLY its own effective depMgmt (local parent chain + external parent/import-BOMs) → APPENDS transitive versions the global pass masks via cross-module depMgmt bleed. Additive (never removes), offline-aware, effCache-memoised.
 lib/manifest-copy.js         `-t` cleaned-tree write: mirror non-Maven lockfiles/manifests (npm/composer/pypi/nuget/go/ruby) → target so `snyk --all-projects` scans every ecosystem.
 lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
+lib/osv-db.js                Offline-COMPLETE OSV matching from an imported local OSV DB (Maven `all.zip` → compact index). `--osv-db`. Fills offline Maven recall when the per-dep OSV cache is cold (different machine / TTL-expired / offline-discovered deps); reuses osv.js#vulnToMatch + maven-version range eval. Additive (merges via mergeBySource, online +0).
 lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configurations).
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
 lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser. Runs with --verbose; extractVendoredInventory() lists ALL identified libs (vuln or not) → report chapter 1D; scanWithRetireFull() returns {matches, inventory, error}. A real scan FAILURE (retire crashed / empty-unparseable output) sets `error` (via diag) → surfaced as a chapter-0 `retire-failed` warning instead of a silent empty 1D. Cache body carries `_schema:2`; an entry without it (pre-verbose build) is a cache MISS so the inventory isn't silently emptied offline. **Launcher** (`findRetireLauncher`/`chooseRetireLauncher`): node dev runs `node_modules/.bin/retire`; the **bun-compiled single binary** has no node_modules and an air-gapped box has no `retire` on PATH, so it **re-execs ITSELF** with `__FAD_RETIRE__=1` — `fad-checker.js`'s top guard then hands off to the statically-bundled `retire/lib/cli.js` (self-runs on require). So vendored-JS scanning works fully offline from the one binary; the only external input is the phase-2-warmed signature DB passed via `--jsrepo`.
@@ -180,6 +181,7 @@ Test fixtures live in `test/fixtures/`:
 | CVEProject bulk index | `~/.fad-checker/cve-data/maven-cve-index.json` | 24 h |
 | OSV per-dep stub list | `~/.fad-checker/osv-cache/<eco>__<g>__<a>__<v>.json` | 12 h |
 | OSV vuln details | `~/.fad-checker/osv-cache/vuln_<id>.json` | 12 h |
+| OSV local DB (Maven `all.zip` → index) | `~/.fad-checker/osv-db/maven-index.json` | 24 h (`--osv-db`; travels in the cache archive) |
 | NVD CVE record | `~/.fad-checker/nvd-cache/<cveId>.json` | 7 d |
 | EPSS scores | `~/.fad-checker/epss-cache.json` | 24 h |
 | CISA KEV catalogue | `~/.fad-checker/kev-cache.json` | 24 h |
