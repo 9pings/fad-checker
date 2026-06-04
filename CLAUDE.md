@@ -26,7 +26,7 @@ No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` /
 
 ```bash
 npm install
-npm test                  # 428 unit tests via node --test
+npm test                  # 433 unit tests via node --test
 
 # basic cleanup workflow
 node fad-checker.js -s ./proj                                        # read-only, full report
@@ -96,7 +96,8 @@ lib/json-export.js           Flat findings JSON (all chapters + summary, diff-fr
 lib/gate.js                  evaluateGate(matches, level): CI exit-code decision (none|…|critical|kev). Pure.
 lib/suppress.js              Triage: parse --ignore rules + --vex (CSAF) → suppress matches. Pure.
 lib/outdated.js              EOL (endoflife.date), obsolete (curated), outdated (Maven Central).
-lib/transitive.js            Maven Central POM walker (transitive resolution).
+lib/transitive.js            Maven Central POM walker (transitive resolution) + effectivePom() (BOM/parent merge).
+lib/maven-bom.js             External import-BOM (spring-boot-dependencies, …) resolution → backfill versionless declared deps. Online+cached, offline-aware.
 lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
 lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configurations).
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
@@ -142,7 +143,7 @@ For the deep dive — pipeline stages, the resolved-deps Map shape, report struc
 ## Testing
 
 ```bash
-node --test test/*.test.js            # full suite (428 tests)
+node --test test/*.test.js            # full suite (433 tests)
 node --test test/core.test.js         # one file
 ```
 
@@ -165,7 +166,7 @@ Test fixtures live in `test/fixtures/`:
 - **Machine-readable exports**: `--report-sbom [f]` writes a CycloneDX 1.6 SBOM with vulnerabilities inline (VDR); `--report-csaf [f]` writes a CSAF 2.0 VEX. Both use the full match set (prod+dev+embedded+cpeFiltered; cpeFiltered marked as a property/note rather than dropped). purls are built by `lib/purl.js`.
 - `snyk` is not a hard dep — shells out via `execFile`. `snyk` exits 1 on findings; the JSON is still on stdout.
 - The cleaned POM is the union of every profile's deps. Counts will be larger than the source POM. Intentional — don't "fix" that.
-- Unresolved `${…}` Maven variables stay verbatim in the rewritten POM. `lib/cve-match.js` resolves them lazily via `resolveDepVersion()` when scanning. Deps that *still* can't be resolved (external BOM not in source tree) surface in chapter 0 as `unresolved-versions` warnings (with the manifest path(s) they're declared in) — and are **excluded from CVE matching**: `matchOne` only compares CONCRETE versions, so an unversioned BOM-managed coord is never assumed-vulnerable to all its CVEs (`cve-match.js`; matches OSV's `!ver` skip). Don't reintroduce a `!ver → status==="affected"` shortcut — it floods the report with bogus CRITICALs shown as version `?`.
+- Unresolved `${…}` Maven variables stay verbatim in the rewritten POM. `lib/cve-match.js` resolves them lazily via `resolveDepVersion()` when scanning. **External import BOMs** (e.g. `spring-boot-dependencies`, imported in a local `<dependencyManagement>` with `<scope>import</scope>`) are resolved by `lib/maven-bom.js`: it collects the BOM coords from the parsed poms, fetches each via `transitive.js#effectivePom` (merges the BOM's parent chain, resolves its `${properties}`, recursively expands nested import BOMs → ~1500 managed versions for spring-boot) and **backfills** the version of every declared dep that pins none of its own. Runs in `runReportFlow` BEFORE transitive resolution (so backfilled versions feed it), online or offline (cached POMs, `poms-cache`, never blocks). This is why a typical Spring Boot project resolves its `spring-boot-starter-*` instead of dropping them. Deps that *still* can't be resolved (BOM unreachable, or offline+uncached) surface in chapter 0 as `unresolved-versions` warnings (with the manifest path(s) they're declared in) — and are **excluded from CVE matching**: `matchOne` only compares CONCRETE versions, so an unversioned coord is never assumed-vulnerable to all its CVEs (`cve-match.js`; matches OSV's `!ver` skip). Don't reintroduce a `!ver → status==="affected"` shortcut — it floods the report with bogus CRITICALs shown as version `?`.
 - **retire.js** doesn't like `--outputpath /dev/stdout`. We write to a temp file and read it back. Exit code 13 means "vulns found" — expected, not an error.
 - **retire.js signatures live in `~/.fad-checker/retire-signatures/jsrepository-v5.json`** (not retire's default `/tmp/.retire-cache`, whose 1 h TTL would force a network refetch). We pass them via `--jsrepo <file>` so retire loads from disk — **no network, no TTL**. `warmRetireSignatures()` fetches them online; `--export-cache` bundles them so phase-3 offline JS scanning works. retire is **offline-only** in the PASSI flow (it needs the actual `.js` files, absent online) and its findings cache stays path-keyed (`md5(srcDir)`), which is fine since it only runs on the same offline machine/path. With no source dir (`--import-anonymized`), `runRetire` returns `null` (nothing to scan).
 

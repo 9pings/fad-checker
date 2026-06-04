@@ -678,7 +678,7 @@ async function timedPhase(label, fn) {
 	// The scan always runs — it feeds the terminal summary, the file outputs and the
 	// CI gate. Which files get written is decided by the --report-* family inside
 	// (HTML + .doc by default; --no-report writes nothing).
-	await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings });
+	await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings, mavenPropsByPom: mavenCtx?.propsByPom });
 	if (!readOnly) {
 		ui.section("Next step");
 		ui.info(`run Snyk on the cleaned tree:`);
@@ -687,7 +687,7 @@ async function timedPhase(label, fn) {
 })();
 
 async function runReportFlow(resolved, ecoFlags = {}) {
-	const { activeIds = [], runMaven = true, runNpm = false, privateLibIds = [], mavenRepos = [], regMap = {}, collectWarnings = [] } = ecoFlags;
+	const { activeIds = [], runMaven = true, runNpm = false, privateLibIds = [], mavenRepos = [], regMap = {}, collectWarnings = [], mavenPropsByPom = null } = ecoFlags;
 	const registriesFor = eco => regMap[eco] || [];
 	const { expandWithTransitives } = require("./lib/cve-match");
 	const { writeReports, computeStats } = require("./lib/cve-report");
@@ -701,13 +701,9 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const npmWarnings = collectWarnings || [];
 	let scanWarnings = [];
 	const directCount = resolved.size;
-
-	// Scan-completeness signals: BOMs and unresolved-version deps mean fad-checker
-	// has gone as far as it can without running Maven/Snyk itself.
-	if (runMaven) {
-		const { detectScanCompletenessWarnings } = require("./lib/scan-completeness");
-		scanWarnings = detectScanCompletenessWarnings(resolved, { ranSnyk: !!options.snyk, ranTransitive: !!options.transitive });
-	}
+	// NOTE: scan-completeness (unresolved-versions) is computed LATER — after the BOM
+	// version-resolution step backfills external-BOM-managed versions — so it reflects
+	// what's *genuinely* still unresolved, not what a Maven Central BOM fetch will fix.
 
 	// ---- Vulnerability database update (global step progress) ----
 	ui.section("Vulnerability database update");
@@ -726,6 +722,13 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const otherRegistryIds = activeIds.filter(id => id !== "maven" && id !== "npm" && id !== "yarn" && getCodec(id)?.checkRegistry);
 	const willCve = !!cveScanner && (!(options.cveOffline || offline) || cveIndexExists);
 	const willTransitive = !!(options.transitive && runMaven);
+	// External import BOMs (e.g. spring-boot-dependencies): resolve their managed
+	// versions to backfill declared deps that pin no version of their own (the usual
+	// Spring Boot setup). Cached via poms-cache; offline-aware (uses warmed POMs,
+	// never the network — same as transitive resolution).
+	const importBoms = (runMaven && mavenPropsByPom)
+		? require("./lib/maven-bom").collectImportBoms(mavenPropsByPom) : [];
+	const willBom = importBoms.length > 0;
 	const willOsv = !!options.osv;
 	const willOutdated = !!options.allLibs;
 	const willNvd = !!options.nvd;
@@ -737,8 +740,17 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const willBinaryId = [...resolved.values()].some(d => d.provenance === "binary");
 	// License detection piggybacks on the registry passes (same fetched metadata),
 	// so it adds no progress step of its own.
-	const totalSteps = [willTransitive, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willNvd, willEpss, willKev, willRetire, willBinaryId].filter(Boolean).length;
+	const totalSteps = [willBom, willTransitive, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willNvd, willEpss, willKev, willRetire, willBinaryId].filter(Boolean).length;
 	const progress = new ui.Progress(totalSteps);
+
+	if (willBom) {
+		const st = progress.start("BOM version resolution (Maven Central)");
+		try {
+			const { resolveAndBackfill } = require("./lib/maven-bom");
+			const r = await resolveAndBackfill(mavenPropsByPom, resolved, { repos: mavenRepos, offline, verbose });
+			st.done(`${r.filled} dep version(s) from ${r.boms} import BOM(s)`);
+		} catch (err) { st.fail(err.message); }
+	}
 
 	if (willTransitive) {
 		const st = progress.start("Transitive resolution (Maven Central)");
@@ -750,6 +762,14 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			repos: mavenRepos,
 		});
 		st.done(`+${resolved.size - directCount} transitive (total ${resolved.size})`);
+	}
+
+	// Scan-completeness signals — computed NOW (after BOM backfill) so only the deps
+	// still without a concrete version (external BOM truly unreachable, or offline)
+	// are flagged, not the ones we just resolved from spring-boot-dependencies & co.
+	if (runMaven) {
+		const { detectScanCompletenessWarnings } = require("./lib/scan-completeness");
+		scanWarnings = detectScanCompletenessWarnings(resolved, { ranSnyk: !!options.snyk, ranTransitive: !!options.transitive });
 	}
 
 	// 1. CVE — native scanner contributed by the maven codec (local cvelistV5 index).
