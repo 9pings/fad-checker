@@ -398,7 +398,7 @@ Snyk-corroborated findings vs OSV-Scanner v2.3.8's **64/202** — **0 on Maven**
 transitive resolution is disabled without network. fad resolves the Maven graph from cached
 POMs (and `--osv-db` makes its offline OSV recall cache-independent).
 
-**Where it fits:** a one-shot audit of a polyglot checkout you may not be able to build, a
+**Where it fits:** a one-shot audit of a polyglot source code, needing a
 presentable HTML/Word deliverable, and confidential / air-gapped engagements.
 
 **Where it doesn't:** container/OS scanning,
