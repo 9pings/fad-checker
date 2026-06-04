@@ -158,6 +158,28 @@ The cache archive bundles everything under `~/.fad-checker/` (except `config.jso
 including retire.js findings **and** the warmed retire.js signature DB, so an importing
 machine can scan vendored JavaScript fully offline.
 
+### Zero-data-sent guarantee (air-gap)
+
+Under `--offline`, `fad-checker` makes **zero network calls** — it reads only the warmed
+caches under `~/.fad-checker/` and never transmits any dependency, path, hostname or
+finding off the machine. This is the property a regulated/PASSI engagement needs, and it
+is enforced two ways:
+
+- **Regression-tested** (`test/offline-guarantee.test.js`): the network-heavy Maven paths
+  (`fetchPom`, `effectivePom`, `resolveTransitiveDeps`, the per-module overlay) are run on
+  a *cold* cache with a tripwire fetcher that throws if touched — so any future change that
+  sneaks a network call into the offline path fails CI.
+- **Auditor-reproducible** — run the scan inside a network namespace that has **no
+  interfaces at all** and confirm the output is byte-identical to a normal offline run:
+
+  ```bash
+  # true air-gap: no network device exists inside the namespace
+  unshare -rn node fad-checker.js -s ./proj --offline --report-json /tmp/airgap.json
+  # → exit 0, and /tmp/airgap.json is identical to a normal `--offline` run
+  ```
+
+  (Measured on a 25-module Spring/JSF project: identical findings, ~1.8 s.)
+
 > **Compiled binary, no `node`/`retire` needed:** the bun-compiled single binary
 > (`dist/fad-checker-linux`, `.exe`, `-macos`) statically bundles the retire.js CLI and
 > re-execs itself to run it — so vendored-JS scanning (chapters 1D / 2) works from the

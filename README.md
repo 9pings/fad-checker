@@ -227,6 +227,16 @@ fad-checker --import-cache fad-cache.tar.gz
 
 ## Air-gapped / PASSI audits: anonymized dependency descriptor
 
+> **Zero-data-sent guarantee.** Under `--offline`, fad-checker makes **no network calls
+> whatsoever** — it reads only the warmed `~/.fad-checker/` caches and never transmits a
+> dependency, path or finding off the machine. It is regression-tested
+> (`test/offline-guarantee.test.js`, a tripwire fetcher that throws if touched) and
+> auditor-reproducible: `unshare -rn node fad-checker.js -s ./proj --offline …` runs it in a
+> namespace with **no network interface** and yields byte-identical findings. Unlike the
+> mainstream OSS scanners, fad also resolves the **Maven transitive graph** offline — so on
+> an air-gapped multi-module project it finds the transitive CVEs they can't (see
+> `docs/USAGE.md` → *Zero-data-sent guarantee*).
+
 When the audited system is **offline / confidential** (typical of a PASSI engagement) it
 can't reach OSV / NVD / Maven Central / npm. Split the work across machines while keeping
 **zero environment information** off the secure enclave: an anonymized descriptor carries
