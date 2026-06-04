@@ -412,7 +412,7 @@ async function timedPhase(label, fn) {
 }
 
 (async function main() {
-	ui.banner();
+	ui.banner(pkg.version);
 
 	// Build the Maven repo list once: persisted repos (from ~/.fad-checker/config.json)
 	// + ad-hoc --repo URLs + Maven Central as final fallback. Used by transitive
