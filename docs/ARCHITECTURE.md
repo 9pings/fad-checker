@@ -144,8 +144,22 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 ## Report structure
 
 ```
-<Executive Summary>            ← global criticality + key bullet counts
-<Summary cards>                ← critical / high / medium / low / KEV / EOL / obsolete / outdated / licenses
+<Executive Summary>            ← global criticality, then 3 blocks:
+                                  (1) top-3 most critical — DIRECT production deps first,
+                                      worst transitives only fill empty slots (tagged "transitive"),
+                                      each row listing ALL of that finding's CWEs beside it;
+                                  (2) the 2 most-overdue end-of-life frameworks;
+                                  (3) one-line "everything else" (high/critical counts,
+                                      dev CVE, vendored-JS, EOL/obsolete/outdated,
+                                      unmanaged native binaries, scan alerts).
+                                  "📋 Copy summary" yields a Word-pasteable rich+plain version of all three.
+<Summary cards>                ← critical / high / medium / low / KEV / EOL / obsolete / outdated / licenses (compacted to one line)
+<Overview charts>              ← 4 inline-SVG donuts on one row under the totals (lib/charts.js):
+                                  CWE of direct vulns (legend = CWE titles) · sub-dep CVEs per root dep
+                                  (CVE count, legend = readable dep name; rootless/npm shown as a note) ·
+                                  direct vs transitive (per-severity counts in the legend) · fix-priority
+                                  bands. Each donut has a "📋 Copy chart" button (SVG→canvas→PNG →
+                                  clipboard) for pasting into Word.
 <Toolbar>                      ← expand-all / collapse-all / expand CVE details
 
 0. Warnings & scan-completeness ← chapter 0 if any warnings
