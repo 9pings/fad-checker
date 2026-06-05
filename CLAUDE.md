@@ -17,7 +17,7 @@ Code-level orientation for contributors and Claude Code sessions on this repo.
    - optionally Snyk (`--snyk`).
 4. Cross-checks every match's NVD CPE configurations against the dep version (`lib/cpe.js`) to filter false positives, then computes a **composite priority** per match (`lib/priority.js`): KEV (exploited) > EPSS-weighted CVSS, exposed as a band + score and used to sort the report.
 5. Reports EOL frameworks (endoflife.date — Maven & npm), obsolete libs (curated Maven + npm-registry per-version `deprecated` field — authoritative, skips nothing), outdated libs (Maven Central + npm registry `dist-tags.latest`), and **licenses** (`lib/license-policy.js`, **opt-in — off by default, enable with `--licenses`**): each dep's license is normalised to SPDX and classified (permissive / weak / strong / network copyleft / proprietary / unknown), with copyleft & unknown flagged. **WebJars** (`org.webjars*`) are reduced to their npm coordinate by `webjarToNpm()` and run through the npm EOL/deprecation/outdated paths — so e.g. `org.webjars:angularjs:1.8.3` is flagged EOL. Each EOL finding is **traceable to its origin**: the report's EOL chapter shows a **Source** column (`endoflife.date/<slug>` + the `data/eol-mapping.json` rule that matched — `via`/`viaKey`, one of group-artifact/group-prefix/npm-name/npm-scope/webjar/composer-name/pypi-name/nuget-name), and for a **transitive** ("dep of a dep") EOL finding the Dependency column renders the resolver's `via` chain (`root → … → dep`) instead of a defining manifest.
-6. Produces a self-contained HTML report + Word-compatible `.doc`, organised by ecosystem and by defining manifest, with a Priority column, a Licenses chapter, per-tool fix recipes and an executive summary. Also exports machine-readable **CycloneDX 1.6 SBOM** (vulnerabilities inline, `--report-sbom`), **CSAF 2.0 VEX** (`--report-csaf`), a flat **findings JSON** (`--report-json`) and a **SARIF 2.1.0** log for GitHub/GitLab code scanning (`--report-sarif`).
+6. Produces a self-contained HTML report + Word-compatible `.doc`, organised by ecosystem and by defining manifest, with a Priority column, a Licenses chapter, per-tool fix recipes and a structured **executive summary** (`renderExecutiveSummary` in `lib/cve-report.js`): three blocks — (1) the **top-3 most critical** ranked by composite priority, scoped to **direct production deps** with worst-transitive fallback (tagged `transitive`, picked by `pickTopCriticalMatches`), **each row listing ALL of that finding's CWEs** right beside it (not a separate report-wide CWE aggregate — that whole-report CWE distribution is a chart, not exec text); (2) the **2 most-overdue EOL** frameworks (`pickTopEol`); (3) a one-line *"everything else"* (high/critical counts, dev CVE, vendored-JS, EOL/obsolete/outdated, **unmanaged native binaries** count, scan alerts). A "📋 Copy summary" button emits a Word-pasteable rich+plain mirror of all three. Also exports machine-readable **CycloneDX 1.6 SBOM** (vulnerabilities inline, `--report-sbom`), **CSAF 2.0 VEX** (`--report-csaf`), a flat **findings JSON** (`--report-json`) and a **SARIF 2.1.0** log for GitHub/GitLab code scanning (`--report-sarif`).
 7. CI-friendly: `--fail-on <low|medium|high|critical|kev>` sets a non-zero exit code (KEV = fail only on known-exploited). Triage with `--ignore <file>` (CVE/coord/glob rules) and `--vex <file>` (ingest a CSAF VEX) suppresses accepted-risk / false-positive findings from the report + gate while keeping them flagged in the exports.
 
 No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` / `package-lock.json` / `yarn.lock` are parsed directly.
@@ -26,7 +26,7 @@ No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` /
 
 ```bash
 npm install
-npm test                  # 435 unit tests via node --test
+npm test                  # 467 unit tests via node --test
 
 # basic cleanup workflow
 node fad-checker.js -s ./proj                                        # read-only, full report
@@ -82,6 +82,7 @@ lib/maven-version.js         Maven version parsing + range comparison (no extern
 lib/cve-download.js          Bulk download of CVEProject/cvelistV5 + Maven-relevant index build.
 lib/cve-match.js             Resolved-dep collection + 3-tier CVE matching with dedup.
 lib/cve-report.js            Self-contained HTML and Word-compatible (.doc) report rendering.
+lib/charts.js                Pure dependency-free SVG **donut** charts for the report's "Overview" row (4 donuts under the compact totals): (1) CWE of direct vulns — sliced by CWE, coloured by worst severity, legend carries the human CWE title; (2) sub-dep **CVEs** per ROOT (direct) dep — sliced by dep (CVE count, a sub-dep with 3 CVEs = 3), coloured by worst severity, legend = readable dep name + count (rootless transitives, e.g. npm with no resolved `via`, shown as a note, not a bogus "unknown root"); (3) direct vs transitive prod vulns (two slices, each side's per-severity counts in the legend — where the risk lives); (4) fix-priority bands. Each rasterises SVG→canvas→PNG (browser) for a Word-pasteable "Copy chart" button; all styling inline (PNG-safe).
 lib/cpe.js                   CPE 2.3 parsing + NVD configurations evaluator (post-match refinement).
 lib/epss.js                  EPSS (FIRST.org) percentile/score enrichment of matched CVEs (24h cache).
 lib/kev.js                   CISA KEV catalogue membership enrichment (24h cache).
@@ -149,7 +150,7 @@ For the deep dive — pipeline stages, the resolved-deps Map shape, report struc
 ## Testing
 
 ```bash
-node --test test/*.test.js            # full suite (435 tests)
+node --test test/*.test.js            # full suite (467 tests)
 node --test test/core.test.js         # one file
 ```
 
