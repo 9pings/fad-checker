@@ -12,7 +12,7 @@
 
 🌐 **[Project site & docs →](https://n8tz.github.io/fad-checker/)**
 
-<p align="center"><img src="docs/assets/demo.gif" alt="fad-checker animated terminal demo — a [n/N] checklist warming each vulnerability database, then CVE findings coloured by severity with KEV badges" height="760"></p>
+<p align="center"><img src="docs/assets/demo.gif" alt="fad-checker animated terminal demo — a [n/N] checklist warming each vulnerability database, then CVE findings coloured by severity with KEV badges" height="600"></p>
 
 ## Features
 
