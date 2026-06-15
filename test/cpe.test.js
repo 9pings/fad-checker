@@ -165,6 +165,21 @@ test("refineMatchesWithCpe flags out-of-range version as likely FP", () => {
 	assert.equal(matches[0].cpeFiltered, true);
 });
 
+// Regression: the CPE coord-matcher only understands maven + npm coords. A PyPI (or
+// composer/nuget/go/ruby) OSV finding must NOT be hidden as a "CPE false positive" just
+// because its NVD CPE can't be mapped to the coord — OSV already did a precise,
+// ecosystem-native version-range match (e.g. cryptography 46.0.5, fixed in 46.0.6).
+test("refineMatchesWithCpe does NOT CPE-filter a non-maven/npm OSV match", () => {
+	const cve = JSON.parse(fs.readFileSync(path.join(FIX, "nvd-log4shell.json"), "utf8"));
+	const matches = [{
+		dep: { groupId: "", artifactId: "cryptography", version: "46.0.5", ecosystem: "pypi", scope: "prod" },
+		cve: { id: "CVE-2026-34073", configurations: cve.configurations, severity: "MEDIUM" },
+		source: "osv", confidence: "exact",
+	}];
+	refineMatchesWithCpe(matches);
+	assert.notEqual(matches[0].cpeFiltered, true, "PyPI OSV match must stay in production");
+});
+
 // Regression: an AND configuration of (vulnerable software) AND (vulnerable:false
 // platform context) must still flag the dep — the context-only node is ignored,
 // not required. Previously .every(Boolean) dropped the finding. (audit fix #3)

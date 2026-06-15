@@ -228,7 +228,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 ## Testing
 
 ```bash
-npm test                          # full suite (496 tests)
+npm test                          # full suite (497 tests)
 node --test test/core.test.js     # one file
 ```
 
