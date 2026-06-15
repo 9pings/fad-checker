@@ -927,6 +927,11 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		const k = `${r.dep.groupId}:${r.dep.artifactId}`;
 		return !eolKeys.has(k) && !obsKeys.has(k);
 	});
+	// Outdated is a maintenance signal for deps you actually declare and can bump. An
+	// INDIRECT (transitive) dep's "latest" isn't directly actionable — you'd bump the parent
+	// — so drop transitives from the Outdated chapter (EOL/obsolete keep them: security).
+	// scope==="transitive" is the marker set by the Maven/Gradle resolver and the npm parser.
+	outdatedResults = outdatedResults.filter(r => r.dep.scope !== "transitive");
 
 	// 4b. OSV.dev — Maven-native CVE+GHSA feed (huge recall win over raw CVEProject)
 	if (willOsv) {
