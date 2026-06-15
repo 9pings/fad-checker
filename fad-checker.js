@@ -526,6 +526,11 @@ async function timedPhase(label, fn) {
 	let mavenCtx = null;
 	let gradleCtx = null;
 	const collectWarnings = [];
+	// Every descriptor file each codec actually parsed (tagged with its ecosystemType =
+	// codec id), so the report's "Scanned dependency descriptors" appendix is a COMPLETE
+	// inventory — including files parsed that contributed no scannable dep (ranges-only /
+	// no lockfile), which would otherwise be invisible.
+	const parsedManifests = [];
 	for (const id of activeIds) {
 		if (id === "yarn") continue;   // the npm codec already collects yarn.lock
 		const codec = getCodec(id);
@@ -538,6 +543,7 @@ async function timedPhase(label, fn) {
 		}
 		for (const [k, v] of res.deps) resolved.set(k, v);
 		if (res.warnings?.length) collectWarnings.push(...res.warnings);
+		for (const p of (res.parsedManifests || [])) parsedManifests.push({ path: p, ecosystemType: id });
 		if (id === "maven") mavenCtx = res._maven;
 		if (id === "gradle") gradleCtx = res._gradle;
 	}
@@ -710,7 +716,7 @@ async function timedPhase(label, fn) {
 	// The scan always runs — it feeds the terminal summary, the file outputs and the
 	// CI gate. Which files get written is decided by the --report-* family inside
 	// (HTML + .doc by default; --no-report writes nothing).
-	await runReportFlow(resolved, { activeIds, runMaven, runGradle, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings, mavenPropsByPom: mavenCtx?.propsByPom, mavenStore: mavenCtx?.store, gradlePlatformBoms: gradleCtx?.platformBoms || [] });
+	await runReportFlow(resolved, { activeIds, runMaven, runGradle, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings, mavenPropsByPom: mavenCtx?.propsByPom, mavenStore: mavenCtx?.store, gradlePlatformBoms: gradleCtx?.platformBoms || [], parsedManifests });
 	if (!readOnly) {
 		ui.section("Next step");
 		ui.info(`run Snyk on the cleaned tree:`);
@@ -719,7 +725,7 @@ async function timedPhase(label, fn) {
 })();
 
 async function runReportFlow(resolved, ecoFlags = {}) {
-	const { activeIds = [], runMaven = true, runGradle = false, runNpm = false, privateLibIds = [], mavenRepos = [], regMap = {}, collectWarnings = [], mavenPropsByPom = null, mavenStore = null, gradlePlatformBoms = [] } = ecoFlags;
+	const { activeIds = [], runMaven = true, runGradle = false, runNpm = false, privateLibIds = [], mavenRepos = [], regMap = {}, collectWarnings = [], mavenPropsByPom = null, mavenStore = null, gradlePlatformBoms = [], parsedManifests = [] } = ecoFlags;
 	const registriesFor = eco => regMap[eco] || [];
 	const { expandWithTransitives } = require("./lib/cve-match");
 	const { writeReports, computeStats } = require("./lib/cve-report");
@@ -1294,7 +1300,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		const { htmlPath, docPath } = await writeReports({
 			cveMatches: prodMatches, devCveMatches: devMatches, embeddedMatches, retireMatches, vendoredJsInventory,
 			eolResults, obsoleteResults, outdatedResults, licenseResults,
-			resolvedDeps: resolved, projectInfo, warnings: reportWarnings,
+			resolvedDeps: resolved, projectInfo, warnings: reportWarnings, parsedManifests,
 			htmlPath: out.html, docPath: out.doc,
 		});
 		if (htmlPath) wrote.push(["HTML report", htmlPath]);

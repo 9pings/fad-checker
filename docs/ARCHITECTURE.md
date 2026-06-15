@@ -64,7 +64,8 @@ implementing one interface (`lib/codecs/codec.interface.js`):
 
 ```
 id, label, osvEcosystem, manifestNames,
-detect(dir), collect(dir,opts) → {deps, warnings},
+detect(dir), collect(dir,opts) → {deps, warnings, parsedManifests},  // parsedManifests = every file parsed
+
 coordKey(dep), formatCoord(dep), osvPackageName(dep),
 checkRegistry(deps,opts) → {outdated, deprecated},
 resolveEolProduct(dep), recipe, nativeScanners
@@ -197,9 +198,12 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
   8.b npm                       ← package.json overrides
   8.c yarn                      ← package.json resolutions
 9. Appendix: Likely false positives (CPE-filtered)   ← only if any
-10. Appendix: Scanned dependency descriptors         ← the manifests/lockfiles actually parsed
-                                  (union of declared deps' manifestPaths, relative to src;
-                                  transitives + committed binaries excluded)
+10. Appendix: Scanned dependency descriptors         ← COMPLETE list of every manifest/lockfile
+                                  each codec reported parsing (codec.collect → parsedManifests),
+                                  relative to src, with per-file direct-dep count. Files that
+                                  contributed NOTHING (ranges-only / no lockfile) are listed with
+                                  count 0 — nothing is silently omitted. Transitives (registry-
+                                  resolved) + committed binaries are not descriptors, excluded.
 ```
 
 ## Important conventions
@@ -228,7 +232,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 ## Testing
 
 ```bash
-npm test                          # full suite (499 tests)
+npm test                          # full suite (501 tests)
 node --test test/core.test.js     # one file
 ```
 

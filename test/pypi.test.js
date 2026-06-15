@@ -125,6 +125,15 @@ test("pypi collect: requirements.txt fallback warns + scans pins only", async ()
 	assert.ok(!deps.has("pypi:flask"));
 	assert.ok(warnings.find(w => w.type === "no-lockfile"));
 });
+test("pypi collect reports EVERY parsed descriptor, incl. range-only files that contribute nothing", async () => {
+	const path = require("path");
+	const { parsedManifests } = await pypi.collect(F("python-reqs-pinned"), {});
+	const names = (parsedManifests || []).map(p => path.basename(p));
+	// requirements.txt here is ranges-only → 0 scannable deps, but must still be listed as parsed
+	assert.ok(names.includes("requirements.txt"), "range-only requirements.txt is still reported as parsed");
+	assert.ok(names.includes("requirements-pinned.txt"), "the pinned file is reported too");
+});
+
 test("pypi collect: scans the whole requirements-*.txt family (pip-compile pinned file)", async () => {
 	// securesystemslib shape: requirements.txt = ranges only, requirements-pinned.txt = the real pins.
 	const { deps } = await pypi.collect(F("python-reqs-pinned"), {});
