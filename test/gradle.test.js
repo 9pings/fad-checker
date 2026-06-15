@@ -271,7 +271,7 @@ test("gradle codec detects + collects the kotlin-catalog fixture", async () => {
 		b.group === "org.springframework.boot" && b.name === "spring-boot-dependencies" && b.version === "4.0.6"),
 		"platform() BOM surfaced with catalog-resolved version");
 
-	assert.ok(warnings.some(w => w.type === "gradle-no-lockfile"), "best-effort warning emitted");
+	assert.ok(warnings.some(w => w.type === "no-lockfile"), "best-effort warning emitted");
 });
 
 test("gradle codec: lockfile is authoritative when present", async () => {
@@ -280,7 +280,7 @@ test("gradle codec: lockfile is authoritative when present", async () => {
 	assert.equal(deps.get("com.google.guava:guava").version, "32.1.3-jre");
 	assert.equal(deps.get("org.apache.commons:commons-lang3").version, "3.14.0");
 	assert.equal(deps.get("junit:junit").isDev, true);
-	assert.ok(!warnings.some(w => w.type === "gradle-no-lockfile"), "lockfile present → no best-effort warning");
+	assert.ok(!warnings.some(w => w.type === "no-lockfile"), "lockfile present → no best-effort warning");
 });
 
 test("gradle coord helpers use the bare Maven g:a keyspace", () => {
