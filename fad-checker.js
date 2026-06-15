@@ -489,6 +489,12 @@ async function timedPhase(label, fn) {
 			const { warmRetireSignatures } = require("./lib/retire");
 			await warmRetireSignatures({ verbose });
 		}
+		// --import-anonymized is a cache-WARMING step (pair with --export-cache), not a
+		// reporting one: the path-bearing report is produced later, offline, from the warmed
+		// cache against the real source tree. So suppress the default HTML+doc output here
+		// (still honor an explicit --report-<type> if a user really wants a path-free one).
+		const anyReportRequested = [options.reportHtml, options.reportDoc, options.reportSbom, options.reportCsaf, options.reportJson, options.reportSarif].some(v => v !== undefined);
+		if (!anyReportRequested) options.report = false;
 		await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds: [], mavenRepos, regMap, collectWarnings: [] });
 		return;
 	}
@@ -1329,7 +1335,9 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		ui.section("Output");
 		for (const [label, p] of wrote) ui.ok(`${label} → ${chalk.white(p)}`);
 	} else if (options.report === false) {
-		ui.info(chalk.dim("--no-report: no files written (scan + gate only)"));
+		ui.info(chalk.dim(options.importAnonymized
+			? "import-anonymized: caches warmed, no report written (pair with --export-cache, then report offline from the real source tree)"
+			: "--no-report: no files written (scan + gate only)"));
 	}
 	console.log();
 
