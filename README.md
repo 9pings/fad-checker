@@ -12,6 +12,9 @@
 
 🌐 **[Project site & docs →](https://n8tz.github.io/fad-checker/)**
 
+> [!WARNING]
+> **Young project — expect rough edges.** fad-checker is new and under active development, so it may still contain bugs (including false positives and false negatives). Treat its output as a strong first pass, **double-check anything critical**, and please [report issues](https://github.com/n8tz/fad-checker/issues) — they get fixed fast.
+
 <p align="center"><img src="docs/assets/demo.gif" alt="fad-checker animated terminal demo — a [n/N] checklist warming each vulnerability database, then CVE findings coloured by severity with KEV badges" height="600"></p>
 
 ## Features
