@@ -22,8 +22,9 @@ By default the HTML + Word reports land in `./fad-checker-report/`. Override wit
 fad-checker -s .
 
 # Pick ecosystems (codecs). --ecosystem is a list: auto (default) | all | comma list.
-# Codec ids: maven, npm, yarn, composer, pypi, nuget, go, ruby.
+# Codec ids: maven, gradle, npm, yarn, composer, pypi, nuget, go, ruby.
 fad-checker -s . --ecosystem maven            # Maven only
+fad-checker -s . --ecosystem gradle           # Gradle only
 fad-checker -s . --ecosystem maven,npm,go     # several, even if only one is auto-detected
 fad-checker -s . --ecosystem all              # every supported codec
 fad-checker -s . --ecosystem both             # legacy alias for maven,npm
@@ -31,6 +32,7 @@ fad-checker -s . --ecosystem both             # legacy alias for maven,npm
 # Opt out of specific codecs (combine freely)
 fad-checker -s . --no-npm                     # skip npm
 fad-checker -s . --no-js                      # alias: skip npm + yarn (Maven-only)
+fad-checker -s . --no-gradle                  # skip Gradle
 fad-checker -s . --no-pypi --no-nuget         # skip Python + C#
 fad-checker -s . --no-go --no-ruby            # skip Go + Ruby
 fad-checker -s . --no-jars                    # skip embedded .jar/.war/.ear scanning
@@ -45,6 +47,20 @@ fad-checker -s . --no-binaries                # skip committed native-binary sca
 > `package-lock.json`/`yarn.lock` is now scanned **best-effort** — pinned exact
 > versions are checked, ranges (`^1.0.0`) are skipped, and a `no-lockfile` warning
 > flags the partial coverage. Run `npm install`/`yarn install` for full coverage.
+
+> **Gradle**: a Gradle dependency *is* a Maven coordinate, so Gradle findings flow through
+> the **same** Maven services (CVE index, OSV `Maven`, transitive resolution, outdated, EOL)
+> and get their **own "Gradle" report chapter + `constraints { }` fix recipe**. Sources, in
+> order of authority: **`gradle.lockfile`** (exact, resolved, transitives included — enable
+> Gradle [dependency locking](https://docs.gradle.org/current/userguide/dependency_locking.html)
+> for the best coverage); **`gradle/libs.versions.toml`** version catalogs; and a
+> **best-effort** parse of `build.gradle`/`build.gradle.kts` (Groovy **and** Kotlin DSL — string
+> & map notation, `libs.*` catalog accessors, `$var`/`gradle.properties` resolution),
+> including the `buildSrc/` convention plugins. A `platform("…")` / `enforcedPlatform("…")`
+> BOM (e.g. `spring-boot-dependencies`) is resolved exactly like a Maven `<scope>import</scope>`
+> BOM, **backfilling the versions of the versionless starters** declared against it. Versions
+> that can't be resolved statically (programmatic/dynamic deps) are listed in chapter 0 and
+> excluded from CVE matching (never assumed vulnerable); `--no-gradle` disables the codec.
 
 ## Filtering deps
 

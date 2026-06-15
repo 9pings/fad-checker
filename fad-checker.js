@@ -246,6 +246,7 @@ program
 	.option("--transitive-depth <n>", "max transitive depth", "6")
 	.option("--ecosystem <list>", "codecs to run: auto|all|<comma list> e.g. maven,npm,nuget,composer,pypi,go,ruby (default: auto = detected)", "auto")
 	.option("--no-maven", "skip the Maven codec")
+	.option("--no-gradle", "skip the Gradle codec")
 	.option("--no-npm", "skip the npm codec")
 	.option("--no-yarn", "skip the Yarn codec")
 	.option("--no-nuget", "skip the NuGet (C#/.NET) codec")
@@ -503,11 +504,12 @@ async function timedPhase(label, fn) {
 	// project), and detectCodecs' manifest-glob matcher misses versioned sonames
 	// (libz.so.1). Always make it a candidate in auto mode; --no-binaries removes it.
 	if (eco === "auto" && !detected.includes("binary")) detected.push("binary");
-	const noCodecs = ["maven", "npm", "yarn", "nuget", "composer", "pypi", "go", "ruby"].filter(id => options[id] === false);
+	const noCodecs = ["maven", "gradle", "npm", "yarn", "nuget", "composer", "pypi", "go", "ruby"].filter(id => options[id] === false);
 	// `--no-binaries` maps to options.binaries (plural) but the codec id is `binary`.
 	if (options.binaries === false) noCodecs.push("binary");
 	const activeIds = resolveActiveCodecs(eco, detected, { noCodecs, noJs: !options.js });
 	const runMaven = activeIds.includes("maven");
+	const runGradle = activeIds.includes("gradle");
 	const runNpm = activeIds.includes("npm") || activeIds.includes("yarn");
 
 	// --- Collect deps from every active codec into one Map (coordKeys never collide) ---
@@ -516,6 +518,7 @@ async function timedPhase(label, fn) {
 	ui.section("Collection");
 	const resolved = new Map();
 	let mavenCtx = null;
+	let gradleCtx = null;
 	const collectWarnings = [];
 	for (const id of activeIds) {
 		if (id === "yarn") continue;   // the npm codec already collects yarn.lock
@@ -530,6 +533,7 @@ async function timedPhase(label, fn) {
 		for (const [k, v] of res.deps) resolved.set(k, v);
 		if (res.warnings?.length) collectWarnings.push(...res.warnings);
 		if (id === "maven") mavenCtx = res._maven;
+		if (id === "gradle") gradleCtx = res._gradle;
 	}
 
 	// --- Collection summary ---
@@ -539,12 +543,15 @@ async function timedPhase(label, fn) {
 	for (const d of resolved.values()) {
 		if (d.provenance === "embedded") { embeddedCount++; continue; } // counted separately below
 		if (d.provenance === "binary") { binaryCount++; continue; }     // committed native libs, no manifest
-		ecoCount[d.ecosystem] = (ecoCount[d.ecosystem] || 0) + 1;
+		// Key by ecosystemType so Gradle (ecosystem "maven") gets its own line/label.
+		const ecoKey = d.ecosystemType || d.ecosystem;
+		ecoCount[ecoKey] = (ecoCount[ecoKey] || 0) + 1;
 	}
 	if (runMaven) ui.ok(`${chalk.bold("Maven".padEnd(8))} ${mavenCtx ? mavenCtx.pomFiles.length + " module(s) · " : ""}${ecoCount.maven || 0} direct dep(s)`);
+	if (runGradle) ui.ok(`${chalk.bold("Gradle".padEnd(8))} ${ecoCount.gradle || 0} direct dep(s)`);
 	if (runNpm)   ui.ok(`${chalk.bold("npm/yarn".padEnd(8))} ${ecoCount.npm || 0} dep(s)`);
 	for (const [id, n] of Object.entries(ecoCount)) {
-		if (id === "maven" || id === "npm") continue;
+		if (id === "maven" || id === "gradle" || id === "npm") continue;
 		ui.ok(`${chalk.bold(((getCodec(id)?.label) || id).padEnd(8))} ${n} dep(s)`);
 	}
 	if (embeddedCount) ui.ok(`${chalk.bold("Embedded".padEnd(8))} ${embeddedCount} coord(s) in .jar/.war/.ear`);
@@ -697,7 +704,7 @@ async function timedPhase(label, fn) {
 	// The scan always runs — it feeds the terminal summary, the file outputs and the
 	// CI gate. Which files get written is decided by the --report-* family inside
 	// (HTML + .doc by default; --no-report writes nothing).
-	await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings, mavenPropsByPom: mavenCtx?.propsByPom, mavenStore: mavenCtx?.store });
+	await runReportFlow(resolved, { activeIds, runMaven, runGradle, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings, mavenPropsByPom: mavenCtx?.propsByPom, mavenStore: mavenCtx?.store, gradlePlatformBoms: gradleCtx?.platformBoms || [] });
 	if (!readOnly) {
 		ui.section("Next step");
 		ui.info(`run Snyk on the cleaned tree:`);
@@ -706,7 +713,7 @@ async function timedPhase(label, fn) {
 })();
 
 async function runReportFlow(resolved, ecoFlags = {}) {
-	const { activeIds = [], runMaven = true, runNpm = false, privateLibIds = [], mavenRepos = [], regMap = {}, collectWarnings = [], mavenPropsByPom = null, mavenStore = null } = ecoFlags;
+	const { activeIds = [], runMaven = true, runGradle = false, runNpm = false, privateLibIds = [], mavenRepos = [], regMap = {}, collectWarnings = [], mavenPropsByPom = null, mavenStore = null, gradlePlatformBoms = [] } = ecoFlags;
 	const registriesFor = eco => regMap[eco] || [];
 	const { expandWithTransitives } = require("./lib/cve-match");
 	const { writeReports, computeStats } = require("./lib/cve-report");
@@ -736,11 +743,14 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	}
 
 	// Decide which update steps will run (from flags) so the [n/N] counter is accurate.
-	const cveScanner = runMaven ? (getCodec("maven").nativeScanners || []).find(s => s.kind === "cve") : null;
+	// Gradle deps are Maven coordinates (ecosystem "maven"), so the Maven CVE-index scanner
+	// and the Maven-Central transitive/BOM/outdated/EOL passes cover them — they're EXCLUDED
+	// from the per-codec registry loop below to avoid double-processing.
+	const cveScanner = (runMaven || runGradle) ? (getCodec("maven").nativeScanners || []).find(s => s.kind === "cve") : null;
 	const cveIndexExists = fs.existsSync(require("./lib/cve-download").CVE_INDEX_PATH);
-	const otherRegistryIds = activeIds.filter(id => id !== "maven" && id !== "npm" && id !== "yarn" && getCodec(id)?.checkRegistry);
+	const otherRegistryIds = activeIds.filter(id => id !== "maven" && id !== "gradle" && id !== "npm" && id !== "yarn" && getCodec(id)?.checkRegistry);
 	const willCve = !!cveScanner && (!(options.cveOffline || offline) || cveIndexExists);
-	const willTransitive = !!(options.transitive && runMaven);
+	const willTransitive = !!(options.transitive && (runMaven || runGradle));
 	// Per-module version mediation overlay: recover transitive versions the global
 	// transitive pass masks via cross-module depMgmt bleed. Runs after (and only when)
 	// the global pass runs, and needs the parsed store + per-module props.
@@ -751,11 +761,18 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// never the network — same as transitive resolution).
 	const importBoms = (runMaven && mavenPropsByPom)
 		? require("./lib/maven-bom").collectImportBoms(mavenPropsByPom) : [];
-	const willBom = importBoms.length > 0;
+	// Gradle `platform(...)` BOMs are the same as Maven `<scope>import</scope>` BOMs — feed
+	// them through the same managed-version backfill (e.g. spring-boot-dependencies → all the
+	// versionless spring-boot-starter-* declared in build.gradle get their version).
+	const gradleBoms = (gradlePlatformBoms || [])
+		.map(b => ({ groupId: b.group, artifactId: b.name, version: b.version }))
+		.filter(b => b.groupId && b.artifactId && b.version);
+	const allBoms = importBoms.concat(gradleBoms);
+	const willBom = allBoms.length > 0;
 	const willOsv = !!options.osv;
 	// Local OSV DB import (Maven): offline-complete OSV recall, independent of the per-dep
 	// OSV.dev cache. Opt-in (downloads ~9 MB once); then matches online or offline.
-	const willOsvDb = !!options.osvDb && runMaven;
+	const willOsvDb = !!options.osvDb && (runMaven || runGradle);
 	const willOutdated = !!options.allLibs;
 	const willNvd = !!options.nvd;
 	const willEpss = !!options.epss;
@@ -772,9 +789,10 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	if (willBom) {
 		const st = progress.start("BOM version resolution (Maven Central)");
 		try {
-			const { resolveAndBackfill } = require("./lib/maven-bom");
-			const r = await resolveAndBackfill(mavenPropsByPom, resolved, { repos: mavenRepos, offline, verbose });
-			st.done(`${r.filled} dep version(s) from ${r.boms} import BOM(s)`);
+			const { resolveBomManagedVersions, backfillVersions } = require("./lib/maven-bom");
+			const mgmt = await resolveBomManagedVersions(allBoms, { repos: mavenRepos, offline, verbose });
+			const filled = backfillVersions(resolved, mgmt);
+			st.done(`${filled} dep version(s) from ${allBoms.length} import BOM(s)`);
 		} catch (err) { st.fail(err.message); }
 	}
 
@@ -811,7 +829,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// Scan-completeness signals — computed NOW (after BOM backfill) so only the deps
 	// still without a concrete version (external BOM truly unreachable, or offline)
 	// are flagged, not the ones we just resolved from spring-boot-dependencies & co.
-	if (runMaven) {
+	if (runMaven || runGradle) {
 		const { detectScanCompletenessWarnings } = require("./lib/scan-completeness");
 		scanWarnings = detectScanCompletenessWarnings(resolved, { ranSnyk: !!options.snyk, ranTransitive: !!options.transitive });
 	}
@@ -1192,7 +1210,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	let licenseResults = null;
 	if (willLicenses) {
 		try {
-			if (runMaven) {
+			if (runMaven || runGradle) {
 				const { collectMavenLicenses } = require("./lib/maven-license");
 				licenseFindings = licenseFindings.concat(collectMavenLicenses(resolved));
 			}

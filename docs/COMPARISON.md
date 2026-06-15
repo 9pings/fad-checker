@@ -9,7 +9,7 @@ of thing a security consultant or an ANSSI-PASSI engagement needs.
 
 | | **fad-checker** | OSV-Scanner | Trivy | Grype + Syft | OWASP DC | Snyk OSS |
 | --- | --- | --- | --- | --- | --- | --- |
-| Ecosystems it targets¹ | Maven, npm, Yarn, **pnpm**, Composer, PyPI, NuGet, Go, Ruby + vendored JS + **native binaries** | 11+ langs / 19+ lockfiles | 20+ | 20+ | Java/.NET (others exp.) | many |
+| Ecosystems it targets¹ | Maven, **Gradle**, npm, Yarn, **pnpm**, Composer, PyPI, NuGet, Go, Ruby + vendored JS + **native binaries** | 11+ langs / 19+ lockfiles | 20+ | 20+ | Java/.NET (others exp.) | many |
 | Reads lockfiles without `install`/build | ✅ | ✅ | ✅ | ✅ | ⚠️ Java needs Maven Central/build | ❌ build required |
 | Best-effort when **no lockfile** (pinned versions) | ✅ | ❌ | ❌ | ❌ | ⚠️ | ⚠️ |
 | Vulnerability sources | CVEProject + OSV + NVD + EPSS + KEV + retire.js (+ Snyk), merged | OSV.dev | Aqua DB | Anchore DB | NVD / CPE | Snyk DB |
@@ -78,6 +78,7 @@ For each ecosystem it reads the **lockfile** (or, failing that, the manifest's p
 | Ecosystem | Read directly | Transitive versions come from |
 | --- | --- | --- |
 | Maven | `pom.xml` (+ parents, BOMs, profiles) | child POMs fetched from Maven Central (cached) — resolved **per-module** so a depMgmt pin in one module can't hide a vulnerable transitive in another |
+| Gradle | `gradle.lockfile` → `gradle/libs.versions.toml` → `build.gradle(.kts)` best-effort (Groovy+Kotlin DSL, `libs.*` catalog, `buildSrc/`) | child POMs from Maven Central (same as Maven); `platform(...)` BOMs backfill versionless deps |
 | npm / Yarn / pnpm | `package-lock.json` · `yarn.lock` (v1+Berry) · `pnpm-lock.yaml` | the lockfile itself |
 | Composer | `composer.lock` (else `composer.json`) | the lockfile |
 | PyPI | `poetry.lock` · `Pipfile.lock` · `uv.lock` · `pdm.lock` (else `pyproject.toml`/`requirements.txt`) | the lockfile |

@@ -1,0 +1,10 @@
+[versions]
+clamav = "2.1.2"
+commons-codec = "1.21.0"
+spring-boot = "4.0.6"
+
+[libraries]
+clamav-client = { module = "xyz.capybara:clamav-client", version.ref = "clamav" }
+commons-codec = { module = "commons-codec:commons-codec", version.ref = "commons-codec" }
+
+[plugins]
