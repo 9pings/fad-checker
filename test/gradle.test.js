@@ -300,3 +300,35 @@ test("gradle + maven coexist on a hybrid project without keyspace collision", as
 	assert.ok(deps.get("com.google.guava:guava"), "gradle's build.gradle dep");
 	assert.ok(!deps.get("org.apache.commons:commons-lang3"), "the pom.xml dep is not the gradle codec's job");
 });
+
+// ---------------------------------------------------------------------------
+// Regression: real-world edge cases from promoliv-batch
+// ---------------------------------------------------------------------------
+
+test("parseBuildScript ignores non-coordinate string args (jvmArgs(\"-Xshare:off\"))", () => {
+	const { deps } = parseBuildScript(`
+testTask {
+    jvmArgs("-Xshare:off")
+}
+dependencies {
+    implementation("real.group:artifact:1.0.0")
+}
+`, { kotlin: true });
+	assert.equal(deps.find(d => d.name === "off"), undefined, "'off' is not a dependency");
+	assert.ok(!deps.some(d => d.group === "-Xshare"), "a group never starts with '-'");
+	assert.equal(deps.length, 1);
+	assert.equal(deps[0].name, "artifact");
+});
+
+const { inheritEcoType } = require("../lib/cve-match");
+
+test("transitive ecosystemType inherits 'gradle' when all reaching roots are gradle", () => {
+	const roots = new Map([["g:gradleRoot", "gradle"], ["g:mavenRoot", "maven"]]);
+	assert.equal(inheritEcoType([["g:gradleRoot", "g:mid"]], roots), "gradle");
+	assert.equal(inheritEcoType([["g:mavenRoot"]], roots), "maven");
+	// mixed roots (hybrid project, shared transitive) → keep maven
+	assert.equal(inheritEcoType([["g:gradleRoot"], ["g:mavenRoot"]], roots), "maven");
+	// unknown / missing root → maven default
+	assert.equal(inheritEcoType([["g:unknown"]], roots), "maven");
+	assert.equal(inheritEcoType([], roots), "maven");
+});
