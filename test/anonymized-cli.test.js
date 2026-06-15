@@ -57,6 +57,20 @@ test("--import-anonymized rejects an incompatible schema", () => {
 	} finally { fs.rmSync(bad, { force: true }); }
 });
 
+test("--import-anonymized warms caches but writes NO report by default", () => {
+	const desc = tmp("warm.json");
+	const outDir = tmp("warm-report");
+	try {
+		const e = run(["-s", FIX("python-pyproject"), "--export-anonymized", desc]);
+		assert.strictEqual(e.status, 0, e.stderr);
+		// import is a cache-warming step (here offline → no-op warm) — it must NOT emit a report.
+		const r = run(["--import-anonymized", desc, "--offline", "--report-output", outDir]);
+		assert.strictEqual(r.status, 0, r.stderr);
+		const wrote = fs.existsSync(outDir) ? fs.readdirSync(outDir) : [];
+		assert.deepStrictEqual(wrote, [], `import-anonymized must write no report files, wrote: [${wrote.join(", ")}]`);
+	} finally { fs.rmSync(desc, { force: true }); fs.rmSync(outDir, { recursive: true, force: true }); }
+});
+
 test("export → import round-trip: descriptor re-imports to the same coordinates", () => {
 	const out = tmp("rt.json");
 	try {
