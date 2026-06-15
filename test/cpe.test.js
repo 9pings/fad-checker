@@ -180,6 +180,34 @@ test("refineMatchesWithCpe does NOT CPE-filter a non-maven/npm OSV match", () =>
 	assert.notEqual(matches[0].cpeFiltered, true, "PyPI OSV match must stay in production");
 });
 
+// An OSV-confirmed match is authoritative (OSV matched the exact coordinate + version range).
+// NVD CPE must never override it — even a maven dep whose version looks out-of-range to NVD
+// stays in production when OSV flagged it (NVD/OSV range data can legitimately differ).
+test("refineMatchesWithCpe does NOT CPE-filter an OSV-confirmed maven match", () => {
+	const cve = JSON.parse(fs.readFileSync(path.join(FIX, "nvd-log4shell.json"), "utf8"));
+	const matches = [{
+		dep: { groupId: "org.apache.logging.log4j", artifactId: "log4j-core", version: "2.17.1", ecosystem: "maven" },
+		cve: { id: cve.id, configurations: cve.configurations, severity: "HIGH" },
+		source: "osv", confidence: "exact",
+	}];
+	refineMatchesWithCpe(matches);
+	assert.notEqual(matches[0].cpeFiltered, true, "OSV match is authoritative — not a CPE false positive");
+});
+
+// A coord the CVE's CPE never names (here a maven dep vs the log4j-only config) is a coverage
+// gap, not a false positive — don't filter it (the version-contradiction filter needs the
+// product to actually be named first).
+test("refineMatchesWithCpe does NOT filter when NVD CPE never names the product", () => {
+	const cve = JSON.parse(fs.readFileSync(path.join(FIX, "nvd-log4shell.json"), "utf8"));
+	const matches = [{
+		dep: { groupId: "com.example.unrelated", artifactId: "totally-unrelated-lib", version: "1.0.0", ecosystem: "maven" },
+		cve: { id: cve.id, configurations: cve.configurations, severity: "HIGH" },
+		confidence: "possible",
+	}];
+	refineMatchesWithCpe(matches);
+	assert.notEqual(matches[0].cpeFiltered, true, "product never named → not a CPE false positive");
+});
+
 // Regression: an AND configuration of (vulnerable software) AND (vulnerable:false
 // platform context) must still flag the dep — the context-only node is ignored,
 // not required. Previously .every(Boolean) dropped the finding. (audit fix #3)
