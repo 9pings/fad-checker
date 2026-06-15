@@ -6,7 +6,7 @@
 <title>fad-checker — polyglot dependency CVE/EOL scanner, no build needed</title>
 <meta name="description" content="Scan Maven, Gradle, npm, Yarn, pnpm, Composer, PyPI, NuGet, Go and Ruby dependencies — plus embedded JARs (fat-jars/war/ear) and committed native binaries (.dll/.so/.exe, identified by checksum via deps.dev + CIRCL) — for CVEs (prioritised by EPSS + CISA KEV), end-of-life, outdated versions and licenses in one shot — no build, no install. Audit-ready HTML/Word report, CycloneDX SBOM + CSAF VEX exports, and an air-gapped mode for confidential code.">
 <meta property="og:title" content="fad-checker — audit every dependency, no build, no leaks">
-<meta property="og:description" content="Polyglot CVE / EOL / outdated / license scanner that reads your source tree directly. Merged sources, CPE filtering, EPSS + KEV priority, CycloneDX SBOM + CSAF VEX, HTML+Word report, air-gapped PASSI mode.">
+<meta property="og:description" content="Polyglot CVE / EOL / outdated / license scanner that reads your source tree directly. Merged sources, CPE filtering, EPSS + KEV priority, CycloneDX SBOM + CSAF VEX, HTML+Word report, air-gapped mode.">
 <meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -234,7 +234,7 @@
       <div class="card reveal"><div class="ic">04</div><h3>Beyond CVEs</h3><p>Flags <b>end-of-life</b> (endoflife.date, with a <b>Source</b> column tracing each verdict to its mapping rule), <b>deprecated / abandoned / yanked</b>, <b>outdated</b> versions, and <b>licenses</b> (SPDX + copyleft policy) — signals most scanners skip.</p></div>
       <div class="card reveal"><div class="ic">05</div><h3>Reports you can hand over</h3><p>One self-contained <b>HTML</b> + Word-compatible <b>.doc</b>, organised by ecosystem and by the manifest that declares each dep, with per-tool fix recipes.</p></div>
       <div class="card reveal"><div class="ic">06</div><h3>Exports &amp; CI gating</h3><p>Emit <b>CycloneDX 1.6</b> SBOM, <b>CSAF 2.0 VEX</b>, flat <b>JSON</b> and <b>SARIF 2.1.0</b> (GitHub/GitLab code scanning). Gate with <span class="mono">--fail-on critical|kev</span>; triage false-positives via <span class="mono">--ignore</span> / <span class="mono">--vex</span>.</p></div>
-      <div class="card reveal"><div class="ic">07</div><h3>Air-gapped / PASSI</h3><p>Export an <b>anonymized</b> descriptor (public coordinates only), enrich online, report offline. The confidential codebase never leaves the enclave.</p></div>
+      <div class="card reveal"><div class="ic">07</div><h3>Air-gapped</h3><p>Export an <b>anonymized</b> descriptor (public coordinates only), enrich online, report offline. The confidential codebase never leaves the enclave.</p></div>
       <div class="card reveal"><div class="ic">08</div><h3>Maven private-dep cleanup</h3><p>Strip private/internal dependencies into a parallel tree of <b>cleaned POMs</b>, ready to feed straight into Snyk.</p></div>
       <div class="card reveal"><div class="ic">09</div><h3>Native binaries, by checksum</h3><p>Committed <span class="mono">.dll</span>/<span class="mono">.exe</span>/<span class="mono">.so</span>/<span class="mono">.dylib</span> (magic-byte confirmed — images/assets are never picked up) are <b>identified by hash</b> via <b>deps.dev</b> + <b>CIRCL</b>: flags tampered/<b>unknown</b> files and libraries that <b>should be declared dependencies</b>. No malware/AV lane.</p></div>
       <div class="card reveal"><div class="ic">10</div><h3>Private registries &amp; config files</h3><p>Point it at private <b>Nexus/Artifactory</b> (Maven), <b>Verdaccio/GitHub Packages</b> (npm), <b>devpi</b> (PyPI), <b>Gemfury</b> (Ruby) or <b>GOPROXY</b> (Go) — tried first, public last, Basic or Bearer auth. Stash reusable defaults in <span class="mono">.fad-env.json</span> / <span class="mono">--config</span> or the <span class="mono">FAD_CHECKER_ENV</span> variable, and prune sub-paths with gitignore-style <span class="mono">--exclude-path</span>.</p></div>
@@ -264,7 +264,7 @@
         <div class="kicker reveal">Confidential by design</div>
         <h2 class="reveal">Scan online. Never expose the code.</h2>
         <p class="sub reveal" style="margin-bottom:22px">The vuln databases need the network; your client's code does not. The scan splits in three — only <b>public coordinates</b> ever leave the secure machine. Caches are keyed by coordinate, so warming them online and replaying offline just yields cache hits.</p>
-        <p class="note">Designed for ANSSI <b>PASSI</b> engagements and any air-gapped review. The online box only ever sees <span class="mono">lodash@4.17.21</span> — never your repository.</p>
+        <p class="note">Designed for any air-gapped / confidential review. The online box only ever sees <span class="mono">lodash@4.17.21</span> — never your repository.</p>
       </div>
       <div class="code reveal">
         <div class="top"><i class="r"></i><i class="y"></i><i class="g"></i></div>

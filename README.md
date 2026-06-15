@@ -20,7 +20,7 @@
 - **No build tools** — reads `pom.xml`, `build.gradle(.kts)`/`gradle.lockfile`/`libs.versions.toml`, `package-lock`/`yarn.lock`/`pnpm-lock`, `composer.lock`, `poetry`/`Pipfile`/`uv`/`pdm` locks, `packages.lock.json`/`*.csproj`, `go.mod`, `Gemfile.lock` directly. No `mvn`/`gradle`/`npm install`/`pip`/`dotnet restore`/`go build`/`bundle`, no `node_modules/`. → [how it stays build-free](docs/COMPARISON.md#how-its-autonomous-no-build-tools)
 - **CVE, merged & prioritised** — CVEProject + OSV.dev + NVD, CPE/version cross-checked to cut false positives, ranked **CISA KEV → EPSS → CVSS**.
 - **Per-module Maven version mediation** — recovers vulnerable transitive versions that a global `<dependencyManagement>` pin hides in another module (lifted Snyk-corroborated coverage **156 → 181** on a real 25-module reactor, finding CVEs a single Snyk scan missed).
-- **Air-gapped / PASSI** — **zero network under `--offline`** (regression-tested), offline Maven transitive resolution, and `--osv-db` for cache-independent offline OSV recall. → [Air-gapped](#air-gapped--passi-audits)
+- **Air-gapped** — **zero network under `--offline`** (regression-tested), offline Maven transitive resolution, and `--osv-db` for cache-independent offline OSV recall. → [Air-gapped](#air-gapped-audits)
 - **Supply-chain risk** — known-**malicious** advisories (`MAL-`, always block the CI gate) + suspected **typosquats** (`--typosquat`).
 - **Lifecycle** — EOL (endoflife.date), obsolete/deprecated, outdated — across every ecosystem.
 - **Licenses** *(opt-in `--licenses`)* — SPDX-normalised, copyleft/proprietary flagged.
@@ -69,7 +69,7 @@ The HTML report opens in any browser, contains every detail (CVSS vectors, refer
 
 <p align="center"><img src="docs/assets/report.png" alt="fad-checker HTML report — executive summary with severity tiles and a detailed CVE table with CWE, descriptions and fix versions" width="900"></p>
 
-## Air-gapped / PASSI audits
+## Air-gapped audits
 
 > **Zero-data-sent guarantee.** Under `--offline`, fad-checker makes **no network calls
 > whatsoever** — it reads only the warmed `~/.fad-checker/` caches and never transmits a
@@ -80,7 +80,7 @@ The HTML report opens in any browser, contains every detail (CVSS vectors, refer
 > mainstream OSS scanners, fad also resolves the **Maven transitive graph** offline — so on
 > an air-gapped multi-module project it finds the transitive CVEs they can't.
 
-When the audited system is **offline / confidential** (typical of a PASSI engagement) it
+When the audited system is **offline / confidential** (typical of a regulated or air-gapped audit) it
 can't reach OSV / NVD / Maven Central / npm. Split the work across machines while keeping
 **zero environment information** off the secure enclave: an anonymized descriptor carries
 only **public package coordinates** — no filesystem paths, no registry URLs, no
