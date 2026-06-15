@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/fad-checker.svg)](https://www.npmjs.com/package/fad-checker)
 [![npm downloads](https://img.shields.io/npm/dm/fad-checker.svg)](https://www.npmjs.com/package/fad-checker)
-[![license](https://img.shields.io/npm/l/fad-checker.svg)](https://github.com/n8tz/fad-checker/blob/main/package.json)
+[![license](https://img.shields.io/npm/l/fad-checker.svg)](https://github.com/9pings/fad-checker/blob/main/package.json)
 [![node](https://img.shields.io/node/v/fad-checker.svg)](https://nodejs.org)
 
 > **F**abulous **A**utonomous **D**ependency **C**hecker<br>
@@ -10,10 +10,10 @@
 
 `fad-checker` audits **Maven · Gradle · npm · Yarn · pnpm · Composer · PyPI · NuGet · Go · Ruby**, vendored JavaScript and committed native binaries in any source tree — multi-module, monorepo, polyglot — and produces a self-contained **HTML + Word report** (CVE prioritised by EPSS + CISA KEV, EOL, obsolete, outdated, licenses) plus **CycloneDX SBOM / CSAF VEX / SARIF / JSON** exports. **No build tools, no Docker, no network needed** — it reads lockfiles and manifests straight off disk.
 
-🌐 **[Project site & docs →](https://n8tz.github.io/fad-checker/)**
+🌐 **[Project site & docs →](https://9pings.github.io/fad-checker/)**
 
 > [!WARNING]
-> **Young project — expect rough edges.** fad-checker is new and under active development, so it may still contain bugs (including false positives and false negatives). Treat its output as a strong first pass, **double-check anything critical**, and please [report issues](https://github.com/n8tz/fad-checker/issues) — they get fixed fast.
+> **Young project — expect rough edges.** fad-checker is new and under active development, so it may still contain bugs (including false positives and false negatives). Treat its output as a strong first pass, **double-check anything critical**, and please [report issues](https://github.com/9pings/fad-checker/issues) — they get fixed fast.
 
 <p align="center"><img src="docs/assets/demo.gif" alt="fad-checker animated terminal demo — a [n/N] checklist warming each vulnerability database, then CVE findings coloured by severity with KEV badges" height="600"></p>
 
