@@ -50,7 +50,7 @@ lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), ya
 lib/codecs/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
 lib/codecs/npm/registry.js          npm registry packument query → per-version deprecation + dist-tags.latest.
 lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/ (incl. retire findings + signatures).
-lib/deps-descriptor.js       Anonymized dep descriptor serialize/deserialize (PASSI offline→online round-trip).
+lib/deps-descriptor.js       Anonymized dep descriptor serialize/deserialize (anonymized offline→online round-trip).
 lib/config.js                Persistent user config in ~/.fad-checker/config.json (mode 0600).
 data/                        Curated JSON: known-obsolete, eol-mapping, cpe-coord-map, known-public-namespaces.
 completions/                 fad-checker.bash, fad-checker.zsh

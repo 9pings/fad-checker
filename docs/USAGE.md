@@ -203,7 +203,7 @@ machine can scan vendored JavaScript fully offline.
 
 Under `--offline`, `fad-checker` makes **zero network calls** — it reads only the warmed
 caches under `~/.fad-checker/` and never transmits any dependency, path, hostname or
-finding off the machine. This is the property a regulated/PASSI engagement needs, and it
+finding off the machine. This is the property a regulated / air-gapped engagement needs, and it
 is enforced two ways:
 
 - **Regression-tested** (`test/offline-guarantee.test.js`): the network-heavy Maven paths
@@ -229,7 +229,7 @@ is enforced two ways:
 > If retire still can't run, the failure is reported as a chapter-0 warning (run `-v`
 > for the exact reason) instead of an empty chapter.
 
-## Anonymized descriptor (PASSI / air-gapped audits)
+## Anonymized descriptor (air-gapped audits)
 
 For an offline/confidential system that can't reach the vuln databases, split the scan
 across machines while keeping **only public coordinates** off the secure enclave — no
@@ -383,7 +383,7 @@ fad-checker -s . --report-output reports/$(date +%F)
 diff reports/2026-04-01/cve-report.html reports/2026-05-01/cve-report.html
 ```
 
-### Air-gapped scan (anonymized descriptor — PASSI)
+### Air-gapped scan (anonymized descriptor)
 
 The robust way: export an anonymized descriptor offline, warm caches online from it,
 re-scan offline. Only public coordinates ever leave the secure machine.

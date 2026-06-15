@@ -229,7 +229,7 @@ program
 	.option("--export-cache <file>", "tar.gz/zip the ~/.fad-checker/ caches to <file> (excludes config.json by default)")
 	.option("--import-cache <file>", "restore ~/.fad-checker/ from a previously exported archive (existing dir is moved to .bak unless --force)")
 	.option("--include-config", "with --export-cache: also bundle config.json (contains the NVD API key)")
-	.option("--export-anonymized <file>", "offline: write an anonymized dependency descriptor (public coordinates only, no paths/URLs) for PASSI audits, then exit")
+	.option("--export-anonymized <file>", "offline: write an anonymized dependency descriptor (public coordinates only, no paths/URLs) for air-gapped audits, then exit")
 	.option("--import-anonymized <file>", "online: scan an anonymized descriptor (no --src) to warm the caches; pair with --export-cache for offline reporting")
 	.option("--force", "with --import-cache: replace ~/.fad-checker/ without backup")
 	.option("--report-output <dir>", "report output directory", "./fad-checker-report")
@@ -452,10 +452,10 @@ async function timedPhase(label, fn) {
 	].filter(Boolean))];
 	const defaultExcludes = options.defaultExcludes !== false;
 	const walkOpts = { excludePath, defaultExcludes };
-	// PASSI phase 1 (--export-anonymized) is a purely local operation — parse the tree,
+	// Anonymized export (phase 1, --export-anonymized) is a purely local operation — parse the tree,
 	// emit public coordinates, exit. Force offline so no source ever touches the network.
 	if (options.exportAnonymized) options.offline = true;
-	const runMode = options.exportAnonymized ? "offline (PASSI phase 1 · export descriptor)"
+	const runMode = options.exportAnonymized ? "offline (anonymized export · phase 1)"
 		: options.importAnonymized ? "import descriptor"
 		: (options.offline ? "offline" : "online");
 	if (options.src) ui.kv("source", chalk.white(options.src));
@@ -468,7 +468,7 @@ async function timedPhase(label, fn) {
 
 	let wrotePom = 0;
 
-	// --- PASSI phase 2: import an anonymized descriptor instead of collecting ---
+	// --- Anonymized phase 2: import a descriptor instead of collecting ---
 	// Scans the descriptor's public coordinates online to WARM the coordinate-keyed
 	// caches (OSV/NVD/CVE/registry/EOL) + retire signatures. Pair with --export-cache.
 	if (options.importAnonymized) {
@@ -569,7 +569,7 @@ async function timedPhase(label, fn) {
 		if (collectWarnings.length > 5) ui.info(chalk.dim(`…and ${collectWarnings.length - 5} more`));
 	}
 
-	// --- PASSI phase 1: export an anonymized descriptor and exit (no network, no report) ---
+	// --- Anonymized phase 1: export a descriptor and exit (no network, no report) ---
 	if (options.exportAnonymized) {
 		const { serializeDeps } = require("./lib/deps-descriptor");
 		const pkgVersion = require("./package.json").version;

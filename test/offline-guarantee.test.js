@@ -1,5 +1,5 @@
 /**
- * Air-gap / "zero data sent" guarantee (PASSI-relevant).
+ * Air-gap / "zero data sent" guarantee (air-gap relevant).
  *
  * Locks the contract that the network-heavy Maven paths make ZERO network calls in
  * offline mode, even on a COLD cache (fresh dir = guaranteed cache miss → would fetch

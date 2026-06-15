@@ -3,7 +3,7 @@
 `fad-checker` is **not** a Trivy/Grype competitor — those are container-and-SBOM supply-chain
 scanners. It targets a narrower job: a **zero-setup, multi-ecosystem audit of a source
 checkout, with an audit-ready report and a confidential / air-gapped workflow** — the kind
-of thing a security consultant or an ANSSI-PASSI engagement needs.
+of thing a security consultant or a regulated / air-gapped engagement needs.
 
 ## At a glance
 
@@ -32,7 +32,7 @@ of thing a security consultant or an ANSSI-PASSI engagement needs.
 ¹ Narrower language coverage — no Rust/Dart/Swift (Go and Ruby are now covered).
 
 ² Phase 1 exports only public coordinates; the online scan never sees your source tree —
-see [Air-gapped / PASSI](../README.md#air-gapped--passi-audits). OSV-Scanner has an offline
+see [Air-gapped](../README.md#air-gapped-audits). OSV-Scanner has an offline
 mode, but it still needs the **source on the scanning machine**.
 
 ³ Measured on a 25-module Spring/JSF project, fully air-gapped: fad covered **181/202**
