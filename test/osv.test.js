@@ -1,6 +1,32 @@
 const test = require("node:test");
 const assert = require("node:assert");
-const { osvEcosystemFor, osvPkgName, severityFromOsv, vulnToMatch } = require("../lib/osv");
+const { osvEcosystemFor, osvPkgName, severityFromOsv, vulnToMatch, fixVersionFromOsv } = require("../lib/osv");
+
+// Regression: a multi-branch advisory (Tomcat fixed in 9.0.118, 10.1.55 AND 11.0.22) must
+// recommend the fix ABOVE the current version (the dep's own branch), never the lowest one
+// — suggesting 9.0.118 for an 11.0.21 dep is a downgrade.
+const TOMCAT_MULTIBRANCH = {
+	affected: [{
+		package: { name: "org.apache.tomcat.embed:tomcat-embed-core", ecosystem: "Maven" },
+		ranges: [{ type: "ECOSYSTEM", events: [
+			{ introduced: "0" }, { fixed: "9.0.118" },
+			{ introduced: "10.1.0-M1" }, { fixed: "10.1.55" },
+			{ introduced: "11.0.0-M1" }, { fixed: "11.0.22" },
+		] }],
+	}],
+};
+
+test("fixVersionFromOsv picks the next fix ABOVE the current version, not a lower branch", () => {
+	const pkg = "org.apache.tomcat.embed:tomcat-embed-core";
+	assert.strictEqual(fixVersionFromOsv(TOMCAT_MULTIBRANCH, pkg, "11.0.21"), "11.0.22");
+	assert.strictEqual(fixVersionFromOsv(TOMCAT_MULTIBRANCH, pkg, "10.1.50"), "10.1.55");
+	assert.strictEqual(fixVersionFromOsv(TOMCAT_MULTIBRANCH, pkg, "9.0.100"), "9.0.118");
+});
+
+test("fixVersionFromOsv returns null rather than a downgrade when no fix is above current", () => {
+	const v = { affected: [{ package: { name: "g:a" }, ranges: [{ events: [{ introduced: "0" }, { fixed: "9.0.118" }] }] }] };
+	assert.strictEqual(fixVersionFromOsv(v, "g:a", "11.0.21"), null);
+});
 
 test("osvEcosystemFor maps codec ids to OSV ecosystem names", () => {
 	assert.strictEqual(osvEcosystemFor({ ecosystem: "maven" }), "Maven");
