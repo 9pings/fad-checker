@@ -6,7 +6,8 @@ This is the deep-dive for anyone modifying `fad-checker`'s internals or wonderin
 
 ```
 fad-checker.js                 Thin CLI: commander parsing + orchestration (loops over active codecs).
-lib/codecs/                  Per-ecosystem codecs (maven, npm, yarn, composer, pypi, nuget, go, ruby, binary) + registry + select + recipes (see "Codecs" below).
+lib/codecs/                  Per-ecosystem codecs (maven, gradle, npm, yarn, composer, pypi, nuget, go, ruby, binary) + registry + select + recipes (see "Codecs" below).
+lib/codecs/gradle/                gradle.lockfile + gradle.properties + build.gradle(.kts) best-effort DSL parser (parse.js) + version-catalog libs.versions.toml resolver (catalog.js). Emits ecosystem "maven" / ecosystemType "gradle" records; surfaces platform() BOMs for the maven-bom backfill.
 lib/codecs/binary/                 Native-binary scanner: sniff.js (extension + magic-byte gate) + scan.js (walk + SHA-1/SHA-256). The binary codec finds committed .dll/.exe/.so/.dylib (provenance:"binary").
 lib/hash-id.js               Identity-by-checksum: deps.dev (→ exact coordinate) then CIRCL hashlookup (→ known-good + KnownMalicious). Cached, offline-aware.
 lib/unmanaged.js             enrichUnmanaged() (identity + integrity on hash-bearing records) + buildInventory() (per-file signals for report chapter 1C / JSON).
@@ -78,6 +79,17 @@ resolveEolProduct(dep), recipe, nativeScanners
   cvelistV5 index, merged into the CVE chapter) and `vendored` (npm → retire.js, its own
   chapter). New ecosystems (NuGet/Composer/PyPI) ship as codecs with no native scanners —
   OSV + NVD cover them — so no orchestrator changes are needed to add one.
+- **Gradle is modeled as the Maven ecosystem.** Its codec emits records with
+  `ecosystem: "maven"` (bare `g:a` coordKey) so the Maven CVE-index `nativeScanner`,
+  OSV `Maven`, the Maven-Central transitive walk, the external import-BOM backfill, outdated
+  and EOL all cover Gradle deps unchanged — but `ecosystemType: "gradle"` so the report
+  buckets them into a dedicated "Gradle" chapter and offers a Gradle `constraints { }` fix
+  recipe (`codecFor()` resolves the codec by `ecosystemType` first). The only Gradle-specific
+  orchestrator wiring is: include it in the transitive/CVE/scan-completeness gates
+  (`runMaven || runGradle`) and feed its `platform(...)` BOMs into the same
+  `lib/maven-bom.js` managed-version backfill the Maven path uses. Gradle is **excluded** from
+  the per-codec registry loop (its outdated/obsolete/EOL come from the Maven passes, which
+  already select every `ecosystem === "maven"` dep) to avoid double-processing.
 
 ## The resolved-deps Map
 
@@ -92,8 +104,8 @@ Each `depRecord` carries:
   groupId, artifactId, version,
   scope,             // "compile" | "test" | "import" | "transitive" | "parent" | "prod" | "dev" | "peer" | "optional"
   isDev,             // Maven test/provided OR npm dev/devOptional/optional
-  ecosystem,         // "maven" | "npm"
-  ecosystemType,     // "maven" | "npm" | "yarn" | "retire"
+  ecosystem,         // "maven" | "npm"  (Gradle deps are "maven" — Maven coordinates)
+  ecosystemType,     // "maven" | "gradle" | "npm" | "yarn" | "retire"
   pomPaths,          // absolute paths to manifests declaring this dep
   manifestPaths,     // same as pomPaths but used by the npm collector
   // Transitive-only:
@@ -212,7 +224,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 ## Testing
 
 ```bash
-npm test                          # full suite (319 tests)
+npm test                          # full suite (491 tests)
 node --test test/core.test.js     # one file
 ```
 
@@ -221,4 +233,5 @@ Test fixtures live in `test/fixtures/`:
 - `complex-enterprise/` — Spring Boot parent (external), local BOM via `scope=import`, three profiles (two of which inject env-specific JDBC drivers), test-scoped JUnit, jackson-databind via BOM-managed version
 - `private-lib-detection/` — mixed public/private groupIds and an externally-hosted private parent — verifies missing-parent tracking
 - `monorepo-mixed/` — combined Maven (4 POMs: parent + BOM + 2 modules) + JS (npm package-lock v3 + yarn.lock v1 + a no-lockfile package.json to test the warning)
+- `gradle-kotlin-catalog/`, `gradle-groovy-lockfile/`, `gradle-hybrid/` — Gradle: Kotlin DSL + version catalog + `buildSrc/` `platform()` BOM; Groovy DSL + `gradle.lockfile`; and a `pom.xml`+`build.gradle` hybrid (Maven/Gradle keyspace coexistence)
 - `cve-samples/` — small CVE / NVD JSON files to exercise the matchers without the 500 MB real bundle

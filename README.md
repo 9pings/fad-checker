@@ -8,7 +8,7 @@
 > **F**abulous **A**utonomous **D**ependency **C**hecker<br>
 > AKA **F**uckin' **A**utonomous **D**ependency **C**hecker<br>
 
-`fad-checker` audits **Maven · npm · Yarn · pnpm · Composer · PyPI · NuGet · Go · Ruby**, vendored JavaScript and committed native binaries in any source tree — multi-module, monorepo, polyglot — and produces a self-contained **HTML + Word report** (CVE prioritised by EPSS + CISA KEV, EOL, obsolete, outdated, licenses) plus **CycloneDX SBOM / CSAF VEX / SARIF / JSON** exports. **No build tools, no Docker, no network needed** — it reads lockfiles and manifests straight off disk.
+`fad-checker` audits **Maven · Gradle · npm · Yarn · pnpm · Composer · PyPI · NuGet · Go · Ruby**, vendored JavaScript and committed native binaries in any source tree — multi-module, monorepo, polyglot — and produces a self-contained **HTML + Word report** (CVE prioritised by EPSS + CISA KEV, EOL, obsolete, outdated, licenses) plus **CycloneDX SBOM / CSAF VEX / SARIF / JSON** exports. **No build tools, no Docker, no network needed** — it reads lockfiles and manifests straight off disk.
 
 🌐 **[Project site & docs →](https://n8tz.github.io/fad-checker/)**
 
@@ -16,8 +16,8 @@
 
 ## Features
 
-- **9 ecosystems in one pass** — Maven, npm/Yarn/pnpm, Composer (PHP), PyPI, NuGet, Go, Ruby; plus **vendored JS** (retire.js), committed **native binaries** (`.dll`/`.exe`/`.so`/`.dylib`, identified by checksum via deps.dev + CIRCL) and **embedded JARs** (fat-jars/war/ear, unzipped in-memory).
-- **No build tools** — reads `pom.xml`, `package-lock`/`yarn.lock`/`pnpm-lock`, `composer.lock`, `poetry`/`Pipfile`/`uv`/`pdm` locks, `packages.lock.json`/`*.csproj`, `go.mod`, `Gemfile.lock` directly. No `mvn`/`npm install`/`pip`/`dotnet restore`/`go build`/`bundle`, no `node_modules/`. → [how it stays build-free](docs/COMPARISON.md#how-its-autonomous-no-build-tools)
+- **10 ecosystems in one pass** — Maven, **Gradle**, npm/Yarn/pnpm, Composer (PHP), PyPI, NuGet, Go, Ruby; plus **vendored JS** (retire.js), committed **native binaries** (`.dll`/`.exe`/`.so`/`.dylib`, identified by checksum via deps.dev + CIRCL) and **embedded JARs** (fat-jars/war/ear, unzipped in-memory).
+- **No build tools** — reads `pom.xml`, `build.gradle(.kts)`/`gradle.lockfile`/`libs.versions.toml`, `package-lock`/`yarn.lock`/`pnpm-lock`, `composer.lock`, `poetry`/`Pipfile`/`uv`/`pdm` locks, `packages.lock.json`/`*.csproj`, `go.mod`, `Gemfile.lock` directly. No `mvn`/`gradle`/`npm install`/`pip`/`dotnet restore`/`go build`/`bundle`, no `node_modules/`. → [how it stays build-free](docs/COMPARISON.md#how-its-autonomous-no-build-tools)
 - **CVE, merged & prioritised** — CVEProject + OSV.dev + NVD, CPE/version cross-checked to cut false positives, ranked **CISA KEV → EPSS → CVSS**.
 - **Per-module Maven version mediation** — recovers vulnerable transitive versions that a global `<dependencyManagement>` pin hides in another module (lifted Snyk-corroborated coverage **156 → 181** on a real 25-module reactor, finding CVEs a single Snyk scan missed).
 - **Air-gapped / PASSI** — **zero network under `--offline`** (regression-tested), offline Maven transitive resolution, and `--osv-db` for cache-independent offline OSV recall. → [Air-gapped](#air-gapped--passi-audits)
@@ -63,7 +63,7 @@ A single self-contained binary (no Node), from-source install and shell completi
 | **5. Obsolete libraries** | curated list (Maven) + registry maintainer flags | log4j 1.x, jackson-mapper-asl, joda-time, …; npm `deprecated`, Composer `abandoned`, PyPI `yanked`/inactive, NuGet `deprecation` |
 | **6. Outdated libraries** | Maven Central + npm / Packagist / PyPI / NuGet registries | Available newer versions, with release dates |
 | **7. Licenses** *(opt-in: `--licenses`)* | registry metadata + Maven POMs → SPDX policy | Each dep's license normalised to SPDX and classified; copyleft (GPL/AGPL/LGPL/MPL), proprietary and unknown flagged for review |
-| **8. Fix Recommendations** | computed | Per-ecosystem pin recipes: Maven `<dependencyManagement>`, npm `overrides`, yarn `resolutions`, `composer require`, `pip install`, `dotnet add package` |
+| **8. Fix Recommendations** | computed | Per-ecosystem pin recipes: Maven `<dependencyManagement>`, Gradle `constraints { }`, npm `overrides`, yarn `resolutions`, `composer require`, `pip install`, `dotnet add package` |
 
 The HTML report opens in any browser, contains every detail (CVSS vectors, references, full descriptions, CPE configurations, via-paths for transitives) and ships a Word-compatible `.doc` twin. Every match carries a **composite priority** (KEV-exploited > EPSS likelihood > CVSS severity), and the run can additionally emit a **CycloneDX 1.6 SBOM** (`--report-sbom`, vulnerabilities inline) and a **CSAF 2.0 VEX** (`--report-csaf`) for downstream tooling.
 
