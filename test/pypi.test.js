@@ -125,6 +125,15 @@ test("pypi collect: requirements.txt fallback warns + scans pins only", async ()
 	assert.ok(!deps.has("pypi:flask"));
 	assert.ok(warnings.find(w => w.type === "no-lockfile"));
 });
+test("pypi collect: scans the whole requirements-*.txt family (pip-compile pinned file)", async () => {
+	// securesystemslib shape: requirements.txt = ranges only, requirements-pinned.txt = the real pins.
+	const { deps } = await pypi.collect(F("python-reqs-pinned"), {});
+	assert.equal(deps.get("pypi:cryptography")?.version, "46.0.5"); // from requirements-pinned.txt
+	assert.equal(deps.get("pypi:asn1crypto")?.version, "1.5.1");
+	assert.equal(deps.get("pypi:cffi")?.version, "2.0.0");
+	assert.equal(deps.get("pypi:cryptography")?.isDev, false);      // prod (not a -test/-dev file)
+	assert.equal(deps.get("pypi:coverage")?.isDev, true);           // requirements-test.txt → dev
+});
 test("pypi codec: detects + collects pyproject.toml (no lockfile)", async () => {
 	assert.strictEqual(pypi.detect(F("python-pyproject")), true);
 	const { deps, warnings } = await pypi.collect(F("python-pyproject"), {});
