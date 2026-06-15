@@ -196,6 +196,10 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
   8.a Maven                     ← dependencyManagement XML
   8.b npm                       ← package.json overrides
   8.c yarn                      ← package.json resolutions
+9. Appendix: Likely false positives (CPE-filtered)   ← only if any
+10. Appendix: Scanned dependency descriptors         ← the manifests/lockfiles actually parsed
+                                  (union of declared deps' manifestPaths, relative to src;
+                                  transitives + committed binaries excluded)
 ```
 
 ## Important conventions
@@ -224,7 +228,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 ## Testing
 
 ```bash
-npm test                          # full suite (495 tests)
+npm test                          # full suite (496 tests)
 node --test test/core.test.js     # one file
 ```
 
