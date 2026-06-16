@@ -11,13 +11,16 @@ test("retire signature cache lives INSIDE ~/.fad-checker/ (so --export-cache car
 	assert.ok(R.RETIRE_CACHE_DIR.startsWith(fadDir));
 });
 
-test("buildRetireArgs adds --jsrepo only when a local signature file is given", () => {
-	const withRepo = R.buildRetireArgs({ srcDir: "/s", outPath: "/o.json", ignoredDirs: "node_modules", jsRepo: "/sig.json" });
-	assert.deepStrictEqual(withRepo, ["--verbose", "--outputformat", "json", "--outputpath", "/o.json", "--jspath", "/s", "--ignore", "node_modules", "--jsrepo", "/sig.json"]);
-	const withoutRepo = R.buildRetireArgs({ srcDir: "/s", outPath: "/o.json", ignoredDirs: "x" });
+test("buildRetireArgs uses --ignorefile (path-anchored) and adds --jsrepo only when a signature file is given", () => {
+	const withRepo = R.buildRetireArgs({ srcDir: "/s", outPath: "/o.json", ignoreFile: "/ig.txt", jsRepo: "/sig.json" });
+	assert.deepStrictEqual(withRepo, ["--verbose", "--outputformat", "json", "--outputpath", "/o.json", "--jspath", "/s", "--ignorefile", "/ig.txt", "--jsrepo", "/sig.json"]);
+	const withoutRepo = R.buildRetireArgs({ srcDir: "/s", outPath: "/o.json", ignoreFile: "/ig.txt" });
 	assert.ok(!withoutRepo.includes("--jsrepo"));
 	assert.ok(withoutRepo.includes("--verbose"), "--verbose listed so retire reports ALL identified libs, not just vulnerable");
 	assert.deepStrictEqual(withoutRepo.slice(0, 5), ["--verbose", "--outputformat", "json", "--outputpath", "/o.json"]);
+	// No ignore file (nothing to exclude) → no --ignorefile flag at all.
+	const noIgnore = R.buildRetireArgs({ srcDir: "/s", outPath: "/o.json" });
+	assert.ok(!noIgnore.includes("--ignorefile"));
 });
 
 test("ensureSignatures offline never reaches the network — returns existence boolean", async () => {
@@ -116,6 +119,72 @@ test("retireFailureReason extracts the meaningful error line, not a stack frame"
 	// Empty stderr → fallback.
 	assert.strictEqual(R.retireFailureReason("", "the-fallback"), "the-fallback");
 	assert.strictEqual(R.retireFailureReason("   \n  \n", "fb"), "fb");
+});
+
+// Faithfully replay how retire ITSELF turns ignore lines into match decisions, so
+// these tests prove real behavior (not our reading of it). Mirrors, verbatim:
+//   - cli.js plain-text ignorefile: an `@`-line is kept literal, any other line is
+//     path.resolve()'d against retire's cwd;
+//   - cli.js:179-182: escape regex specials, expand `*`→[^/]* and `**`→.*, new RegExp;
+//   - scanner.js:103: a file is ignored if any regex matches the path (or its resolve()).
+function retireIgnores(lines, absFile) {
+	const regexes = lines
+		.map(e => (e[0] === "@" ? e.slice(1) : path.resolve(e)))
+		.map(p => p.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+		.map(p => p.replace(/[*]{1,2}/g, a => (a.length === 2 ? ".*" : "[^/]*")))
+		.map(s => new RegExp(s));
+	return regexes.some(i => i.test(absFile) || i.test(path.resolve(absFile)));
+}
+
+test("buildRetireIgnorePatterns ignores skip dirs at ANY depth (the nested-node_modules bug)", () => {
+	const lines = R.buildRetireIgnorePatterns({ srcDir: "/proj" });
+	// node_modules buried several levels deep — the exact case plain --ignore missed
+	// (retire path.resolve()s "node_modules" against ITS cwd, never the scan root).
+	assert.ok(retireIgnores(lines, "/proj/a/b/c/node_modules/jquery/dist/jquery.js"));
+	assert.ok(retireIgnores(lines, "/proj/node_modules/x.js"));            // top-level too
+	assert.ok(retireIgnores(lines, "/proj/web/target/classes/app.min.js")); // other defaults
+	// real vendored source is still scanned
+	assert.ok(!retireIgnores(lines, "/proj/web/js/jquery-1.6.1.min.js"));
+});
+
+test("buildRetireIgnorePatterns is segment-bounded — does not clip lookalike filenames", () => {
+	const lines = R.buildRetireIgnorePatterns({ srcDir: "/proj" });
+	// a file merely STARTING with a skip-dir name must NOT be excluded
+	assert.ok(!retireIgnores(lines, "/proj/src/node_modules_shim.js"));
+	// 'out'/'build'/'dist' are short — segment slashes keep ordinary files safe
+	assert.ok(!retireIgnores(lines, "/proj/src/routes/about.js"));   // contains "out"
+	assert.ok(!retireIgnores(lines, "/proj/src/rebuild-helper.js")); // contains "build"
+});
+
+test("buildRetireIgnorePatterns is independent of retire's cwd (anchored to the scan tree)", () => {
+	// srcDir deliberately unrelated to process.cwd() — the original bug surfaced only
+	// when fad-checker ran from a different directory than -s.
+	const lines = R.buildRetireIgnorePatterns({ srcDir: "/totally/other/proj" });
+	assert.ok(retireIgnores(lines, "/totally/other/proj/sub/node_modules/lodash/lodash.js"));
+});
+
+test("buildRetireIgnorePatterns honors --exclude-path, anchored to the scan root", () => {
+	const lines = R.buildRetireIgnorePatterns({ srcDir: "/proj", excludePath: ["webapp/legacy"] });
+	assert.ok(retireIgnores(lines, "/proj/webapp/legacy/old.js"));        // excluded
+	assert.ok(!retireIgnores(lines, "/proj/other/webapp/legacy/old.js")); // anchored, NOT any-depth
+	// leading ./, leading /, trailing /, and trailing /** all normalise the same
+	for (const g of ["./webapp/legacy", "/webapp/legacy", "webapp/legacy/", "webapp/legacy/**"]) {
+		assert.ok(retireIgnores(R.buildRetireIgnorePatterns({ srcDir: "/proj", excludePath: [g] }), "/proj/webapp/legacy/x.js"), g);
+	}
+	// a mid-glob ** expands through retire's own * handling
+	assert.ok(retireIgnores(R.buildRetireIgnorePatterns({ srcDir: "/proj", excludePath: ["pkgs/**/legacy"] }), "/proj/pkgs/a/b/legacy/x.js"));
+});
+
+test("buildRetireIgnorePatterns: --no-default-excludes drops the defaults but keeps user globs", () => {
+	const lines = R.buildRetireIgnorePatterns({ srcDir: "/proj", excludePath: ["vendor"], defaultExcludes: false });
+	assert.ok(!retireIgnores(lines, "/proj/node_modules/x.js"), "defaults dropped");
+	assert.ok(retireIgnores(lines, "/proj/vendor/x.js"), "user glob kept");
+});
+
+test("buildRetireIgnorePatterns resolves a relative srcDir to absolute (matches retire's absolute file paths)", () => {
+	const lines = R.buildRetireIgnorePatterns({ srcDir: "./proj", excludePath: ["legacy"] });
+	const abs = path.resolve("./proj");
+	assert.ok(lines.some(l => l === `@${abs}/legacy/`), `expected anchored @${abs}/legacy/ in ${JSON.stringify(lines)}`);
 });
 
 test("chooseRetireLauncher: node uses local bin, compiled binary self-invokes, else PATH", () => {

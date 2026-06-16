@@ -39,6 +39,23 @@ test("buildFindings produces a flat findings document with summary counts", () =
 	assert.equal(doc.licenses[0].licenses[0], "MIT");
 });
 
+test("buildFindings carries the ignored-directories appendix (array + summary count)", () => {
+	const doc = buildFindings({
+		excludedDirs: [
+			{ dir: "a/b/c/node_modules", type: "default", reason: "default-exclude (node_modules)" },
+			{ dir: "legacy", type: "exclude-path", reason: "--exclude-path (legacy)" },
+		],
+		projectInfo: { name: "demo", src: "/proj" },
+		toolVersion: "2.0.2",
+	});
+	assert.equal(doc.summary.excludedDirs, 2);
+	assert.equal(doc.excludedDirs.length, 2);
+	assert.equal(doc.excludedDirs[0].dir, "a/b/c/node_modules");
+	assert.equal(doc.excludedDirs[1].type, "exclude-path");
+	// absent input → empty, not undefined
+	assert.deepEqual(buildFindings({}).excludedDirs, []);
+});
+
 test("buildFindings counts suppressed matches separately", () => {
 	const dep = makeDepRecord({ ecosystem: "npm", name: "x", version: "1.0.0", manifestPath: "p" });
 	const doc = buildFindings({

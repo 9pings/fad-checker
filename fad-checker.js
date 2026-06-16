@@ -495,7 +495,7 @@ async function timedPhase(label, fn) {
 		// (still honor an explicit --report-<type> if a user really wants a path-free one).
 		const anyReportRequested = [options.reportHtml, options.reportDoc, options.reportSbom, options.reportCsaf, options.reportJson, options.reportSarif].some(v => v !== undefined);
 		if (!anyReportRequested) options.report = false;
-		await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds: [], mavenRepos, regMap, collectWarnings: [] });
+		await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds: [], mavenRepos, regMap, collectWarnings: [], walkOpts });
 		return;
 	}
 
@@ -716,7 +716,7 @@ async function timedPhase(label, fn) {
 	// The scan always runs — it feeds the terminal summary, the file outputs and the
 	// CI gate. Which files get written is decided by the --report-* family inside
 	// (HTML + .doc by default; --no-report writes nothing).
-	await runReportFlow(resolved, { activeIds, runMaven, runGradle, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings, mavenPropsByPom: mavenCtx?.propsByPom, mavenStore: mavenCtx?.store, gradlePlatformBoms: gradleCtx?.platformBoms || [], parsedManifests });
+	await runReportFlow(resolved, { activeIds, runMaven, runGradle, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings, mavenPropsByPom: mavenCtx?.propsByPom, mavenStore: mavenCtx?.store, gradlePlatformBoms: gradleCtx?.platformBoms || [], parsedManifests, walkOpts });
 	if (!readOnly) {
 		ui.section("Next step");
 		ui.info(`run Snyk on the cleaned tree:`);
@@ -725,7 +725,8 @@ async function timedPhase(label, fn) {
 })();
 
 async function runReportFlow(resolved, ecoFlags = {}) {
-	const { activeIds = [], runMaven = true, runGradle = false, runNpm = false, privateLibIds = [], mavenRepos = [], regMap = {}, collectWarnings = [], mavenPropsByPom = null, mavenStore = null, gradlePlatformBoms = [], parsedManifests = [] } = ecoFlags;
+	const { activeIds = [], runMaven = true, runGradle = false, runNpm = false, privateLibIds = [], mavenRepos = [], regMap = {}, collectWarnings = [], mavenPropsByPom = null, mavenStore = null, gradlePlatformBoms = [], parsedManifests = [], walkOpts = {} } = ecoFlags;
+	const { excludePath = [], defaultExcludes = true } = walkOpts;
 	const registriesFor = eco => regMap[eco] || [];
 	const { expandWithTransitives } = require("./lib/cve-match");
 	const { writeReports, computeStats } = require("./lib/cve-report");
@@ -1045,7 +1046,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		else if (!options.src) { st.skip("no source tree (descriptor import)"); }
 		else {
 			try {
-				const r = await sc.scan(resolved, { src: options.src, verbose, retireRefresh: !!options.retireRefresh, offline });
+				const r = await sc.scan(resolved, { src: options.src, verbose, retireRefresh: !!options.retireRefresh, offline, excludePath, defaultExcludes });
 				retireMatches = r.matches || [];
 				if (options.vendoredJsInventory !== false) vendoredJsInventory = r.meta?.inventory || [];
 				const invN = vendoredJsInventory.length;
@@ -1273,6 +1274,18 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		: { html: resolveOut("html"), doc: resolveOut("doc"), sbom: resolveOut("sbom"), csaf: resolveOut("csaf"), json: resolveOut("json"), sarif: resolveOut("sarif") };
 	const ensureDir = async p => { if (p) await fs.promises.mkdir(path.dirname(path.resolve(p)), { recursive: true }); };
 
+	// Ignored-directories appendix: re-walk --src ONCE under the same prune policy the
+	// codec walkers use (the default-exclude union at any depth + --exclude-path,
+	// anchored to --src) so the report can list exactly which directories the scan
+	// skipped, and why. Only computed when an output that renders it is requested.
+	let excludedDirs = [];
+	if (options.src && (out.html || out.doc || out.json)) {
+		try {
+			const { collectExcludedDirs } = require("./lib/path-filter");
+			excludedDirs = collectExcludedDirs({ srcRoot: options.src, excludePath, defaultExcludes });
+		} catch { /* best effort — never block the report on the appendix walk */ }
+	}
+
 	const reportWarnings = [
 		...(suppressedCount ? [{
 			type: "suppressed",
@@ -1299,7 +1312,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		await ensureDir(out.html); await ensureDir(out.doc);
 		const { htmlPath, docPath } = await writeReports({
 			cveMatches: prodMatches, devCveMatches: devMatches, embeddedMatches, retireMatches, vendoredJsInventory,
-			eolResults, obsoleteResults, outdatedResults, licenseResults,
+			eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs,
 			resolvedDeps: resolved, projectInfo, warnings: reportWarnings, parsedManifests,
 			htmlPath: out.html, docPath: out.doc,
 		});
@@ -1329,7 +1342,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		try {
 			const { writeFindings } = require("./lib/json-export");
 			await ensureDir(out.json);
-			writeFindings({ cveMatches, retireMatches, vendoredJsInventory, eolResults, obsoleteResults, outdatedResults, licenseResults, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version, typosquats }, out.json);
+			writeFindings({ cveMatches, retireMatches, vendoredJsInventory, eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version, typosquats }, out.json);
 			wrote.push(["Findings JSON", out.json]);
 		} catch (err) { ui.warn(`JSON export failed: ${err.message}`); }
 	}

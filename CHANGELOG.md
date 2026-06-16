@@ -32,6 +32,14 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   across every ecosystem. Repeatable; also `excludePath: [...]` in `.fad-env.json`,
   unioned across config layers. **`--no-default-excludes`** walks the normally
   pruned dirs (`node_modules`, `vendor`, `target`, `.git`, …). New `lib/path-filter.js`.
+- **Ignored-directories appendix (report chapter 11 + JSON `excludedDirs`).** The
+  HTML/`.doc` report now ends with an appendix listing the ACTUAL directories the
+  scan did not walk — resolved by re-walking `--src` once under the same prune
+  policy the codecs use (the default-exclude set at any depth + your
+  `--exclude-path` rules), each path shown relative to the scan root and tagged
+  with the rule that pruned it (`default` vs `--exclude-path`). Surfaced in the
+  findings JSON as `excludedDirs[]` + `summary.excludedDirs`. New
+  `collectExcludedDirs()` in `lib/path-filter.js`.
 
 ### Changed
 - **BREAKING:** the persisted-registry store moved from the Maven-only
@@ -39,6 +47,26 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `registries` map + `--add-repo <ecosystem> <name> <url>`. `--repo` now requires
   the `<ecosystem>=<url>` form (a bare URL is rejected). Re-add any private Maven
   repos with `--add-repo maven <name> <url>`.
+
+### Fixed
+- **retire.js now skips the same dirs as the rest of the scan.** The vendored-JS
+  scan walks the tree itself and was handed a bare `--ignore node_modules,…` list,
+  which retire `path.resolve()`s against its **own working directory** — so a
+  `node_modules` (or `target`/`dist`/…) nested anywhere under `--src` was scanned
+  whenever fad-checker ran from a different directory than the source tree. retire
+  is now driven by a generated `--ignorefile` anchored to `--src` that prunes the
+  default SKIP dirs **at any depth** and honors `--exclude-path` /
+  `--no-default-excludes`, matching `lib/path-filter.js`.
+- **Offline NVD enrichment (incl. CWEs) no longer silently dropped.** The NVD cache
+  enforces a 7-day TTL and a schema version; offline, a TTL-expired or older-schema
+  entry was treated as a miss — and since an air-gapped box can't re-fetch, the CVE
+  lost **all** its NVD enrichment (CWE list, CVSS vector, references, CPE configs).
+  That was the "offline scan was missing some CWE titles that the online scan had".
+  Offline now reads the warmed cache regardless of age/schema (a missing field just
+  stays missing — strictly better than dropping everything); online still enforces
+  TTL + schema so it re-fetches and upgrades. CWE IDs were already persisted in the
+  cache body (`_schema:2`) and travel in `--export-cache`; CWE *titles* come from the
+  bundled `data/cwe-names.json` (identical online/offline).
 
 ## [2.1.0]
 
