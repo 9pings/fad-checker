@@ -77,6 +77,8 @@ The excluded coords are listed at the end of the run so you can audit the regex.
 
 `-e` drops *dependencies* by coordinate; `--exclude-path` prunes the directory **walk** itself — nothing under a matched path is read, for every ecosystem. Patterns are gitignore-style globs (via `minimatch`, `dot:true`) matched against the path **relative to `--src`**; a pattern matches both the directory and its whole subtree.
 
+This applies to the **retire.js vendored-JS scan** too: retire skips the same default dirs (`node_modules` etc.) at **any depth** and honors your `--exclude-path` / `--no-default-excludes`, anchored to `--src` — so a deeply-nested `node_modules` is never scanned.
+
 All patterns are **anchored to the `--src` root** — `truc`, `/truc` and `./truc` are equivalent (a leading `/` or `./` is stripped). To match a name at any depth, use `**/` (e.g. `**/fixtures/**`).
 
 ```bash
@@ -89,6 +91,8 @@ fad-checker -s . --no-default-excludes                # also walk node_modules/v
 | --- | --- |
 | `--exclude-path <glob...>` | Prune matching sub-paths (relative to `--src`). Repeatable; also settable as `excludePath: [...]` in `.fad-env.json` and unioned across all config layers. |
 | `--no-default-excludes` | Don't prune the built-in ignored dirs (`node_modules`, `bower_components`, `vendor`, `dist`, `build`, `out`, `target`, `.git`, `.gradle`, `__pycache__`, …). Walks everything — slower, but nothing is hidden. |
+
+For full transparency about what was *not* scanned, the report ends with an **"Ignored directories" appendix** (chapter 11) listing the actual directories the scan skipped — relative to `--src`, each tagged with the rule that pruned it (`default` vs `--exclude-path`). The same list is in the findings JSON as `excludedDirs[]`.
 
 ## Per-source toggles
 

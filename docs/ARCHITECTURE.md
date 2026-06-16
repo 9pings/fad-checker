@@ -30,7 +30,7 @@ lib/version-overlay.js       Per-module version-mediation overlay (recovers tran
 lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
 lib/osv-db.js                Offline-complete OSV matching from an imported local OSV DB (Maven; `--osv-db`).
 lib/malware.js               Supply-chain risk lane: known-malicious (MAL-) flagging + offline typosquat heuristic (`--typosquat`).
-lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configurations).
+lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configurations, CWE list). Offline serves the warmed cache regardless of TTL/schema (never drops enrichment air-gapped).
 lib/epss.js                  EPSS (FIRST.org) percentile/score enrichment (24h cache).
 lib/kev.js                   CISA KEV catalogue membership enrichment (24h cache).
 lib/priority.js              Composite priority (KEV > EPSS-weighted CVSS) → band/score/sortKey. Pure.
@@ -40,11 +40,11 @@ lib/purl.js                  Package-URL builder per ecosystem. Pure.
 lib/sbom-export.js           CycloneDX 1.6 SBOM (vulnerabilities inline). Pure builder + writer.
 lib/csaf-export.js           CSAF 2.0 VEX (csaf_vex). Pure builder + writer.
 lib/sarif-export.js          SARIF 2.1.0 log (rule per CVE + manifest locations). Pure builder + writer.
-lib/json-export.js           Flat findings JSON (all chapters + summary). Pure builder + writer.
+lib/json-export.js           Flat findings JSON (all chapters + summary, incl. excludedDirs[]). Pure builder + writer.
 lib/gate.js                  evaluateGate(matches, level) → CI exit-code decision. Pure.
 lib/suppress.js              Triage: --ignore rules + --vex (CSAF) ingestion → suppress matches. Pure.
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
-lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser.
+lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser. buildRetireIgnorePatterns() generates a retire --ignorefile mirroring the codecs' prune policy (default SKIP dirs at any depth + --exclude-path, anchored to --src).
 lib/scan-completeness.js     Warnings for deps we couldn't fully resolve.
 lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 + Berry, pnpm-lock.yaml (v5/6/9) parsers.
 lib/codecs/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
@@ -138,12 +138,12 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
    Dedupes by `(dep, cve.id)` and sorts by severity. npm deps are skipped here — they're scanned by OSV instead.
 5. **OSV** (default on) — `queryOsvForDeps()` POSTs batched queries to `api.osv.dev/v1/querybatch` (Maven ecosystem for Maven deps, npm ecosystem for npm deps). Per-dep stub list cached 12h; per-vuln details cached 12h.
 5b. **OSV local DB** (`--osv-db`, Maven) — `lib/osv-db.js` imports the full OSV Maven `all.zip` once (online) into a compact local index, then matches EVERY dep against it (`matchOsvDbDeps`, range eval via `maven-version`), merged via `mergeBySource`. Online it adds nothing (the live OSV query above already covers it), but **offline it makes Maven recall complete and cache-independent** — when the per-dep OSV cache is cold (different machine, TTL-expired, offline-discovered deps) it lifts melino from 6→117 covered. The OSV-Scanner air-gap model.
-6. **NVD enrichment** (default on) — for every CVE id matched, fetch the full NVD record (description, CVSS vectors, references categorised by tag, CPE configurations). Rate-limited per NIST policy (5/30s unauthenticated, 50/30s with `NVD_API_KEY`).
+6. **NVD enrichment** (default on) — for every CVE id matched, fetch the full NVD record (description, CVSS vectors, references categorised by tag, CPE configurations, **CWE list**). Rate-limited per NIST policy (5/30s unauthenticated, 50/30s with `NVD_API_KEY`). Cached per-CVE (`nvd-cache/<id>.json`, `_schema:2`, 7-day TTL). **Offline**, `readCache` bypasses the TTL and the schema check and serves the warmed body — an air-gapped box can't re-fetch, so dropping a stale/older entry would silently lose ALL of that CVE's enrichment (CWEs included); a missing field is better than nothing. Online still enforces TTL + schema to re-fetch and upgrade. (CWE *titles* are a static bundled map, `data/cwe-names.json`; identical online/offline.)
 7. **CPE refinement** — `refineMatchesWithCpe()` walks NVD's `configurations[].nodes[]` against each matched dep:
    - Confirms the dep version actually falls in the vulnerable range (else `cpeFiltered: true` — likely false positive).
    - Upgrades match `confidence` from `possible` → `probable` → `exact` when a curated `cpe-coord-map.json` entry confirms vendor:product → dep coord.
 7b. **EPSS + KEV + priority** (default on, `--no-epss`/`--no-kev`) — `lib/epss.js` batches matched CVE ids to FIRST.org for the exploit-prediction percentile; `lib/kev.js` checks the CISA KEV catalogue. `lib/priority.js` then attaches a composite `cve.priority` (band + 0-100 score) to every match: KEV (exploited) outranks EPSS-weighted CVSS. The report sorts by it and surfaces a Priority column + KEV/EPSS chips. Both caches 24h.
-8. **retire.js** (default on) — shells out to `retire --outputformat json --jspath <src>`. Output normalised to fad-checker match shape, with the vendored file path attached so the report can show where the offending `.js` lives. Cache: `~/.fad-checker/retire-cache/<md5(src)>.json`, 24h TTL. The cache body carries a `_schema` version (currently `2`, stamped once retire began running with `--verbose` and thus storing the *full* identified-library inventory): an entry without `_schema >= 2` was written by a pre-verbose build and is treated as a **cache miss** so an offline re-run re-scans (with local signatures) rather than silently emptying the vendored-JS inventory chapter 1D. A genuine **scan failure** (retire crashed mid-walk — e.g. ENOENT on the `--src` path, an unreadable file — leaving empty/unparseable output) is no longer swallowed: `scanWithRetireFull` returns an `error`, which the orchestrator surfaces as a chapter-0 `retire-failed` warning so a missing 1D reads as "the scan broke (here's why)" instead of "nothing found". Run with `-v` to see the exact retire stderr.
+8. **retire.js** (default on) — shells out to `retire --outputformat json --jspath <src>`. Output normalised to fad-checker match shape, with the vendored file path attached so the report can show where the offending `.js` lives. retire does its own directory walk, so to prune the **same dirs the codec walkers skip** it's handed a generated `--ignorefile` (`buildRetireIgnorePatterns`): the default SKIP set (`node_modules`, `target`, `dist`, …) matched **by basename at any depth** plus the user's `--exclude-path` globs **anchored to `--src`** (honoring `--no-default-excludes`). This is done via an ignorefile of `@`-prefixed segment patterns because retire's plain `--ignore` flag `path.resolve()`s every entry against retire's *own* cwd — so a bare `node_modules` silently missed `<src>/…/node_modules` whenever fad ran from a different directory than `--src`, and could never express "this dir at any depth". Cache: `~/.fad-checker/retire-cache/<md5(src)>.json`, 24h TTL. The cache body carries a `_schema` version (currently `2`, stamped once retire began running with `--verbose` and thus storing the *full* identified-library inventory): an entry without `_schema >= 2` was written by a pre-verbose build and is treated as a **cache miss** so an offline re-run re-scans (with local signatures) rather than silently emptying the vendored-JS inventory chapter 1D. A genuine **scan failure** (retire crashed mid-walk — e.g. ENOENT on the `--src` path, an unreadable file — leaving empty/unparseable output) is no longer swallowed: `scanWithRetireFull` returns an `error`, which the orchestrator surfaces as a chapter-0 `retire-failed` warning so a missing 1D reads as "the scan broke (here's why)" instead of "nothing found". Run with `-v` to see the exact retire stderr.
 9. **EOL / Obsolete / Outdated** — `lib/outdated.js` (Maven) + `lib/codecs/npm/registry.js` (npm):
    - **WebJars** (`org.webjars*` — client-side JS shipped as Maven artifacts) are reduced to their npm-equivalent coordinate by `webjarToNpm()` (`lib/codecs/npm/collect.js`): `org.webjars.npm` is a deterministic npm mirror (`angular__core` → `@angular/core`); classic `org.webjars`/bower names pass through. They then flow through the **same npm paths** below — no WebJar-specific data.
    - **EOL**: matches dep coord against `data/eol-mapping.json`, fetches the cycle list from endoflife.date (cached 7d), flags cycles past their EOL date. npm packages and WebJars resolve by JS library name via `by_npm_name` / `by_npm_scope` (e.g. npm `angular`/webjar `angularjs` → AngularJS 1.x, `@angular/*` → Angular, `react`/`jquery`/`vue`/`bootstrap`). `findEolProduct` records **which rule matched** (`via`/`viaKey`) so the report's EOL **Source** column shows `endoflife.date/<slug>` + `matched via <rule> = <key>`. A **transitive** EOL finding renders its `via` chain (`root → … → dep`, from `lib/transitive.js`) in the Dependency column instead of a defining manifest, so a "dep of a dep" is traceable to the direct dependency pulling it in.
@@ -199,6 +199,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
   8.c yarn                      ← package.json resolutions
 9. Appendix: Likely false positives (CPE-filtered)   ← only if any
 10. Appendix: Scanned dependency descriptors         ← COMPLETE list of every manifest/lockfile
+11. Appendix: Ignored directories                    ← dirs the prune policy skipped (default-excludes + --exclude-path), relative to --src, with the rule that matched each; only if any
                                   each codec reported parsing (codec.collect → parsedManifests),
                                   relative to src, with per-file direct-dep count. Files that
                                   contributed NOTHING (ranges-only / no lockfile) are listed with
@@ -232,7 +233,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 ## Testing
 
 ```bash
-npm test                          # full suite (503 tests)
+npm test                          # full suite (519 tests)
 node --test test/core.test.js     # one file
 ```
 
