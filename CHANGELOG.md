@@ -5,6 +5,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Report chapters reorganised into a two-level hierarchy.** Related chapters are now
+  grouped under six **root chapters**, each whose header carries a breakdown count:
+  **1. CVE** (`X direct, Y indirect, Z dev` — sub: Production, Vendored JS vulns, Dev,
+  Likely false positives) · **2. Unmanaged / unversioned components** (`X embedded,
+  Y native, Z vendored JS` — sub: embedded JAR/WAR/EAR, native binaries, vendored JS) ·
+  **3. Maintenance / lifecycle** (`X EOL, Y obsolete, Z outdated`) · **4. Licenses** ·
+  **5. Fix Recommendations** · **6. Scan context & limitations** (sub: scanned
+  descriptors, ignored dirs, methodology). **0. Warnings** and **Δ. Changes since
+  baseline** stay pinned at the top. The table of contents is now hierarchical
+  (roots + indented sub-chapters).
+
 ### Added
 - **Scan-provenance manifest + Methodology chapter (audit reproducibility).** Every
   report now carries a provenance manifest — tool version, run mode (offline/online),

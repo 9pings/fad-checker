@@ -179,38 +179,41 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
                                   clipboard) for pasting into Word.
 <Toolbar>                      ← expand-all / collapse-all / expand CVE details
 
-0. Warnings & scan-completeness ← chapter 0 if any warnings
-Δ. Changes since baseline       ← only with --baseline: new/fixed/unchanged per category + new prod CVEs
-1. CVE Vulnerabilities — production (N)
-  1.a Maven (n)
-    1.a.0 All (n)              ← combined direct + transitive
-    By pom.xml (k files)       ← wrapper always present
-      <relative-path-1> (m)    ← direct deps in this pom only
-      <relative-path-2> (m)
+Chapters are grouped under SIX root chapters (a two-level hierarchy), with two
+standalone chapters (Warnings, baseline diff) pinned at the top:
+
+0. Warnings & scan-completeness ← standalone, top; only if any warnings
+Δ. Changes since baseline       ← standalone, top; only with --baseline (new/fixed/unchanged per category + new prod CVEs)
+
+1. CVE (X direct, Y indirect, Z dev)              ← ROOT
+  1.1 Production (N)
+    1.1.a Maven (n)
+      1.1.a.0 All (n)           ← combined direct + transitive
+      By pom.xml (k files)       ← wrapper always present
+        <relative-path> (m)      ← direct deps in this pom only
+    1.1.b npm (package-lock) (n)
       …
-  1.b npm (package-lock) (n)
-    1.b.0 All (n)
-    By package-lock.json (k files)
-      web/package-lock.json (m)
-2. CVE in dev dependencies (M) ← same structure as 1
-3. Vendored JS scan — retire.js (R)
-4. End-of-Life Frameworks
-5. Obsolete / Deprecated Libraries
-6. Outdated Libraries
-7. Licenses                     ← grouped by SPDX policy category (copyleft/unknown flagged)
-8. Fix Recommendations          ← per-ecosystem snippets
-  8.a Maven                     ← dependencyManagement XML
-  8.b npm                       ← package.json overrides
-  8.c yarn                      ← package.json resolutions
-9. Appendix: Likely false positives (CPE-filtered)   ← only if any
-10. Appendix: Scanned dependency descriptors         ← COMPLETE list of every manifest/lockfile
-11. Appendix: Ignored directories                    ← dirs the prune policy skipped (default-excludes + --exclude-path), relative to --src, with the rule that matched each; only if any
-12. Appendix: Methodology, data sources & limitations ← provenance data-source table (freshness) + run config + explicit "what fad does NOT assess"; always present
-                                  each codec reported parsing (codec.collect → parsedManifests),
-                                  relative to src, with per-file direct-dep count. Files that
-                                  contributed NOTHING (ranges-only / no lockfile) are listed with
-                                  count 0 — nothing is silently omitted. Transitives (registry-
-                                  resolved) + committed binaries are not descriptors, excluded.
+  1.2 Vendored JS vulns — retire.js (R)
+  1.3 Dev dependencies (M)        ← same eco/manifest structure as 1.1
+  1.4 Likely false positives — CPE-filtered   ← only if any
+2. Unmanaged / unversioned components (X embedded, Y native, Z vendored JS)   ← ROOT
+  2.1 Embedded binaries — JAR/WAR/EAR
+  2.2 Unmanaged / vendored native binaries
+  2.3 Unmanaged / vendored JavaScript
+3. Maintenance / lifecycle (X EOL, Y obsolete, Z outdated)   ← ROOT
+  3.1 End-of-Life frameworks
+  3.2 Obsolete / deprecated
+  3.3 Outdated
+4. Licenses                     ← ROOT (standalone); grouped by SPDX policy category (copyleft/unknown flagged)
+5. Fix Recommendations          ← ROOT (standalone); per-ecosystem snippets (Maven depMgmt / npm overrides / yarn resolutions / …)
+6. Scan context & limitations   ← ROOT
+  6.1 Scanned dependency descriptors  ← COMPLETE list of every manifest/lockfile each codec parsed
+                                         (codec.collect → parsedManifests), relative to src, with
+                                         per-file direct-dep count; files that contributed NOTHING
+                                         (ranges-only / no lockfile) listed with count 0 — nothing
+                                         silently omitted. Transitives + committed binaries excluded.
+  6.2 Ignored directories             ← dirs the prune policy skipped (default-excludes + --exclude-path); only if any
+  6.3 Methodology, data sources & limitations ← provenance data-source table (freshness) + run config + explicit "what fad does NOT assess"
 ```
 
 ## Important conventions
