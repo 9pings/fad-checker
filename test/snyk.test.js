@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { parseSnykResults, parseSnykStdout, mergeWithFadResults } = require("../lib/snyk");
+const { parseSnykResults, parseSnykStdout, mergeWithFadResults, snykOutputError } = require("../lib/snyk");
 
 const snykSample = {
 	vulnerabilities: [
@@ -44,6 +44,38 @@ test("parseSnykResults normalises to fad-checker match shape", () => {
 	assert.equal(out[0].cve.severity, "CRITICAL");
 	assert.equal(out[0].cve.fixVersion, "2.15.0");
 	assert.equal(out[0].source, "snyk");
+});
+
+test("snykOutputError surfaces snyk's error-shaped JSON instead of a silent '0 findings'", () => {
+	// exit 2 — genuine failure (e.g. auth), single error object on stdout
+	const authErr = { ok: false, error: "Authentication failed. Please run `snyk auth`.", path: "/x" };
+	assert.match(snykOutputError(authErr), /Authentication failed/);
+
+	// exit 3 — no supported projects (array form, as --all-projects emits)
+	const noProj = [{ ok: false, error: "Could not detect supported target files", path: "/x" }];
+	assert.match(snykOutputError(noProj), /supported target files/);
+
+	// multiple distinct errors → joined, deduped
+	const multi = [
+		{ ok: false, error: "boom" },
+		{ ok: false, error: "boom" },
+		{ ok: false, error: "kaboom" },
+	];
+	assert.equal(snykOutputError(multi), "boom; kaboom");
+
+	// real findings (exit 1) → NOT an error
+	assert.equal(snykOutputError([snykSample]), null);
+	assert.equal(snykOutputError(snykSample), null);
+
+	// clean project (ok:true, empty vulns) → NOT an error
+	assert.equal(snykOutputError([{ ok: true, vulnerabilities: [] }]), null);
+
+	// partial --all-projects: one project errored, one has findings → usable, no hard error
+	assert.equal(snykOutputError([{ ok: false, error: "boom" }, snykSample]), null);
+
+	// nothing parsed → no error
+	assert.equal(snykOutputError([]), null);
+	assert.equal(snykOutputError(null), null);
 });
 
 test("mergeWithFadResults tags overlap as 'both' and keeps Snyk-only as 'snyk'", () => {
