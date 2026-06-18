@@ -27,7 +27,8 @@
 - **Supply-chain risk** — known-**malicious** advisories (`MAL-`, always block the CI gate) + suspected **typosquats** (`--typosquat`).
 - **Lifecycle** — EOL (endoflife.date), obsolete/deprecated, outdated — across every ecosystem.
 - **Licenses** *(opt-in `--licenses`)* — SPDX-normalised, copyleft/proprietary flagged.
-- **Outputs & CI** — HTML + Word `.doc`, CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on`, triage with `--ignore`/`--vex`.
+- **Audit-grade & reproducible** — every report carries a **provenance manifest** (data-source freshness + run config) and a **Methodology, data sources & limitations** chapter; artifacts ship a **`SHA256SUMS`** integrity manifest (`sha256sum -c`); **differential audits** diff against a prior run (`--baseline`, or `fad diff a.json b.json`) and CI can gate on *new* findings (`--fail-on-new`).
+- **Outputs & CI** — HTML + Word `.doc`, CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on` / `--fail-on-new`, triage with `--ignore`/`--vex`. Private registries for Maven, npm, PyPI, Ruby, Go, **NuGet** and **Composer**.
 
 📖 **[Usage & all flags](docs/USAGE.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Comparison vs other tools](docs/COMPARISON.md)** · **[Data sources](docs/DATA-SOURCES.md)**
 
@@ -46,6 +47,8 @@ fad-checker -s ./proj -t ../clean -e "^com\.acme\." --snyk     # cleaned POM tre
 fad-checker -s ./proj --offline                                # fully offline (zero network)
 fad-checker -s ./proj --osv-db --typosquat                     # offline-complete OSV + typosquat
 fad-checker -s ./proj --licenses --fail-on high                # license chapter + CI gate
+fad-checker -s ./proj --report-json --baseline last.json --fail-on-new   # differential audit: fail CI on NEW findings
+fad-checker diff last.json this.json                           # standalone diff of two findings JSONs
 ```
 
 A single self-contained binary (no Node), from-source install and shell completion are in → [docs/USAGE.md](docs/USAGE.md).
@@ -67,6 +70,8 @@ A single self-contained binary (no Node), from-source install and shell completi
 | **6. Outdated libraries** | Maven Central + npm / Packagist / PyPI / NuGet registries | Available newer versions, with release dates |
 | **7. Licenses** *(opt-in: `--licenses`)* | registry metadata + Maven POMs → SPDX policy | Each dep's license normalised to SPDX and classified; copyleft (GPL/AGPL/LGPL/MPL), proprietary and unknown flagged for review |
 | **8. Fix Recommendations** | computed | Per-ecosystem pin recipes: Maven `<dependencyManagement>`, Gradle `constraints { }`, npm `overrides`, yarn `resolutions`, `composer require`, `pip install`, `dotnet add package` |
+| **Δ. Changes since baseline** *(with `--baseline`)* | diff vs prior JSON | New / fixed / unchanged findings per category, plus the list of **new production CVEs** — for repeat audits and `--fail-on-new` CI gating |
+| **12. Methodology, data sources & limitations** | provenance manifest | The freshness of every data source used, the run's findings-affecting configuration, and an explicit statement of **what fad-checker does *not* assess** — for a defensible, reproducible audit |
 
 The HTML report opens in any browser, contains every detail (CVSS vectors, references, full descriptions, CPE configurations, via-paths for transitives) and ships a Word-compatible `.doc` twin. Every match carries a **composite priority** (KEV-exploited > EPSS likelihood > CVSS severity), and the run can additionally emit a **CycloneDX 1.6 SBOM** (`--report-sbom`, vulnerabilities inline) and a **CSAF 2.0 VEX** (`--report-csaf`) for downstream tooling.
 

@@ -40,9 +40,12 @@ lib/purl.js                  Package-URL builder per ecosystem. Pure.
 lib/sbom-export.js           CycloneDX 1.6 SBOM (vulnerabilities inline). Pure builder + writer.
 lib/csaf-export.js           CSAF 2.0 VEX (csaf_vex). Pure builder + writer.
 lib/sarif-export.js          SARIF 2.1.0 log (rule per CVE + manifest locations). Pure builder + writer.
-lib/json-export.js           Flat findings JSON (all chapters + summary, incl. excludedDirs[]). Pure builder + writer.
+lib/json-export.js           Flat findings JSON (all chapters + summary, incl. excludedDirs[] + provenance + diff). Pure builder + writer.
 lib/gate.js                  evaluateGate(matches, level) → CI exit-code decision. Pure.
 lib/suppress.js              Triage: --ignore rules + --vex (CSAF) ingestion → suppress matches. Pure.
+lib/provenance.js            buildScanProvenance() → scan-provenance manifest (tool/runtime/mode + config + per-data-source freshness). Pure given a cacheDir. Feeds JSON `provenance` + report chapter 12.
+lib/diff.js                  diffFindings()/summarizeDiff() → differential audit between two findings JSON docs (added/removed/unchanged per category). Pure. Powers --baseline / `fad diff` / --fail-on-new.
+lib/report-integrity.js      SHA256SUMS integrity manifest over the written artifacts (sha256sum format, `sha256sum -c`-verifiable). --no-checksums disables.
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
 lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser. buildRetireIgnorePatterns() generates a retire --ignorefile mirroring the codecs' prune policy (default SKIP dirs at any depth + --exclude-path, anchored to --src).
 lib/scan-completeness.js     Warnings for deps we couldn't fully resolve.
@@ -153,6 +156,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 10. **Snyk** (optional, `--snyk`) — runs `snyk test --all-projects --json` against the cleaned target dir. Normalised + merged. Findings in both sources tagged `source: "both"`.
 11. **Outputs** — controlled by the `--report-<type>` family (`html`/`doc`/`sbom`/`csaf`/`json`/`sarif`), each taking an optional path (else a default name under `--report-output`, default `./fad-checker-report/`). With no `--report-*` flag the default set is HTML + `.doc`; `--no-report` writes nothing (gate-only). `writeReports()` renders `cve-report.html` (self-contained, inline CSS) and/or `cve-report.doc` (same HTML with Office XML meta tags so Word opens it natively).
 12. **Machine-readable exports** (optional) — `--report-sbom` writes a CycloneDX 1.6 SBOM with vulnerabilities inline (VDR); `--report-csaf` writes a CSAF 2.0 VEX; `--report-json` a flat findings doc; `--report-sarif` a SARIF 2.1.0 log. All build purls via `lib/purl.js` and use the full match set (cpeFiltered marked, not dropped; embedded-jar coords carry `provenance:"embedded"`).
+13. **Audit-trail outputs** — a **provenance manifest** (`lib/provenance.js`) is attached to `projectInfo` and rendered as report chapter 12 + the JSON `provenance` block. With `--baseline <file>` the current findings are diffed (`lib/diff.js`) into a Δ report chapter + the JSON `diff` block, and `--fail-on-new` gates on new production CVEs. Unless `--no-checksums`, a `SHA256SUMS` manifest (`lib/report-integrity.js`) is written beside the artifacts. A standalone `fad-checker diff a.json b.json` compares two exports without scanning.
 
 ## Report structure
 
@@ -176,6 +180,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 <Toolbar>                      ← expand-all / collapse-all / expand CVE details
 
 0. Warnings & scan-completeness ← chapter 0 if any warnings
+Δ. Changes since baseline       ← only with --baseline: new/fixed/unchanged per category + new prod CVEs
 1. CVE Vulnerabilities — production (N)
   1.a Maven (n)
     1.a.0 All (n)              ← combined direct + transitive
@@ -200,6 +205,7 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 9. Appendix: Likely false positives (CPE-filtered)   ← only if any
 10. Appendix: Scanned dependency descriptors         ← COMPLETE list of every manifest/lockfile
 11. Appendix: Ignored directories                    ← dirs the prune policy skipped (default-excludes + --exclude-path), relative to --src, with the rule that matched each; only if any
+12. Appendix: Methodology, data sources & limitations ← provenance data-source table (freshness) + run config + explicit "what fad does NOT assess"; always present
                                   each codec reported parsing (codec.collect → parsedManifests),
                                   relative to src, with per-file direct-dep count. Files that
                                   contributed NOTHING (ranges-only / no lockfile) are listed with
