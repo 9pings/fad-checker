@@ -58,7 +58,11 @@ fad-checker -s . --no-binaries                # skip committed native-binary sca
 > & map notation, `libs.*` catalog accessors, `$var`/`gradle.properties` resolution),
 > including the `buildSrc/` convention plugins. A `platform("…")` / `enforcedPlatform("…")`
 > BOM (e.g. `spring-boot-dependencies`) is resolved exactly like a Maven `<scope>import</scope>`
-> BOM, **backfilling the versions of the versionless starters** declared against it. Versions
+> BOM, **backfilling the versions of the versionless starters** declared against it. A
+> backfilled dep's resolved version isn't written anywhere in your source, so the report
+> discloses where it came from: under the dep's `defined in:` footer it shows
+> **`version managed by: <bom-coord> (BOM)`** (e.g. `org.springframework.boot:spring-boot-dependencies:4.0.6`),
+> and the findings JSON carries it as `dep.versionSource = { via: "bom", bom: "<coord>" }`. Versions
 > that can't be resolved statically (programmatic/dynamic deps) are listed in chapter 0 and
 > excluded from CVE matching (never assumed vulnerable); `--no-gradle` disables the codec.
 

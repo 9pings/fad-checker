@@ -56,6 +56,22 @@ test("buildFindings carries the ignored-directories appendix (array + summary co
 	assert.deepEqual(buildFindings({}).excludedDirs, []);
 });
 
+test("buildFindings carries dep.versionSource (BOM provenance) when backfilled, null otherwise", () => {
+	const batch = makeDepRecord({ ecosystem: "maven", namespace: "org.springframework.batch", name: "spring-batch-integration", version: "6.0.3", manifestPath: "/proj/build.gradle.kts" });
+	batch.versionSource = { via: "bom", bom: "org.springframework.boot:spring-boot-dependencies:4.0.6" };
+	const lodash = makeDepRecord({ ecosystem: "npm", name: "lodash", version: "4.17.20", manifestPath: "/proj/package.json" });
+	const doc = buildFindings({
+		cveMatches: [
+			{ dep: batch, cve: { id: "CVE-2099-0001", severity: "HIGH", score: 7.5 }, source: "osv" },
+			{ dep: lodash, cve: { id: "CVE-2020-8203", severity: "HIGH", score: 7.4 }, source: "osv" },
+		],
+		projectInfo: { name: "demo", src: "/proj" },
+		toolVersion: "2.0.2",
+	});
+	assert.deepEqual(doc.cve[0].dep.versionSource, { via: "bom", bom: "org.springframework.boot:spring-boot-dependencies:4.0.6" });
+	assert.equal(doc.cve[1].dep.versionSource, null);
+});
+
 test("buildFindings counts suppressed matches separately", () => {
 	const dep = makeDepRecord({ ecosystem: "npm", name: "x", version: "1.0.0", manifestPath: "p" });
 	const doc = buildFindings({
