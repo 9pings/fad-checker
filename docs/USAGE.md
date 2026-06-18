@@ -146,6 +146,7 @@ All honour `--offline` (they render from whatever the scan already resolved).
 | Flag | Effect |
 | --- | --- |
 | `--fail-on <level>` | Exit non-zero when a **production or embedded-binary** finding meets the level: `low`/`medium`/`high`/`critical` (severity) or `kev` (only CISA-known-exploited). Default `none`. Outputs are written first, so artifacts always land. An invalid level hard-fails (exit 2) rather than silently disabling the gate. |
+| `--fail-on-new` | Exit non-zero when the scan introduces any **new production CVE finding** vs `--baseline` (see *Differential audits*). Combinable with `--fail-on` — either condition fails the build. |
 | `--ignore <file>` | Suppress findings. One rule per line: `CVE-2021-44228` (anywhere), `CVE-… org.apache.*` (coord/purl glob), `* npm:lodash` (any CVE for a coord); text after `#` is the reason. |
 | `--vex <file>` | Ingest a **CSAF VEX**: CVEs marked `known_not_affected` / `fixed` are suppressed (products mapped back to coords by purl — round-trips fad's own `--report-csaf`). |
 
@@ -155,6 +156,47 @@ Suppressed findings are dropped from the report chapters and from `--fail-on`, b
 # Fail the pipeline only on exploited-in-the-wild vulns, minus accepted risks
 fad-checker -s . --fail-on kev --ignore .fadignore --report-sarif fad.sarif
 ```
+
+## Differential audits (`--baseline` / `fad diff`)
+
+Repeat audits care about **what changed**. Diff the current scan against a prior
+findings JSON (from `--report-json`): the report gains a **"Δ Changes since baseline"**
+chapter, the JSON export gains a `diff` block, and CI can gate on *new* findings.
+
+| Flag / command | Effect |
+| --- | --- |
+| `--baseline <file>` | Diff this scan against a prior `findings.json`. Adds the Δ chapter to the report + a `diff` block (summary + new/fixed CVEs) to `--report-json`. |
+| `--fail-on-new` | Exit non-zero if any **new production CVE finding** appeared vs the baseline. |
+| `fad diff <baseline.json> <current.json>` | Standalone diff of two exports (no scan). Prints new/fixed/unchanged per category + the new CVEs; `--report-json <out>` writes a `fad-diff/1` document; `--fail-on-new` sets exit 1 on new production CVEs. |
+
+A finding's identity is `CVE id + ecosystem + coordinate + version`, so a version bump
+shows the old finding *resolved* and the new one *added*. Suppressed / CPE-filtered CVEs
+are diffed but excluded from the `--fail-on-new` signal.
+
+```bash
+# CI: fail only when this build introduces NEW vulnerabilities vs main's last report
+fad-checker -s . --report-json this.json --baseline main.json --fail-on-new
+
+# Ad-hoc comparison of two historical reports
+fad-checker diff audit-q1.json audit-q2.json --report-json delta.json
+```
+
+## Report integrity & methodology
+
+Every run aimed at a deliverable is **reproducible** and **tamper-evident**:
+
+- **Provenance manifest** — each report (and the JSON export's `provenance` block) records
+  the tool version, run mode (offline/online), the findings-affecting configuration, and
+  the **freshness of every data source** (CVE index, OSV, NVD, KEV, EPSS, endoflife, the
+  registry caches) read from `~/.fad-checker/`. An `--offline` re-run against the same cache
+  (ship it with `--export-cache`) reproduces the findings.
+- **Methodology chapter** — appendix 12 of the HTML/`.doc` report renders that source table
+  plus an explicit statement of **what fad-checker does *not* assess** (reachability,
+  runtime config, secrets/IaC, first-party code, malware beyond the OSV/CIRCL signal, legal
+  license advice) — the audit's scope, stated up front.
+- **Integrity manifest** — a standard **`SHA256SUMS`** is written beside the artifacts,
+  verifiable with `sha256sum -c SHA256SUMS`. `--no-checksums` disables it. (Sign the
+  manifest with your own key for a full chain of custody.)
 
 ## Supply-chain risk (malware / typosquat)
 
@@ -263,7 +305,7 @@ needs the actual `.js` files), using the signature DB warmed in phase 2.
 
 ## Custom registries (private repos)
 
-`fad-checker` queries each ecosystem's public registry by default. Register private ones for **`maven`, `npm`, `pypi`, `ruby`, `go`** so transitive resolution, outdated/deprecation and license lookups reach them. (NuGet & Composer private feeds are not supported yet.)
+`fad-checker` queries each ecosystem's public registry by default. Register private ones for **`maven`, `npm`, `pypi`, `ruby`, `go`, `nuget`, `composer`** so transitive resolution, outdated/deprecation and license lookups reach them.
 
 | Flag | Effect |
 | --- | --- |
@@ -273,13 +315,15 @@ needs the actual `.js` files), using the signature DB warmed in phase 2.
 | `--repo <eco>=<url>` | One-off, not persisted; **repeatable**; auth via inline `https://user:pass@host/`. |
 
 ```bash
-fad-checker --add-repo maven nexus     https://nexus.acme.com/repository/maven-public/ --auth alice:s3cr3t
-fad-checker --add-repo npm   verdaccio https://npm.acme.com/                            --token "$NPM_TOKEN"
+fad-checker --add-repo maven   nexus     https://nexus.acme.com/repository/maven-public/ --auth alice:s3cr3t
+fad-checker --add-repo npm     verdaccio https://npm.acme.com/                            --token "$NPM_TOKEN"
+fad-checker --add-repo nuget   azure     https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json --token "$AZ_TOKEN"
+fad-checker --add-repo composer satis    https://composer.acme.com/                       --auth alice:s3cr3t
 fad-checker --list-repos
 fad-checker -s ./proj --repo npm=https://npm.acme.com/ --repo maven=https://nexus.acme.com/repository/maven-public/
 ```
 
-Registries are tried **in declared order, the public registry last** (first 2xx wins). `--auth user:pass` → `Basic <base64>`; `--token TOK` → `Bearer TOK`. Responses are cached per coordinate. **PyPI/Ruby** custom bases must expose the same JSON API as the public one (`<base>/<pkg>/json`, `<base>/<gem>.json`), not a bare PEP 503 simple index.
+Registries are tried **in declared order, the public registry last** (first 2xx wins). `--auth user:pass` → `Basic <base64>`; `--token TOK` → `Bearer TOK`. Responses are cached per coordinate. Same-API constraint per ecosystem: **PyPI/Ruby** custom bases must expose the same JSON API as the public one (`<base>/<pkg>/json`, `<base>/<gem>.json`), not a bare PEP 503 simple index; **NuGet** bases speak the v3 registration API — a service index (`…/index.json`) is auto-resolved to its `RegistrationsBaseUrl`; **Composer** bases are queried via the v2 metadata API (`<base>/p2/<vendor>/<pkg>.json`).
 
 ## Configuration file & environment
 
@@ -334,6 +378,8 @@ This:
 3. Merges Snyk's findings into the report — entries present in both `fad-checker` and Snyk are tagged `source: "both"`.
 
 `--snyk` requires `-t` (Snyk needs a real POM tree to scan).
+
+If the snyk run itself **fails** — not authenticated, an unsupported project, a timeout — fad-checker now reports it as a `Snyk run failed: <reason>` warning and continues the scan with fad-checker's own findings. (Earlier versions parsed snyk's error-shaped `--json` output as zero vulnerabilities and printed a misleading `Snyk: 0 findings merged`.) A snyk exit of 1 is **not** a failure — it just means snyk found vulnerabilities, which are merged as usual.
 
 ## Read-only vs write mode
 

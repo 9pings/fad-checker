@@ -3,8 +3,8 @@ const assert = require("node:assert");
 const os = require("os"); const fs = require("fs"); const path = require("path");
 const R = require("../lib/registries");
 
-test("SUPPORTED lists the five ecosystems", () => {
-	assert.deepStrictEqual([...R.SUPPORTED].sort(), ["go", "maven", "npm", "pypi", "ruby"]);
+test("SUPPORTED lists the registry-backed ecosystems", () => {
+	assert.deepStrictEqual([...R.SUPPORTED].sort(), ["composer", "go", "maven", "npm", "nuget", "pypi", "ruby"]);
 });
 
 test("authHeaderFor: token → Bearer, auth → Basic, none → null", () => {

@@ -6,6 +6,31 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Scan-provenance manifest + Methodology chapter (audit reproducibility).** Every
+  report now carries a provenance manifest — tool version, run mode (offline/online),
+  the findings-affecting configuration, and the **freshness of every data source**
+  (CVE index, OSV, NVD, KEV, EPSS, endoflife, registry caches) read from
+  `~/.fad-checker/`. Surfaced in the JSON export's `provenance` block and in the
+  report's new **chapter 12 — "Methodology, data sources & limitations"**, which also
+  states explicitly **what fad-checker does *not* assess** (reachability, runtime
+  config, secrets/IaC, first-party code, malware beyond the OSV/CIRCL signal, legal
+  license advice). New `lib/provenance.js`.
+- **Differential audits (`--baseline` / `fad diff`).** Diff a scan against a prior
+  findings JSON: the report gains a **"Δ Changes since baseline"** chapter, the JSON
+  export gains a `diff` block (summary + new/fixed CVEs), and CI can gate on **new**
+  findings with `--fail-on-new` (exit 1 on any new production CVE). Standalone
+  `fad-checker diff <baseline.json> <current.json> [--report-json <out>] [--fail-on-new]`
+  for ad-hoc comparison. Finding identity = CVE id + ecosystem + coord + version. New
+  `lib/diff.js`.
+- **Report integrity manifest.** A standard `SHA256SUMS` is written beside the report
+  artifacts (verifiable with `sha256sum -c`); `--no-checksums` disables it. New
+  `lib/report-integrity.js`.
+- **Private registries for NuGet and Composer** (previously the only registry-backed
+  ecosystems without private-feed support). NuGet custom feeds speak the v3
+  registration API (a service-index `…/index.json` is auto-resolved to its
+  `RegistrationsBaseUrl`); Composer custom feeds are queried via the v2
+  `<base>/p2/<vendor>/<pkg>.json` metadata API. Same `--add-repo nuget|composer …`
+  CRUD + auth as the other ecosystems.
 - **Custom registries for npm, PyPI, Ruby and Go** (previously Maven-only). Point
   fad-checker at private Verdaccio/Artifactory/GitHub Packages (npm), devpi (PyPI),
   Gemfury/Geminabox (Ruby) or a private GOPROXY/Athens (Go). They are tried in
@@ -49,6 +74,17 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   repos with `--add-repo maven <name> <url>`.
 
 ### Fixed
+- **A failing `--snyk` run is no longer silently reported as "0 findings".** Snyk
+  exits 2 on a command error (e.g. not authenticated) and 3 when it detects no
+  supported project — but in `--json` mode it still writes a JSON document to
+  **stdout**, shaped `{ ok:false, error:"…" }`. `runSnykTest`'s catch block treated
+  *any* stdout on a non-zero exit as "vulns found (exit 1)", so that error JSON was
+  parsed to zero vulnerabilities and surfaced as a green `Snyk: 0 findings merged`,
+  hiding the failure. It now distinguishes real results (a `vulnerabilities` array or
+  `ok:true`) from error stubs and **throws the snyk error message** (deduped, joined),
+  which the orchestrator shows as a `Snyk run failed: …` warning. A snyk crash with no
+  stdout now surfaces `stderr` instead of `execFile`'s generic "Command failed", and a
+  timeout is reported as such. New pure helper `snykOutputError()` (unit-tested).
 - **retire.js now skips the same dirs as the rest of the scan.** The vendored-JS
   scan walks the tree itself and was handed a bare `--ignore node_modules,…` list,
   which retire `path.resolve()`s against its **own working directory** — so a

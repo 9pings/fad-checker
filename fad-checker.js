@@ -180,6 +180,48 @@ if (process.argv.includes("--export-cache") || process.argv.includes("--import-c
 	return;
 }
 
+// -------- `fad diff <baseline.json> <current.json>` subcommand (pre-parse) --------
+// Standalone differential audit between two findings JSON exports. Mirrors the other
+// pre-parse intercepts so it never collides with the main option set (which requires -s).
+if (process.argv[2] === "diff") {
+	const { diffFindings, summarizeDiff, newProductionCveCount } = require("./lib/diff");
+	const rest = process.argv.slice(3);
+	const positionals = rest.filter(a => !a.startsWith("-"));
+	const [basePath, curPath] = positionals;
+	const failOnNew = rest.includes("--fail-on-new");
+	const jIdx = rest.indexOf("--report-json");
+	const jsonOut = jIdx > -1 && rest[jIdx + 1] && !rest[jIdx + 1].startsWith("-") ? rest[jIdx + 1] : null;
+	if (!basePath || !curPath) {
+		console.error(chalk.red("❌  usage: fad-checker diff <baseline.json> <current.json> [--report-json <out>] [--fail-on-new]"));
+		process.exit(2);
+	}
+	let baseDoc, curDoc;
+	try { baseDoc = JSON.parse(fs.readFileSync(basePath, "utf8")); }
+	catch (e) { console.error(chalk.red(`❌  cannot read baseline ${basePath}: ${e.message}`)); process.exit(2); }
+	try { curDoc = JSON.parse(fs.readFileSync(curPath, "utf8")); }
+	catch (e) { console.error(chalk.red(`❌  cannot read current ${curPath}: ${e.message}`)); process.exit(2); }
+	const d = diffFindings(baseDoc, curDoc);
+	const s = summarizeDiff(d);
+	const newProd = newProductionCveCount(d);
+	console.log(chalk.bold(`\nDifferential audit  ${chalk.dim(basePath)} → ${chalk.dim(curPath)}\n`));
+	const line = (label, c) => console.log(`  ${label.padEnd(10)} ${chalk.red(`+${c.added} new`)}  ${chalk.green(`-${c.removed} fixed`)}  ${chalk.dim(`${c.unchanged} unchanged`)}`);
+	line("CVE", s.cve); line("EOL", s.eol); line("Obsolete", s.obsolete); line("Outdated", s.outdated); line("Licenses", s.licenses);
+	console.log();
+	const sev = Object.entries(s.cve.addedBySeverity).filter(([, n]) => n).map(([k, n]) => `${n} ${k.toLowerCase()}`).join(", ") || "none";
+	console.log(`  ${chalk.bold("New production CVE findings:")} ${newProd ? chalk.red.bold(newProd) : chalk.green("0")}  ${chalk.dim(`(${sev})`)}`);
+	const newCves = (d.cve.added || []).filter(f => !f.suppressed && !f.cpeFiltered);
+	for (const f of newCves.slice(0, 25)) console.log(`    ${chalk.red("•")} ${f.id}  ${chalk.dim((f.severity || "") + " · " + ((f.dep && f.dep.coord) || "") + "@" + ((f.dep && f.dep.version) || ""))}`);
+	if (newCves.length > 25) console.log(chalk.dim(`    …and ${newCves.length - 25} more`));
+	if (jsonOut) {
+		const out = { tool: "fad-checker", kind: "fad-diff/1", baseline: basePath, current: curPath, summary: s, diff: d };
+		try { fs.mkdirSync(path.dirname(path.resolve(jsonOut)), { recursive: true }); } catch { /* ignore */ }
+		fs.writeFileSync(jsonOut, JSON.stringify(out, null, 2) + "\n");
+		console.log(chalk.green(`\n✅ diff written → ${jsonOut}`));
+	}
+	console.log();
+	process.exit(failOnNew && newProd > 0 ? 1 : 0);
+}
+
 const USAGE = `
 (1) fad-checker -s ./proj                                              # read-only: full report (CVE + EOL + obsolete + outdated + transitive)
 (2) fad-checker -s ./proj -e "^(org.private|client)"                   # same, with regex exclusion of private deps
@@ -220,6 +262,9 @@ program
 	.option("--report-json [file]", "write a flat machine-readable findings JSON (default: <report-output>/findings.json)")
 	.option("--report-sarif [file]", "write a SARIF 2.1.0 log for GitHub/GitLab code scanning (default: <report-output>/fad.sarif)")
 	.option("--fail-on <level>", "exit non-zero if a production finding meets <level>: low|medium|high|critical|kev|none", "none")
+	.option("--baseline <file>", "differential audit: diff this scan against a prior findings JSON (from --report-json) — shows new / fixed findings in the report + JSON export")
+	.option("--fail-on-new", "exit non-zero if the scan introduces any NEW production CVE finding vs --baseline (combine with or instead of --fail-on)")
+	.option("--no-checksums", "don't write a SHA256SUMS integrity manifest alongside the report files")
 	.option("--ignore <file>", "suppress findings listed in <file> (CVE ids / coords / globs, one per line)")
 	.option("--vex <file>", "ingest a CSAF VEX: suppress CVEs marked not_affected/fixed")
 	.option("--licenses", "run license detection + copyleft policy check (off by default)")
@@ -1254,6 +1299,13 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		toolVersion: pkg.version,
 		cveDataDate,
 	};
+	// Scan-provenance manifest: data-source freshness + run configuration, for a
+	// reproducible/defensible audit. Surfaced in the report's Methodology chapter and
+	// the JSON export's `provenance` block.
+	try {
+		const { buildScanProvenance } = require("./lib/provenance");
+		projectInfo.provenance = buildScanProvenance({ toolVersion: pkg.version, generatedAt: projectInfo.generatedAt, options });
+	} catch (err) { if (verbose) ui.warn(`provenance manifest skipped: ${err.message}`); }
 
 	// --- Output target resolution -------------------------------------------------
 	// One --report-<type> flag per output, each taking an OPTIONAL path: a string is
@@ -1307,13 +1359,29 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		}] : []),
 	];
 
+	// Differential audit vs --baseline: build the current findings doc once, diff it
+	// against the prior export → a `diff` block for the report + JSON export, and a
+	// `--fail-on-new` gate signal. Best-effort: a missing/unreadable baseline warns.
+	let diff = null, jsonDiff = null;
+	if (options.baseline) {
+		try {
+			const baseDoc = JSON.parse(fs.readFileSync(options.baseline, "utf8"));
+			const { buildFindings } = require("./lib/json-export");
+			const curDoc = buildFindings({ cveMatches, retireMatches, vendoredJsInventory, eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version, typosquats });
+			const { diffFindings, summarizeDiff } = require("./lib/diff");
+			const dd = diffFindings(baseDoc, curDoc);
+			diff = { ...dd, summary: summarizeDiff(dd) };
+			jsonDiff = { summary: diff.summary, cve: { added: dd.cve.added, removed: dd.cve.removed } };
+		} catch (err) { ui.warn(`baseline diff skipped (${options.baseline}): ${err.message}`); }
+	}
+
 	const wrote = [];
 	if (out.html || out.doc) {
 		await ensureDir(out.html); await ensureDir(out.doc);
 		const { htmlPath, docPath } = await writeReports({
 			cveMatches: prodMatches, devCveMatches: devMatches, embeddedMatches, retireMatches, vendoredJsInventory,
 			eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs,
-			resolvedDeps: resolved, projectInfo, warnings: reportWarnings, parsedManifests,
+			resolvedDeps: resolved, projectInfo, warnings: reportWarnings, parsedManifests, diff,
 			htmlPath: out.html, docPath: out.doc,
 		});
 		if (htmlPath) wrote.push(["HTML report", htmlPath]);
@@ -1342,7 +1410,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		try {
 			const { writeFindings } = require("./lib/json-export");
 			await ensureDir(out.json);
-			writeFindings({ cveMatches, retireMatches, vendoredJsInventory, eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version, typosquats }, out.json);
+			writeFindings({ cveMatches, retireMatches, vendoredJsInventory, eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version, typosquats, diff: jsonDiff }, out.json);
 			wrote.push(["Findings JSON", out.json]);
 		} catch (err) { ui.warn(`JSON export failed: ${err.message}`); }
 	}
@@ -1355,6 +1423,20 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		} catch (err) { ui.warn(`SARIF export failed: ${err.message}`); }
 	}
 
+	// Integrity manifest: a standard SHA256SUMS over every artifact written this run,
+	// for a tamper-evident deliverable (verify with `sha256sum -c SHA256SUMS`). On by
+	// default; --no-checksums disables. Written beside the first artifact.
+	if (wrote.length && options.checksums !== false) {
+		try {
+			const { writeChecksums } = require("./lib/report-integrity");
+			const files = wrote.map(([, p]) => p);
+			const manifestDir = path.dirname(path.resolve(files[0]));
+			const manifestPath = path.join(manifestDir, "SHA256SUMS");
+			writeChecksums(files, manifestPath, { baseDir: manifestDir });
+			wrote.push(["Integrity (SHA-256)", manifestPath]);
+		} catch (err) { ui.warn(`checksum manifest skipped: ${err.message}`); }
+	}
+
 	if (wrote.length) {
 		ui.section("Output");
 		for (const [label, p] of wrote) ui.ok(`${label} → ${chalk.white(p)}`);
@@ -1365,21 +1447,36 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	}
 	console.log();
 
+	// Differential-audit summary (vs --baseline).
+	if (diff && diff.summary) {
+		const s = diff.summary;
+		ui.section("Baseline diff");
+		const sev = Object.entries(s.cve.addedBySeverity).filter(([, n]) => n).map(([k, n]) => `${n} ${k.toLowerCase()}`).join(", ") || "none";
+		console.log(`  CVE  ${chalk.red(`+${s.cve.added} new`)}  ${chalk.green(`-${s.cve.removed} fixed`)}  ${chalk.dim(`${s.cve.unchanged} unchanged`)}`);
+		console.log(`  ${chalk.bold("New production CVE:")} ${s.cve.addedProduction ? chalk.red.bold(s.cve.addedProduction) : chalk.green("0")} ${chalk.dim(`(${sev})`)}`);
+		console.log();
+	}
+
 	// CI gating — set a non-zero exit code (after all reports/exports are written)
-	// when a production finding meets the --fail-on threshold.
-	if (options.failOn && options.failOn !== "none") {
+	// when a production finding meets the --fail-on threshold, OR (--fail-on-new) when
+	// the scan introduces any new production CVE finding vs the --baseline.
+	const newProd = (options.failOnNew && diff && diff.summary) ? diff.summary.cve.addedProduction : 0;
+	if ((options.failOn && options.failOn !== "none") || options.failOnNew) {
 		const { evaluateGate } = require("./lib/gate");
 		// Embedded-binary findings are real production risk → gate on them too.
-		const gate = evaluateGate([...prodActive, ...embeddedActive], options.failOn);
+		const gate = (options.failOn && options.failOn !== "none")
+			? evaluateGate([...prodActive, ...embeddedActive], options.failOn)
+			: { failed: false, reason: "" };
 		// A known-malicious package always blocks, regardless of the --fail-on level.
 		const maliciousActive = [...prodActive, ...embeddedActive].filter(m => m.malicious);
-		if (gate.failed || maliciousActive.length) {
+		if (gate.failed || maliciousActive.length || newProd > 0) {
 			ui.section("Gate");
 			if (maliciousActive.length) console.log(chalk.red.bold(`✗ ${maliciousActive.length} known-malicious package(s) detected — always blocks`));
 			if (gate.failed) console.log(chalk.red(`✗ --fail-on ${options.failOn}: ${gate.reason}`));
+			if (newProd > 0) console.log(chalk.red(`✗ --fail-on-new: ${newProd} new production CVE finding(s) vs baseline`));
 			process.exitCode = 1;
 		} else if (verbose) {
-			ui.info(chalk.dim(`--fail-on ${options.failOn}: no blocking finding`));
+			ui.info(chalk.dim(`gate: no blocking finding`));
 		}
 	}
 }
