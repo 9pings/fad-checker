@@ -45,7 +45,7 @@ test("HTML report renders the embedded-binaries chapter for embedded matches", (
 		projectInfo: { name: "svc", src: "/x", generatedAt: "now" },
 		warnings: [],
 	});
-	assert.match(html, /1B\. Embedded binaries/);
+	assert.match(html, /2\.1 Embedded binaries/);
 	assert.match(html, /dist\/app\.jar/);
 	assert.match(html, /CVE-2021-44228/);
 });
@@ -92,7 +92,7 @@ test("HTML chapter 1B renders the FULL embedded inventory even with zero CVE mat
 		projectInfo: { name: "svc", src: "/x", generatedAt: "now" },
 		warnings: [],
 	});
-	assert.match(html, /1B\. Embedded binaries/);
+	assert.match(html, /2\.1 Embedded binaries/);
 	assert.match(html, /com\.google\.guava:guava:30\.1-jre/);
 	assert.match(html, /no known CVE/i);
 });
