@@ -91,7 +91,11 @@ resolveEolProduct(dep), recipe, nativeScanners
   recipe (`codecFor()` resolves the codec by `ecosystemType` first). The only Gradle-specific
   orchestrator wiring is: include it in the transitive/CVE/scan-completeness gates
   (`runMaven || runGradle`) and feed its `platform(...)` BOMs into the same
-  `lib/maven-bom.js` managed-version backfill the Maven path uses. Gradle is **excluded** from
+  `lib/maven-bom.js` managed-version backfill the Maven path uses. A backfilled dep is stamped
+  `versionSource = { via: "bom", bom: "<g:a:v>" }` (the top-level platform/import BOM coord), which
+  the report renders as a `version managed by: <bom> (BOM)` line and the findings JSON carries on
+  `dep.versionSource` — so a versionless dep's resolved version is traceable to its BOM, not mistaken
+  for a fabricated one. Gradle is **excluded** from
   the per-codec registry loop (its outdated/obsolete/EOL come from the Maven passes, which
   already select every `ecosystem === "maven"` dep) to avoid double-processing.
 
