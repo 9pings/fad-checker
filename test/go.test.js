@@ -60,3 +60,79 @@ test("parseGoSum keeps the highest version per module", () => {
 	assert.equal(out.deps.length, 1);
 	assert.equal(out.deps[0].version, "1.5.0");
 });
+
+// `replace` changes the EFFECTIVE build: a downgrade pin must be scanned at the
+// replacement version (scanning the require line missed it entirely).
+test("parseGoMod applies module→module replace directives (block and single-line)", () => {
+	const { deps } = parseGoMod(`module ex.com/app
+go 1.21
+require (
+	golang.org/x/text v0.3.9
+	github.com/foo/bar v2.0.0
+)
+replace golang.org/x/text => golang.org/x/text v0.3.5
+replace (
+	github.com/foo/bar v2.0.0 => github.com/foo/bar-fork v2.0.1
+)
+`);
+	const text = deps.find(d => d.name === "golang.org/x/text");
+	assert.equal(text.version, "0.3.5", "versionless old matches every version — downgrade applied");
+	assert.equal(text.replaced, true);
+	const fork = deps.find(d => d.name === "github.com/foo/bar-fork");
+	assert.equal(fork.version, "2.0.1");
+	assert.equal(deps.find(d => d.name === "github.com/foo/bar"), undefined);
+});
+
+test("parseGoMod versioned replace only rewrites that exact version", () => {
+	const { deps } = parseGoMod(`module ex.com/app
+require ex.com/lib v1.0.0
+replace ex.com/lib v9.9.9 => ex.com/lib v1.0.1
+`);
+	assert.equal(deps.find(d => d.name === "ex.com/lib").version, "1.0.0", "non-matching old version untouched");
+});
+
+test("parseGoMod drops directory-replaced deps and reports them", () => {
+	const { deps, dropped } = parseGoMod(`module ex.com/app
+require ex.com/internal v1.2.3
+replace ex.com/internal => ../internal
+`);
+	assert.equal(deps.length, 0);
+	assert.equal(dropped.length, 1);
+	assert.equal(dropped[0].name, "ex.com/internal");
+	assert.equal(dropped[0].path, "../internal");
+});
+
+test("parseGoMod captures the go directive", () => {
+	assert.equal(parseGoMod("module m\ngo 1.16\n").goVersion, "1.16");
+	assert.equal(parseGoMod("module m\n").goVersion, null);
+});
+
+// Pre-1.17 go.mod lists DIRECT deps only — the go.sum graph must be merged or
+// every transitive dep of the module is invisible to the scan.
+test("go codec merges go.sum transitives for a pre-1.17 module", async () => {
+	const fs = require("fs");
+	const os = require("os");
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-go116-"));
+	fs.writeFileSync(path.join(dir, "go.mod"), "module ex.com/app\ngo 1.16\nrequire ex.com/direct v1.0.0\n");
+	fs.writeFileSync(path.join(dir, "go.sum"),
+		"ex.com/direct v1.0.0 h1:a=\nex.com/direct v1.0.0/go.mod h1:b=\nex.com/transitive v0.9.0 h1:c=\n");
+	const { deps } = await go.collect(dir);
+	assert.equal(deps.get("go:ex.com/direct").version, "1.0.0", "go.mod's selected version wins");
+	assert.equal(deps.get("go:ex.com/direct").scope, "compile");
+	assert.ok(deps.has("go:ex.com/transitive"), "go.sum-only transitive merged");
+	assert.equal(deps.get("go:ex.com/transitive").scope, "transitive");
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("go codec does NOT merge go.sum for a >=1.17 module (pruned graph in go.mod)", async () => {
+	const fs = require("fs");
+	const os = require("os");
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-go121-"));
+	fs.writeFileSync(path.join(dir, "go.mod"), "module ex.com/app\ngo 1.21\nrequire ex.com/direct v1.0.0\n");
+	fs.writeFileSync(path.join(dir, "go.sum"),
+		"ex.com/direct v1.0.0 h1:a=\nex.com/stale-candidate v0.1.0 h1:c=\n");
+	const { deps } = await go.collect(dir);
+	assert.ok(deps.has("go:ex.com/direct"));
+	assert.equal(deps.has("go:ex.com/stale-candidate"), false, "go.sum candidates not in the pruned graph stay out");
+	fs.rmSync(dir, { recursive: true, force: true });
+});
