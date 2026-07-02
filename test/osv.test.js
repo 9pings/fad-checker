@@ -107,3 +107,30 @@ test("vulnToMatch carries the CVSS vector + version from OSV severity", () => {
 	assert.equal(m.cve.cvssVersion, "CVSS:3.1");
 	assert.ok(m.cve.cvssVector.startsWith("CVSS:3.1/"));
 });
+
+// Regression (air-gapped principle): a warmed OSV cache older than the 12h TTL
+// must STILL be served under --offline — it is the only source there. Expiring
+// it silently reported "0 OSV vulns" for every ecosystem on an air-gapped box.
+test("offline serves the warmed OSV cache even past the 12h TTL (no network)", async () => {
+	const path = require("path");
+	const staleAt = Date.now() - 48 * 3600 * 1000; // 2 days old
+	const dep = makeDepRecord({ ecosystem: "pypi", namespace: "", name: "fadtest-stale-pkg", version: "1.0.0-fadtest", manifestPath: "x" });
+	fs.mkdirSync(OSV_CACHE_DIR, { recursive: true });
+	const depKey = "pypi____fadtest-stale-pkg__1.0.0-fadtest.json";
+	const vulnKey = "vuln_FADTEST-2026-0001.json";
+	fs.writeFileSync(path.join(OSV_CACHE_DIR, depKey), JSON.stringify({ _fetchedAt: staleAt, body: ["FADTEST-2026-0001"] }));
+	fs.writeFileSync(path.join(OSV_CACHE_DIR, vulnKey), JSON.stringify({
+		_fetchedAt: staleAt,
+		body: { id: "FADTEST-2026-0001", summary: "stale-cache sentinel", aliases: ["CVE-2026-99999"], database_specific: { severity: "HIGH" } },
+	}));
+	const tripwire = async () => { throw new Error("offline mode must not touch the network"); };
+	try {
+		const matches = await queryOsvForDeps(new Map([[dep.coordKey, dep]]), { offline: true, fetcher: tripwire });
+		assert.strictEqual(matches.length, 1, "stale-but-warmed cache entry still matched offline");
+		assert.strictEqual(matches[0].cve.id, "CVE-2026-99999");
+		assert.strictEqual(matches[0].cve.severity, "HIGH");
+	} finally {
+		fs.unlinkSync(path.join(OSV_CACHE_DIR, depKey));
+		fs.unlinkSync(path.join(OSV_CACHE_DIR, vulnKey));
+	}
+});
