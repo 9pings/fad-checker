@@ -76,3 +76,87 @@ test("nuget codec: detects + collects .vbproj (VB.NET)", async () => {
 	const { deps } = await nuget.collect(F("csharp-vbproj"), {});
 	assert.strictEqual(deps.get("nuget:dapper")?.version, "2.1.24");
 });
+
+/* ---- regressions from the 2026-07 reliability review ---- */
+
+// Directory.Packages.props lives at the SOLUTION ROOT in real CPM setups; only
+// looking in the csproj's own dir meant a whole centrally-managed solution
+// collected zero deps.
+test("nuget codec: CPM props at repo root applies to csproj in subdirs (walk-up)", async () => {
+	const fs = require("fs");
+	const os = require("os");
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-cpm-"));
+	fs.mkdirSync(path.join(dir, "src", "App"), { recursive: true });
+	fs.writeFileSync(path.join(dir, "Directory.Packages.props"),
+		'<Project><ItemGroup><PackageVersion Include="Newtonsoft.Json" Version="13.0.1" /></ItemGroup></Project>');
+	fs.writeFileSync(path.join(dir, "src", "App", "App.csproj"),
+		'<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><PackageReference Include="Newtonsoft.Json" /></ItemGroup></Project>');
+	const { deps } = await nuget.collect(dir);
+	const d = deps.get("nuget:newtonsoft.json");
+	assert.ok(d, "CPM-managed dep collected from root props");
+	assert.strictEqual(d.version, "13.0.1");
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("parseCsproj: VersionOverride wins over the CPM pin", async () => {
+	const fs = require("fs");
+	const os = require("os");
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-vo-"));
+	fs.writeFileSync(path.join(dir, "a.csproj"),
+		'<Project><ItemGroup><PackageReference Include="Serilog" VersionOverride="2.10.0" /></ItemGroup></Project>');
+	const { deps } = await parseCsproj(path.join(dir, "a.csproj"), { serilog: "3.1.1" });
+	assert.strictEqual(deps[0].version, "2.10.0");
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("parseCsproj: exact-range pin [1.2.3] is a concrete version, not a skipped range", async () => {
+	const fs = require("fs");
+	const os = require("os");
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-exact-"));
+	fs.writeFileSync(path.join(dir, "a.csproj"),
+		'<Project><ItemGroup><PackageReference Include="Dapper" Version="[2.0.123]" /><PackageReference Include="Polly" Version="[7.0,8.0)" /></ItemGroup></Project>');
+	const { deps, skipped } = await parseCsproj(path.join(dir, "a.csproj"));
+	assert.strictEqual(deps.find(d => d.name === "Dapper").version, "2.0.123");
+	assert.strictEqual(deps.find(d => d.name === "Polly"), undefined, "real range still skipped");
+	assert.strictEqual(skipped, 1);
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// Same id resolved to different versions across TFMs/projects: every distinct
+// version must be scanned (out.set() used to keep only the last one).
+test("nuget codec: distinct resolved versions across projects all land in versions[]", async () => {
+	const fs = require("fs");
+	const os = require("os");
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-multi-"));
+	fs.mkdirSync(path.join(dir, "A"));
+	fs.mkdirSync(path.join(dir, "B"));
+	const lock = (v) => JSON.stringify({ version: 1, dependencies: { "net6.0": { "Newtonsoft.Json": { type: "Direct", resolved: v } } } });
+	fs.writeFileSync(path.join(dir, "A", "packages.lock.json"), lock("12.0.1"));
+	fs.writeFileSync(path.join(dir, "B", "packages.lock.json"), lock("13.0.3"));
+	const { deps } = await nuget.collect(dir);
+	const d = deps.get("nuget:newtonsoft.json");
+	assert.deepStrictEqual([...d.versions].sort(), ["12.0.1", "13.0.3"]);
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// Paged registration index (popular packages): pages carry @id + lower/upper
+// instead of inline items — they must be fetched or findings come back empty.
+test("fetchRegistration inlines the pages needed for latest + the dep's version", async () => {
+	const { fetchRegistration } = require("../lib/codecs/nuget/registry");
+	const pageOld = { "@id": "https://reg.example/nj/page/0.json", lower: "12.0.1", upper: "12.0.3" };
+	const pageNew = { "@id": "https://reg.example/nj/page/1.json", lower: "13.0.1", upper: "13.0.3" };
+	const responses = {
+		"https://reg.example/nj/index.json": { items: [pageOld, pageNew] },
+		"https://reg.example/nj/page/0.json": { items: [{ catalogEntry: { version: "12.0.1", deprecation: { reasons: ["Legacy"] } } }] },
+		"https://reg.example/nj/page/1.json": { items: [{ catalogEntry: { version: "13.0.3" } }] },
+	};
+	const fetched = [];
+	const fetcher = async (url) => { fetched.push(url); const body = responses[url]; return { ok: !!body, json: async () => body }; };
+	const reg = await fetchRegistration("nj", { version: "12.0.1", registries: [{ name: "t", url: "https://reg.example/" }], fetcher });
+	const { nugetRegistrationToFindings } = require("../lib/codecs/nuget/registry");
+	const f = nugetRegistrationToFindings(reg, { version: "12.0.1" });
+	assert.strictEqual(f.deprecated.reason, "Legacy", "deprecation found on the paged entry");
+	assert.strictEqual(f.outdated.latest, "13.0.3", "latest found on the last page");
+	assert.ok(fetched.includes("https://reg.example/nj/page/0.json"));
+	assert.ok(fetched.includes("https://reg.example/nj/page/1.json"));
+});
