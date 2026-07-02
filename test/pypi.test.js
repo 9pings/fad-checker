@@ -176,3 +176,69 @@ test("parsePoetryLock honours classic category=dev", () => {
 	assert.equal(by.flask.isDev, false);
 	fs.rmSync(f, { force: true });
 });
+
+/* ---- pip-compile --generate-hashes output (backslash continuations) ---- */
+// Regression: the trailing " \" made isPinned() reject the spec, so a
+// hash-pinned requirements file (the pip-compile default in hardened shops)
+// contributed ZERO deps to the scan.
+test("parseRequirementsTxt handles hash-pinned pip-compile output", () => {
+	const fs = require("fs");
+	const os = require("os");
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-reqhash-"));
+	fs.writeFileSync(path.join(dir, "requirements.txt"), [
+		"requests==2.31.0 \\",
+		"    --hash=sha256:942c5a758f98d790eaed1a29cb6eefc7ffb0d1cf7af05c3d2791656dbd6ad1e1 \\",
+		"    --hash=sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f",
+		"urllib3==2.0.7 --hash=sha256:abc123",
+		"flask>=2.0",
+	].join("\n"));
+	const r = parseRequirementsTxt(path.join(dir, "requirements.txt"));
+	const m = Object.fromEntries(r.deps.map(d => [d.name, d.version]));
+	assert.strictEqual(m["requests"], "2.31.0", "backslash-continued pin parsed");
+	assert.strictEqual(m["urllib3"], "2.0.7", "inline --hash option stripped");
+	assert.strictEqual(r.skipped, 1);
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+/* ---- uv.lock root project exclusion ---- */
+test("parseUvLock skips the project's own virtual/editable package entry", () => {
+	const fs = require("fs");
+	const os = require("os");
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-uvroot-"));
+	fs.writeFileSync(path.join(dir, "uv.lock"), [
+		'version = 1',
+		'[[package]]',
+		'name = "my-app"',
+		'version = "0.1.0"',
+		'[package.source]',
+		'virtual = "."',
+		'[[package]]',
+		'name = "requests"',
+		'version = "2.31.0"',
+		'[package.source]',
+		'registry = "https://pypi.org/simple"',
+	].join("\n"));
+	const r = parseUvLock(path.join(dir, "uv.lock"));
+	assert.strictEqual(r.deps.find(d => d.name === "my-app"), undefined, "root project not inventoried");
+	assert.strictEqual(r.deps.find(d => d.name === "requests").version, "2.31.0");
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+/* ---- multi-version scanning across manifests ---- */
+// Same convention as Maven: when two files pin DIFFERENT versions of the same
+// package, EVERY distinct version is scanned, not just the first encountered.
+test("pypi codec keeps every distinct pinned version in versions[]", async () => {
+	const fs = require("fs");
+	const os = require("os");
+	const pypi = require("../lib/codecs/pypi.codec");
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-pymulti-"));
+	fs.mkdirSync(path.join(dir, "svc-a"));
+	fs.mkdirSync(path.join(dir, "svc-b"));
+	fs.writeFileSync(path.join(dir, "svc-a", "requirements.txt"), "django==4.2.0\n");
+	fs.writeFileSync(path.join(dir, "svc-b", "requirements.txt"), "django==3.2.0\n");
+	const { deps } = await pypi.collect(dir);
+	const d = deps.get("pypi:django");
+	assert.ok(d, "django collected");
+	assert.deepStrictEqual([...d.versions].sort(), ["3.2.0", "4.2.0"], "both pinned versions scanned");
+	fs.rmSync(dir, { recursive: true, force: true });
+});
