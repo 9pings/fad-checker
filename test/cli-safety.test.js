@@ -58,10 +58,29 @@ test("a valid --fail-on level is accepted", () => {
 });
 
 // --no-report writes NO files, but the scan + CI gate still run.
+// HERMETIC: a temp HOME carries a one-CVE warmed index, so the gate outcome is
+// deterministic — the old version read this machine's real ~/.fad-checker and
+// failed on any box whose cache was cold or stale (it did catch the amputated
+// 2026-06 index that way, but a fixture keeps the signal without the flake).
 test("--no-report still runs the gate (and fails on a high finding)", () => {
+	const home = fs.mkdtempSync(path.join(os.tmpdir(), "fad-home-"));
+	const cveDir = path.join(home, ".fad-checker", "cve-data");
+	fs.mkdirSync(cveDir, { recursive: true });
+	const entry = {
+		id: "CVE-2099-0001", severity: "HIGH", score: 8.8, description: "gate sentinel",
+		fixVersion: "2.15.0", vendor: "apache", product: "apache log4j2",
+		ranges: [{ version: "2.0", status: "affected", lessThan: "2.15.0" }],
+	};
+	fs.writeFileSync(path.join(cveDir, "maven-cve-index.json"), JSON.stringify({
+		meta: { builtAt: new Date().toISOString(), cveCount: 1 },
+		byPackageName: { "org.apache.logging.log4j:log4j-core": [entry] },
+		byProduct: {},
+	}));
 	const src = path.join(__dirname, "fixtures", "polyglot");
-	const res = run(["-s", src, "--offline", "--no-report", "--fail-on", "high"]);
-	assert.equal(res.status, 1);
+	const res = run(["-s", src, "--offline", "--no-report", "--fail-on", "high"],
+		{ env: { ...process.env, HOME: home, USERPROFILE: home } });
+	assert.equal(res.status, 1, `gate must fail on the HIGH sentinel\nstdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+	fs.rmSync(home, { recursive: true, force: true });
 });
 
 test("--no-report writes no files at all", () => {
