@@ -301,6 +301,8 @@ program
 	.option("--no-ruby", "skip the Ruby (Bundler) codec")
 	.option("--no-binaries", "skip scanning committed native binaries (.dll/.exe/.so/.dylib)")
 	.option("--no-jars", "skip scanning embedded .jar/.war/.ear binaries for Maven coordinates")
+	.option("--no-certs", "skip scanning committed certificates, private/public keys (PEM/SSH/PuTTY/PGP) and keystores")
+	.option("--cert-expiry-days <n>", "warn on certificates expiring within N days", "90")
 	.option("--no-js", "alias: skip JS/npm/yarn manifests even if present (Maven-only)")
 	.option("--repo <eco=url...>", "extra registry as <ecosystem>=<url> (e.g. npm=https://npm.acme/) tried before the public one. Repeatable. Supports https://user:pass@host/.")
 	.option("--add-repo <eco>", "persist a registry: --add-repo <ecosystem> <name> <url> [--auth user:pass] [--token TOK]")
@@ -524,11 +526,24 @@ async function timedPhase(label, fn) {
 		let imported;
 		try { imported = deserializeDeps(descriptor); }
 		catch (e) { console.error(chalk.red(`❌  invalid descriptor: ${e.message}`)); process.exit(1); }
-		const { resolved, activeIds, runMaven, runNpm } = imported;
+		const { resolved, activeIds, runMaven, runNpm, externalParents = [], importBoms = [], propertyOverrides = {} } = imported;
 		ui.section("Anonymized descriptor");
 		ui.ok(`imported ${chalk.bold(resolved.size)} dep(s) across ${activeIds.join(", ") || "—"}`);
 		if (options.offline) ui.warn("--offline: caches won't warm; only useful to re-render from an already-warm cache");
 		if (!resolved.size) { ui.warn("descriptor has no dependencies — nothing to scan"); process.exit(0); }
+		// Replay the external-parent / import-BOM backfill from the descriptor's carried hints.
+		// Workflow B has no source tree here, so the mainline store-based backfill can't run —
+		// without this, versionless deps (spring-boot-starter-*) stay unresolved and their CVE
+		// caches never warm, forcing a SECOND air-gapped exchange. Online only (needs the POMs).
+		if (runMaven && !options.offline && (externalParents.length || importBoms.length)) {
+			const { resolveBomManagedVersions, backfillVersions } = require("./lib/maven-bom");
+			const base = { repos: mavenRepos, offline: options.offline, verbose, effCache: new Map() };
+			const mgmt = await resolveBomManagedVersions(importBoms, base);
+			const parentMgmt = await resolveBomManagedVersions(externalParents, { ...base, via: "parent", propertyOverrides });
+			for (const [k, v] of parentMgmt) if (!mgmt.has(k)) mgmt.set(k, v);
+			const filled = backfillVersions(resolved, mgmt);
+			if (filled) ui.ok(`backfilled ${chalk.bold(filled)} version(s) from ${externalParents.length} parent(s) + ${importBoms.length} BOM(s) in the descriptor`);
+		}
 		// Warm retire signatures (online) so --export-cache carries them for offline JS scanning.
 		if (runNpm && !options.offline && options.retire !== false) {
 			const { warmRetireSignatures } = require("./lib/retire");
@@ -623,8 +638,14 @@ async function timedPhase(label, fn) {
 	// --- Anonymized phase 1: export a descriptor and exit (no network, no report) ---
 	if (options.exportAnonymized) {
 		const { serializeDeps } = require("./lib/deps-descriptor");
+		const { collectExternalParents, collectImportBoms, collectPropertyOverrides } = require("./lib/maven-bom");
 		const pkgVersion = require("./package.json").version;
-		const descriptor = serializeDeps(resolved, { generator: `fad-checker ${pkgVersion}` });
+		// Carry the Maven resolution hints so a no-source-tree online warm run (Phase 2) can
+		// resolve the versionless deps' versions and warm their CVE caches in ONE exchange.
+		const externalParents = mavenCtx?.store ? collectExternalParents(mavenCtx.store) : [];
+		const importBoms = mavenCtx?.propsByPom ? collectImportBoms(mavenCtx.propsByPom) : [];
+		const propertyOverrides = mavenCtx?.store ? collectPropertyOverrides(mavenCtx.store) : {};
+		const descriptor = serializeDeps(resolved, { generator: `fad-checker ${pkgVersion}`, externalParents, importBoms, propertyOverrides });
 		try { fs.writeFileSync(options.exportAnonymized, JSON.stringify(descriptor, null, 2) + "\n"); }
 		catch (e) { console.error(chalk.red(`❌  could not write --export-anonymized file: ${e.message}`)); process.exit(1); }
 		const ecoSummary = Object.entries(descriptor.summary.byEcosystem).map(([k, v]) => `${k}:${v}`).join(", ");
@@ -689,9 +710,29 @@ async function timedPhase(label, fn) {
 				return !(allPomMetadata.byId[id] || allPomMetadata.byId[`${parts[0]}:${parts[1]}`]);
 			});
 		if (missingParents.length) {
-			ui.warn(`${missingParents.length} missing parent POM(s) — Snyk will fail if these are private:`);
-			for (const id of missingParents.slice(0, 10)) ui.info(chalk.yellow(id));
-			if (missingParents.length > 10) ui.info(chalk.dim(`…and ${missingParents.length - 10} more`));
+			// A parent absent from the source tree is EXTERNAL, not necessarily private. fad
+			// resolves a PUBLIC one (spring-boot-starter-parent, …) from Maven Central / warmed
+			// cache and backfills its managed versions — so only classify as "likely private"
+			// the ones it genuinely can't resolve. effectivePom is cache-first + offline-aware,
+			// and warms the cache the BOM/parent backfill reuses later in the report flow.
+			const { effectivePom } = require("./lib/transitive");
+			const resolvable = [], unresolved = [];
+			await Promise.all(missingParents.map(async id => {
+				const [g, a, v] = id.split(":");
+				let eff = null;
+				if (g && a && v) { try { eff = await effectivePom(g, a, v, { repos: mavenRepos, offline: options.offline }); } catch { eff = null; } }
+				(eff && eff.depMgmt && eff.depMgmt.length ? resolvable : unresolved).push(id);
+			}));
+			if (resolvable.length) {
+				ui.ok(`${resolvable.length} external parent POM(s) resolved from Maven Central${options.offline ? " (cache)" : ""} — managed versions backfilled`);
+				for (const id of resolvable.slice(0, 10)) ui.info(chalk.green(id));
+				if (resolvable.length > 10) ui.info(chalk.dim(`…and ${resolvable.length - 10} more`));
+			}
+			if (unresolved.length) {
+				ui.warn(`${unresolved.length} parent POM(s) not resolvable — likely private${options.offline ? " (or not in the warmed cache)" : ""}; Snyk will fail on these:`);
+				for (const id of unresolved.slice(0, 10)) ui.info(chalk.yellow(id));
+				if (unresolved.length > 10) ui.info(chalk.dim(`…and ${unresolved.length - 10} more`));
+			}
 		} else {
 			ui.ok("no missing Maven parent POMs");
 		}
@@ -826,7 +867,14 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		.map(b => ({ groupId: b.group, artifactId: b.name, version: b.version }))
 		.filter(b => b.groupId && b.artifactId && b.version);
 	const allBoms = importBoms.concat(gradleBoms);
-	const willBom = allBoms.length > 0;
+	// External <parent> POMs (e.g. spring-boot-starter-parent) manage versionless declared
+	// deps via their own inherited depMgmt (spring-boot-dependencies). core.js only follows
+	// LOCAL parents, so feed the external ones through the SAME backfill as import BOMs. This
+	// runs in the MAINLINE flow (not just the --transitive overlay) so the warmed cache always
+	// captures the parent POMs for offline reuse.
+	const externalParents = (runMaven && mavenStore)
+		? require("./lib/maven-bom").collectExternalParents(mavenStore) : [];
+	const willBom = allBoms.length > 0 || externalParents.length > 0;
 	const willOsv = !!options.osv;
 	// Local OSV DB import (Maven): offline-complete OSV recall, independent of the per-dep
 	// OSV.dev cache. Opt-in (downloads ~9 MB once); then matches online or offline.
@@ -837,20 +885,35 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const willKev = !!options.kev;
 	const willLicenses = !!options.licenses;
 	const willRetire = !!options.retire;
+	// Committed crypto material (certs / keys / keystores) — local file scan, no network.
+	const willCerts = options.certs !== false && !!options.src;
+	const certExpiryDays = parseInt(options.certExpiryDays, 10) || 90;
 	// Identify committed native binaries by checksum (deps.dev + CIRCL) when present.
 	const willBinaryId = [...resolved.values()].some(d => d.provenance === "binary");
 	// License detection piggybacks on the registry passes (same fetched metadata),
 	// so it adds no progress step of its own.
-	const totalSteps = [willBom, willTransitive, willOverlay, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willOsvDb, willNvd, willEpss, willKev, willRetire, willBinaryId].filter(Boolean).length;
+	const totalSteps = [willBom, willTransitive, willOverlay, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willOsvDb, willNvd, willEpss, willKev, willRetire, willCerts, willBinaryId].filter(Boolean).length;
 	const progress = new ui.Progress(totalSteps);
 
 	if (willBom) {
-		const st = progress.start("BOM version resolution (Maven Central)");
+		const st = progress.start("BOM / parent version resolution (Maven Central)");
 		try {
 			const { resolveBomManagedVersions, backfillVersions } = require("./lib/maven-bom");
-			const mgmt = await resolveBomManagedVersions(allBoms, { repos: mavenRepos, offline, verbose });
+			const effCache = new Map();
+			const base = { repos: mavenRepos, offline, verbose, effCache };
+			// Import BOMs first: a local <scope>import</scope> declaration wins over the
+			// versions inherited from an external parent (Maven precedence). Import BOMs
+			// resolve in their own context — the project's property overrides do NOT reach
+			// them (Maven), so they get no propertyOverrides.
+			const mgmt = await resolveBomManagedVersions(allBoms, base);
+			// External parents second: fill only coords the BOMs didn't already manage, and
+			// honor the project's own <properties> overrides (e.g. a patched <log4j2.version>)
+			// so the version reflects the classpath, not the framework default.
+			const propertyOverrides = require("./lib/maven-bom").collectPropertyOverrides(mavenStore);
+			const parentMgmt = await resolveBomManagedVersions(externalParents, { ...base, via: "parent", propertyOverrides });
+			for (const [k, v] of parentMgmt) if (!mgmt.has(k)) mgmt.set(k, v);
 			const filled = backfillVersions(resolved, mgmt);
-			st.done(`${filled} dep version(s) from ${allBoms.length} import BOM(s)`);
+			st.done(`${filled} dep version(s) from ${allBoms.length} BOM(s) + ${externalParents.length} parent(s)`);
 		} catch (err) { st.fail(err.message); }
 	}
 
@@ -1107,6 +1170,21 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		}
 	}
 
+	// 5b. Certificate / key-material scan — committed certs, private/public keys
+	// (PEM, OpenSSH every algorithm, PuTTY, PGP, SSH one-liners) and keystores.
+	// Pure local file walk: no network, so it runs the same online or offline.
+	let certFindings = [];
+	if (willCerts) {
+		const st = progress.start("Certificates & keys");
+		try {
+			const { scanCertificates } = require("./lib/certs");
+			certFindings = scanCertificates(options.src, { srcRoot: options.src, excludePath, defaultExcludes, expiryDays: certExpiryDays });
+			const priv = certFindings.filter(c => c.kind === "private-key").length;
+			const expired = certFindings.filter(c => c.issues.some(i => i.type === "cert-expired")).length;
+			st.done(`${certFindings.length} item(s)${priv ? ` · ${priv} private key(s)` : ""}${expired ? ` · ${expired} expired` : ""}`);
+		} catch (err) { st.fail(err.message); }
+	}
+
 	// 6. Snyk (optional)
 	let snykMatches = [];
 	if (options.snyk) {
@@ -1233,6 +1311,18 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			}
 			if (inv.length > 10) console.log(chalk.dim(`    …and ${inv.length - 10} more (see report ch.1C)`));
 		}
+	}
+
+	if (certFindings.length) {
+		const privN = certFindings.filter(c => c.kind === "private-key").length;
+		const expiredN = certFindings.filter(c => c.issues.some(i => i.type === "cert-expired")).length;
+		heading("Certificates & keys", certFindings.length, [privN ? chalk.red(`${privN} private key`) : null, expiredN ? chalk.yellow(`${expiredN} expired`) : null].filter(Boolean).join("  "));
+		for (const c of certFindings.slice(0, 10)) {
+			const vis = c.keyVisibility ? chalk.dim(`[${c.keyVisibility}]`) : "";
+			const label = c.kind === "certificate" ? `${c.subject || "?"}` : `${c.algorithm || ""} ${c.kind}`.trim();
+			console.log("    " + sev(c.severity.toUpperCase())((c.severity || "?").padEnd(8)) + " " + chalk.white(path.basename(String(c.path))) + " " + vis + " " + chalk.dim(label));
+		}
+		if (certFindings.length > 10) console.log(chalk.dim(`    …and ${certFindings.length - 10} more (see report ch.2.4)`));
 	}
 
 	heading("EOL frameworks", eolResults.length);
@@ -1379,7 +1469,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	if (out.html || out.doc) {
 		await ensureDir(out.html); await ensureDir(out.doc);
 		const { htmlPath, docPath } = await writeReports({
-			cveMatches: prodMatches, devCveMatches: devMatches, embeddedMatches, retireMatches, vendoredJsInventory,
+			cveMatches: prodMatches, devCveMatches: devMatches, embeddedMatches, retireMatches, vendoredJsInventory, certFindings,
 			eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs,
 			resolvedDeps: resolved, projectInfo, warnings: reportWarnings, parsedManifests, diff,
 			htmlPath: out.html, docPath: out.doc,
@@ -1410,7 +1500,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		try {
 			const { writeFindings } = require("./lib/json-export");
 			await ensureDir(out.json);
-			writeFindings({ cveMatches, retireMatches, vendoredJsInventory, eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version, typosquats, diff: jsonDiff }, out.json);
+			writeFindings({ cveMatches, retireMatches, vendoredJsInventory, certFindings, eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version, typosquats, diff: jsonDiff }, out.json);
 			wrote.push(["Findings JSON", out.json]);
 		} catch (err) { ui.warn(`JSON export failed: ${err.message}`); }
 	}
@@ -1418,7 +1508,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		try {
 			const { writeSarif } = require("./lib/sarif-export");
 			await ensureDir(out.sarif);
-			writeSarif(cveMatches.filter(m => !m.suppressed), out.sarif, { projectInfo, toolVersion: pkg.version });
+			writeSarif(cveMatches.filter(m => !m.suppressed), out.sarif, { projectInfo, toolVersion: pkg.version, certFindings });
 			wrote.push(["SARIF", out.sarif]);
 		} catch (err) { ui.warn(`SARIF export failed: ${err.message}`); }
 	}

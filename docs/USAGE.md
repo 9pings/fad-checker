@@ -37,11 +37,15 @@ fad-checker -s . --no-pypi --no-nuget         # skip Python + C#
 fad-checker -s . --no-go --no-ruby            # skip Go + Ruby
 fad-checker -s . --no-jars                    # skip embedded .jar/.war/.ear scanning
 fad-checker -s . --no-binaries                # skip committed native-binary scanning
+fad-checker -s . --no-certs                   # skip certificate / key-material scanning
+fad-checker -s . --cert-expiry-days 30        # warn on certs expiring within 30 days (default 90)
 ```
 
 > **Embedded JARs**: committed `.jar`/`.war`/`.ear` archives (vendored libs, Spring-Boot fat-jars, shaded uber-jars) are unzipped in-memory and their Maven coordinates — read from `META-INF/maven/.../pom.properties`, then `MANIFEST.MF`, then the file name — are reported in their own **Embedded binaries** chapter (1B), grouped by containing archive. The chapter is a **full inventory** of every embedded coordinate — vulnerable or not (the JAR counterpart of the native-binary inventory 1C and the vendored-JS inventory 1D) — with a CVE-status column per coord and the full CVE detail for vulnerable ones. So a committed fat-jar shows up even when nothing inside it is currently vulnerable. Auto when archives are present; `--no-jars` disables it. Archives with no resolvable coordinate are listed in chapter 0.
 
 > **Committed native binaries**: `.dll`/`.exe`/`.so`/`.dylib` files are detected by extension **and** magic-byte confirmation (PE/ELF/Mach-O — images/fonts/assets are rejected even with a spoofed extension), hashed (SHA-1 + SHA-256) and **identified by checksum** online: **deps.dev** maps the hash to an exact package coordinate (byte-identical to a published artifact → *pristine*, and a candidate to declare as a real dependency); **CIRCL hashlookup** recognises known OS/distro/CDN/NSRL files (*known-good*) and carries a free `KnownMalicious` flag. Files no source knows are *unknown*; a filename disagreeing with the resolved identity is *name≠checksum*. Reported in the **Unmanaged / vendored binaries** chapter (1C) and the JSON export (`unmanaged` array). Cached + `--offline`-aware; the binary scan is on by default in `auto` mode and disabled with `--no-binaries`. No malware/AV lane.
+
+> **Certificates & key material**: committed cryptographic files are inventoried in chapter **2.4** and the JSON export (`certificates` array) + SARIF (`FAD-*` rules). Detected by extension (`.pem`/`.crt`/`.cer`/`.der`/`.key`/`.pub`/`.p12`/`.pfx`/`.jks`/`.keystore`/`.ppk`/`.asc`/`.gpg`) **and** conventional SSH filenames (`id_rsa`/`id_ed25519`/…/`authorized_keys`/`known_hosts`), then classified by content: **X.509 certificates** (parsed with Node's built-in `crypto.X509Certificate` — flagged `expired`, `expiring` within `--cert-expiry-days` (default 90), `weak key` RSA<2048 / weak EC curve, `weak signature` MD5/SHA1, `self-signed`); **keys** — every one labelled **private** (a committed secret → *critical*) or **public** (*low*, inventory) — covering PEM (PKCS#1/PKCS#8/SEC1), **OpenSSH of every algorithm** (RSA/DSA/ECDSA/Ed25519 incl. FIDO `-sk`), PuTTY `.ppk`, PGP, and one-line SSH public keys; and **keystores** (JKS/JCEKS by magic, PKCS#12 by extension — contents not decrypted, hashed + flagged *medium*). **100% offline** — no network, no decryption. On by default; `--no-certs` disables it, `--cert-expiry-days <n>` sets the expiry window. (Inventory only — these findings don't affect the `--fail-on` gate.)
 
 > **npm without a lockfile**: a `package.json` lacking a sibling
 > `package-lock.json`/`yarn.lock` is now scanned **best-effort** — pinned exact
@@ -116,6 +120,8 @@ Each data source can be disabled independently:
 | `--no-vendored-js-inventory` | Keep only **vulnerable** vendored JS (chapter 2); skip the full **inventory** of all identified standalone JS libs (chapter 1D). The inventory is a cyber-hygiene constat — unmanaged third-party JS regardless of CVEs — on by default. |
 | `--no-jars` | Skip scanning embedded `.jar`/`.war`/`.ear` binaries for Maven coordinates (chapter 1B) |
 | `--no-binaries` | Skip scanning committed native binaries (`.dll`/`.exe`/`.so`/`.dylib`) — no checksum identity/integrity (chapter 1C) |
+| `--no-certs` | Skip the certificate / key-material scan (chapter 2.4) — committed certs, private/public keys and keystores |
+| `--cert-expiry-days <n>` | Window for the certificate **expiring-soon** warning (default `90`) |
 | `--ignore-test` | Drop test-scoped Maven deps and dev npm deps from the scan entirely (chapter 2 will be empty) |
 
 ## Outputs
@@ -306,6 +312,36 @@ so warming them online and replaying offline yields cache hits. The descriptor k
 drops manifest paths, registry URLs, integrity hashes and parent chains. The phase-2
 report is itself path-free; vendored-JS (retire.js) findings come from phase 3 (retire
 needs the actual `.js` files), using the signature DB warmed in phase 2.
+
+### Versionless Spring Boot deps across the enclave
+
+A dep whose version is managed by an external `<parent>` (`spring-boot-starter-parent`)
+or import BOM (`spring-boot-dependencies`) is declared **without a version**, and the CVE
+cache is keyed by `coordinate + version` — so `spring-boot-starter-actuator` can't warm
+its cache until something resolves `2.7.18`. In Phase 2 there's no source tree to derive
+that from, which would otherwise force **two** round-trips (one to learn the version, one
+to warm its CVEs). To avoid that, the descriptor also carries a small `maven` hints block:
+
+```json
+"maven": {
+  "externalParents": [{ "groupId": "org.springframework.boot", "artifactId": "spring-boot-starter-parent", "version": "2.7.18" }],
+  "importBoms": [],
+  "propertyOverrides": { "log4j2.version": "2.17.1" }
+}
+```
+
+Phase 2 replays the parent/BOM backfill from these coords (resolving them from Maven
+Central), so the versions — **including a `<log4j2.version>` you patched**, honored via
+`propertyOverrides` — resolve and their CVE caches warm in **one** exchange. Only public
+coords + version strings travel; a private parent listed here simply doesn't resolve
+online (a harmless no-op). If your enclave policy prefers it, you can still run two
+exchanges instead — the hints just make one suffice.
+
+> **If instead your online/warming machine DOES have the source tree** (the common
+> `--export-cache` workflow, not the anonymized one), none of this applies: the parent
+> POMs are fetched and cached during the online run, and the offline `-s ./proj --offline`
+> re-parses the real POMs and backfills from the cached parents. One exchange, no hints
+> needed. The hints exist only for the source-never-leaves-the-enclave case above.
 
 ## Custom registries (private repos)
 

@@ -5,6 +5,69 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **External `<parent>` POMs (spring-boot-starter-parent) now backfill their managed
+  versions.** A versionless dep whose version is inherited from an external `<parent>`
+  (e.g. `spring-boot-starter-actuator` under `spring-boot-starter-parent`, whose own
+  parent `spring-boot-dependencies` holds the version table) was left unresolved and
+  **dropped from the CVE/OSV/EOL/outdated scans** — the mainline backfill (`lib/maven-bom.js`)
+  only handled `<scope>import</scope>` BOMs, never the `<parent>` case, so this failed
+  even online (the `--transitive` overlay resolved the parent but couldn't backfill the
+  primary version). `collectExternalParents()` now feeds external parents through the same
+  `effectivePom` → `backfillVersions` path as import BOMs (import BOMs win on precedence),
+  stamped `versionSource={via:"parent",…}` → report "version managed by … (parent POM)".
+  It runs in the **mainline** flow (not just `--transitive`), so the warmed cache always
+  captures the parent POMs for **offline/air-gapped** reuse. **Child property overrides are
+  honored** (Maven semantics): a project that redefines `<log4j2.version>2.17.1</log4j2.version>`
+  to patch a CVE resolves the managed coord to `2.17.1`, not the framework default
+  (`collectPropertyOverrides()` → `effectivePom`'s new `propertyOverrides`; import-BOM-managed
+  coords are correctly left un-overridden). The "missing parent POM — potentially private"
+  warning now **partitions** parents fad resolves from Maven Central/cache (public) from the
+  truly-unresolvable ones (private), instead of flagging every external parent as suspect.
+- **Anonymized descriptor closes the versionless-Spring-Boot round-trip in one exchange.**
+  The `fad-deps/1` descriptor now carries a `maven` hints block (`externalParents[]` +
+  `importBoms[]` coords + version `propertyOverrides{}`) so a no-source-tree online
+  `--import-anonymized` run can resolve the versionless deps' versions and warm their
+  `coord+version`-keyed CVE caches — previously that needed a second air-gapped exchange.
+  Only public coords + version strings travel (a private parent listed is a harmless online
+  no-op); the source tree never leaves the enclave.
+- **CVE-index recall: real-world pre-2023 records were dropped (incl. Log4Shell).**
+  `isMavenRelevant()` only accepted CVE 5.x records carrying machine-readable Maven
+  metadata (`packageName`/`collectionURL`/`versionType:"maven"`) or an EXACT-match
+  known vendor — but CNAs publish legal-entity vendors ("Apache Software Foundation")
+  and display products ("Apache Log4j2"), so **CVE-2021-44228 was absent from the
+  index** and an offline scan of `log4j-core:2.14.0` reported no Log4Shell. The filter
+  now tokenises vendors, strips leading vendor words from products, and consults the
+  curated `data/cpe-coord-map.json` — which also **backfills `packageName`** on
+  product-only records so they match at tier-1. `versions[].changes[]` timelines
+  (how 44228 encodes its affected windows) are expanded into plain affected windows,
+  placeholder bounds (`lessThan:"log4j-core*"`, `"*"`, `"unspecified"`) no longer
+  poison comparisons (fail-closed preserved), and `fixVersion` picks the **highest**
+  version-like upper bound instead of the first (multi-branch advisories suggested a
+  downgrade). Rebuilt index: **6 589 → 15 236 CVE (+131 %)**. Regression-tested against
+  the real cvelistV5 record (`test/fixtures/cve-samples/cve-2021-44228-real.json`).
+- **OSV offline: warmed cache older than the 12 h TTL was silently discarded.**
+  `--offline` now bypasses the OSV cache TTL (same rule as the NVD cache): on an
+  air-gapped box the warmed cache is the only source, and expiring it reported
+  "0 OSV vulns" for every ecosystem. Online behaviour is unchanged.
+- **Go: `replace` directives are now applied** (module→module replaces rewrite the
+  scanned coordinate — a `replace` downgrade was invisible; directory replaces are
+  dropped with a chapter-0 `local-replace` warning), and **pre-1.17 modules merge the
+  `go.sum` graph** (their `go.mod` lists direct deps only — transitives were skipped).
+- **PyPI: `pip-compile --generate-hashes` output parsed correctly.** The trailing
+  `\` of hash-pinned lines (and inline ` --hash=…` options) made every dep of such a
+  requirements file silently skipped. `uv.lock` no longer inventories the project's
+  own virtual/editable package. Same-name deps pinned to different versions across
+  files now ALL land in `versions[]` (every distinct version scanned, as Maven does).
+- **NuGet: `Directory.Packages.props` is resolved by walking UP the tree** (MSBuild
+  semantics — nearest wins). Before, only the csproj's own directory was searched, so
+  a root-level CPM solution collected **zero** deps. Also: `VersionOverride` support,
+  exact-range pins `[1.2.3]` accepted as concrete, distinct resolved versions across
+  projects/TFMs all scanned, and **paged registration indexes** (Newtonsoft.Json-class
+  packages) have the needed pages fetched instead of returning empty findings.
+- **Registry caches (go/pypi/nuget): offline runs no longer re-stamp cache freshness**
+  (a stale cache would then look fresh to the next online run and skip its refetch).
+
 ### Changed
 - **Report chapters reorganised into a two-level hierarchy.** Related chapters are now
   grouped under six **root chapters**, each whose header carries a breakdown count:
@@ -18,6 +81,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   (roots + indented sub-chapters).
 
 ### Added
+- **Certificate & key-material scanner (report chapter 2.4).** A new standalone scanner
+  (`lib/certs/`, on by default, `--no-certs` to disable) walks the source tree for
+  committed cryptographic material and surfaces it in a dedicated report chapter, the
+  JSON export (`certificates` array + `summary.certificates`/`certPrivateKeys`) and SARIF
+  (`FAD-*` rules). It detects **X.509 certificates** (PEM/DER, parsed with Node's built-in
+  `crypto.X509Certificate`) and flags **expired**, **expiring** (within `--cert-expiry-days`,
+  default 90), **weak key** (RSA<2048 / weak EC curve), **weak signature** (MD5/SHA1) and
+  **self-signed**; **private & public keys** — every key explicitly labelled **private**
+  (a committed secret → critical) or **public** (low) — across PEM (PKCS#1/8/SEC1),
+  **OpenSSH of every algorithm** (RSA/DSA/ECDSA/Ed25519 incl. FIDO `-sk`), PuTTY `.ppk`,
+  PGP and one-line SSH (`*.pub`, `authorized_keys`, `known_hosts`); and **keystores**
+  (JKS/JCEKS by magic byte, PKCS#12 by extension). Detection is by extension **and**
+  conventional SSH filename. **100% offline** — no network, no decryption — inventory-only
+  (does not affect the `--fail-on` gate).
 - **Scan-provenance manifest + Methodology chapter (audit reproducibility).** Every
   report now carries a provenance manifest — tool version, run mode (offline/online),
   the findings-affecting configuration, and the **freshness of every data source**

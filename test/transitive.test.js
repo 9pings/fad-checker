@@ -3,7 +3,36 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { parsePomXml, resolveProps, buildMgmt, SCOPE_MATRIX, resolveTransitiveDeps } = require("../lib/transitive");
+const { parsePomXml, resolveProps, buildMgmt, SCOPE_MATRIX, resolveTransitiveDeps, effectivePom } = require("../lib/transitive");
+
+// A platform POM that manages log4j-core via a ${log4j2.version} property. This is the
+// Spring Boot shape: spring-boot-dependencies manages the coord through a version property
+// a downstream project can OVERRIDE in its own <properties> to patch a CVE. effectivePom
+// must resolve the parent's managed table against those child overrides (Maven semantics).
+const MC_URL = "https://repo1.maven.org/maven2";
+const PLAT_POM = `<?xml version="1.0"?>
+<project><modelVersion>4.0.0</modelVersion>
+	<groupId>com.acme</groupId><artifactId>plat</artifactId><version>1.0</version>
+	<properties><log4j2.version>2.17.2</log4j2.version></properties>
+	<dependencyManagement><dependencies>
+		<dependency><groupId>org.apache.logging.log4j</groupId><artifactId>log4j-core</artifactId><version>\${log4j2.version}</version></dependency>
+	</dependencies></dependencyManagement>
+</project>`;
+const platFetcher = async (url) => url === `${MC_URL}/com/acme/plat/1.0/plat-1.0.pom`
+	? { ok: true, status: 200, text: async () => PLAT_POM }
+	: { ok: false, status: 404, text: async () => "" };
+
+test("effectivePom resolves a parent-managed version property to the parent default", async () => {
+	const eff = await effectivePom("com.acme", "plat", "1.0", { fetcher: platFetcher, cacheDir: freshCache() });
+	assert.equal(eff.depMgmt.find(d => d.artifactId === "log4j-core").version, "2.17.2");
+});
+
+test("effectivePom honors injected propertyOverrides for parent-chain managed versions", async () => {
+	const eff = await effectivePom("com.acme", "plat", "1.0",
+		{ fetcher: platFetcher, cacheDir: freshCache(), propertyOverrides: { "log4j2.version": "2.17.1" } });
+	assert.equal(eff.depMgmt.find(d => d.artifactId === "log4j-core").version, "2.17.1",
+		"a child overriding <log4j2.version> must win over the parent's default");
+});
 
 // Per-test cache dir so we don't poison ~/.fad-checker/poms-cache during tests
 function freshCache() {
