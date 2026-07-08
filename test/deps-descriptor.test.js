@@ -44,6 +44,37 @@ test("serializeDeps strips ALL environment-identifying fields (anonymization gua
 	assert.deepStrictEqual(keys, ["ecosystem", "ecosystemType", "isDev", "name", "namespace", "scope", "version", "versions"]);
 });
 
+test("serializeDeps carries maven resolution hints (external parents, import BOMs, property overrides)", () => {
+	const d = serializeDeps(sampleMap(), {
+		generator: "t",
+		externalParents: [{ groupId: "org.springframework.boot", artifactId: "spring-boot-starter-parent", version: "2.7.18" }],
+		importBoms: [{ groupId: "org.springframework.boot", artifactId: "spring-boot-dependencies", version: "2.7.18" }],
+		propertyOverrides: { "log4j2.version": "2.17.1" },
+	});
+	assert.deepStrictEqual(d.maven.externalParents, [{ groupId: "org.springframework.boot", artifactId: "spring-boot-starter-parent", version: "2.7.18" }]);
+	assert.deepStrictEqual(d.maven.importBoms, [{ groupId: "org.springframework.boot", artifactId: "spring-boot-dependencies", version: "2.7.18" }]);
+	assert.deepStrictEqual(d.maven.propertyOverrides, { "log4j2.version": "2.17.1" });
+});
+
+test("serializeDeps omits the maven hints block when there are none", () => {
+	assert.strictEqual(serializeDeps(sampleMap(), {}).maven, undefined);
+});
+
+test("deserializeDeps round-trips the maven resolution hints, defaulting absent ones to empty", () => {
+	const d = serializeDeps(sampleMap(), {
+		externalParents: [{ groupId: "org.springframework.boot", artifactId: "spring-boot-starter-parent", version: "2.7.18" }],
+		propertyOverrides: { "log4j2.version": "2.17.1" },
+	});
+	const back = deserializeDeps(d);
+	assert.deepStrictEqual(back.externalParents, [{ groupId: "org.springframework.boot", artifactId: "spring-boot-starter-parent", version: "2.7.18" }]);
+	assert.deepStrictEqual(back.propertyOverrides, { "log4j2.version": "2.17.1" });
+	assert.deepStrictEqual(back.importBoms, []);
+	// A legacy descriptor with no maven block deserializes to empty hints (no throw).
+	const legacy = deserializeDeps(serializeDeps(sampleMap(), {}));
+	assert.deepStrictEqual(legacy.externalParents, []);
+	assert.deepStrictEqual(legacy.propertyOverrides, {});
+});
+
 test("round-trip serialize → deserialize preserves coordinates, versions, scope", () => {
 	const d = serializeDeps(sampleMap(), {});
 	const { resolved } = deserializeDeps(d);
