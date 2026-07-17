@@ -1203,6 +1203,17 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		}
 	}
 
+	// 6a-bis. Attribute every match the per-module overlay recovered to the module that
+	// actually resolves that version. Must run after ALL match sources are merged and
+	// before anything reads scope (exec summary, charts, chapters, exports, gate) —
+	// otherwise an overlay-recovered transitive masquerades as a direct dep of the
+	// manifest that pins the FIXED version.
+	{
+		const { attributeMaskedMatches } = require("./lib/version-overlay");
+		const reattributed = attributeMaskedMatches(cveMatches);
+		if (reattributed && verbose) console.log(`   re-attributed ${reattributed} overlay-recovered match(es) to their resolving module`);
+	}
+
 	// 6b. Supply-chain risk lane (pure + offline): flag KNOWN-MALICIOUS advisories
 	// (OSV MAL-… already in the match set) always, and detect suspected TYPOSQUATS
 	// (opt-in --typosquat, heuristic — names one edit from a popular package).
