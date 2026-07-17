@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Aggregator/parent that declares the CVE-remediation override as a plain
+     <dependencies> entry with an explicit version — NOT a <dependencyManagement>
+     pin. Maven INHERITS <dependencies> into every child, where they are direct
+     (depth-0) deps and therefore win over any transitive of the same coord.
+
+     This is the real-world Spring Boot shape: "bump commons-compress to 1.27.1
+     for the whole reactor so minio's vulnerable 1.24.0 never reaches a classpath". -->
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>com.test</groupId>
+	<artifactId>parent</artifactId>
+	<version>1.0.0</version>
+	<packaging>pom</packaging>
+
+	<dependencies>
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-compress</artifactId>
+			<version>1.27.1</version>
+		</dependency>
+	</dependencies>
+</project>
