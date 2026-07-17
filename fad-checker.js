@@ -1203,15 +1203,16 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		}
 	}
 
-	// 6a-bis. Attribute every match the per-module overlay recovered to the module that
-	// actually resolves that version. Must run after ALL match sources are merged and
-	// before anything reads scope (exec summary, charts, chapters, exports, gate) —
-	// otherwise an overlay-recovered transitive masquerades as a direct dep of the
-	// manifest that pins the FIXED version.
+	// 6a-bis. Attribute every match to the manifest/module that actually resolves the
+	// version it matched on. A depRecord is coord-wide (versions[] and manifestPaths[]
+	// with no link between them); a match carries ONE version. Must run after ALL match
+	// sources are merged and before anything reads scope/paths (exec summary, charts,
+	// chapters, exports, gate) — otherwise, on a root spanning several independent
+	// projects, every version is reported against every manifest holding the coord.
 	{
-		const { attributeMaskedMatches } = require("./lib/version-overlay");
-		const reattributed = attributeMaskedMatches(cveMatches);
-		if (reattributed && verbose) console.log(`   re-attributed ${reattributed} overlay-recovered match(es) to their resolving module`);
+		const { attributeMatchOrigins } = require("./lib/attribution");
+		const reattributed = attributeMatchOrigins(cveMatches);
+		if (reattributed && verbose) console.log(`   re-attributed ${reattributed} match(es) to their resolving manifest/module`);
 	}
 
 	// 6b. Supply-chain risk lane (pure + offline): flag KNOWN-MALICIOUS advisories
