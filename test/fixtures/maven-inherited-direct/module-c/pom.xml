@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Child of parent: declares minio 8.5.6, which transitively brings the OLD
+     org.apache.commons:commons-compress:1.24.0. It also INHERITS the parent's
+     direct commons-compress:1.27.1 declaration, so real Maven resolves 1.27.1
+     here (nearest-wins: an inherited direct dep is depth 0, minio's is depth 1).
+
+     1.24.0 is therefore never on this module's classpath and must not be scanned. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.test</groupId>
+		<artifactId>parent</artifactId>
+		<version>1.0.0</version>
+		<relativePath>../parent/pom.xml</relativePath>
+	</parent>
+	<artifactId>module-c</artifactId>
+
+	<dependencies>
+		<dependency>
+			<groupId>io.minio</groupId>
+			<artifactId>minio</artifactId>
+			<version>8.5.6</version>
+		</dependency>
+	</dependencies>
+</project>
