@@ -1,0 +1,90 @@
+name: "False positive / false negative"
+description: A finding that shouldn't be there, or a real one that fad-checker missed
+title: "[FP/FN] "
+labels: ["accuracy"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Accuracy reports are the most valuable issues this project gets. Even a
+        partial report helps — fill in what you can and skip the rest.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Which is it?
+      options:
+        - False positive (reported, but the dependency is not affected)
+        - False negative (not reported, but the dependency is affected)
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: coordinate
+    attributes:
+      label: Coordinate and version
+      description: Exactly as fad-checker printed it, or as it appears in your manifest.
+      placeholder: "org.apache.logging.log4j:log4j-core:2.14.0  ·  npm:lodash@4.17.20"
+    validations:
+      required: true
+
+  - type: input
+    id: advisory
+    attributes:
+      label: CVE / GHSA / advisory id
+      placeholder: "CVE-2021-44228, GHSA-jfh8-c2jp-5v3q"
+
+  - type: dropdown
+    id: ecosystem
+    attributes:
+      label: Ecosystem
+      options:
+        - Maven
+        - Gradle
+        - npm / Yarn / pnpm
+        - Composer (PHP)
+        - PyPI (Python)
+        - NuGet (.NET)
+        - Go
+        - Ruby
+        - Vendored JavaScript (retire.js)
+        - Embedded JAR / WAR / EAR
+        - Native binary (.dll/.so/.exe/.dylib)
+        - Certificates / key material
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why do you believe it's wrong?
+      description: |
+        For a false positive: where does the real version come from (a `<dependencyManagement>` pin,
+        a BOM, a lockfile, a `replace` directive)? For a false negative: what does another tool
+        report, and from which manifest is the dependency resolved?
+    validations:
+      required: true
+
+  - type: textarea
+    id: manifest
+    attributes:
+      label: Relevant manifest excerpt
+      description: |
+        The smallest snippet that reproduces it — the `<dependency>` block, lockfile entry,
+        parent/BOM declaration. Redact anything private; internal coordinates can be renamed.
+      render: xml
+
+  - type: input
+    id: command
+    attributes:
+      label: Command you ran
+      placeholder: "fad-checker -s ./proj --transitive --offline"
+
+  - type: input
+    id: version
+    attributes:
+      label: fad-checker version
+      description: "`fad-checker --version`"
+    validations:
+      required: true

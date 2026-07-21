@@ -1,0 +1,43 @@
+name: "Feature request"
+description: A new ecosystem, data source, output format or flag
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What can't you do today?
+      description: Describe the audit you're trying to run, not just the feature you have in mind.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - New ecosystem / codec (Rust, Swift, Dart, …)
+        - Existing ecosystem — an unsupported manifest or lockfile format
+        - Vulnerability or metadata data source
+        - Report / export format
+        - CLI flag or CI behaviour
+        - Offline / air-gapped workflow
+        - Private registry support
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: sample
+    attributes:
+      label: Sample manifest, if relevant
+      description: |
+        For a new ecosystem or lockfile format, a small real example is what makes this
+        actionable — it becomes the test fixture.
+      render: text
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: How do you handle it today?
+      description: Another tool, a script, a manual step — useful for judging the gap.

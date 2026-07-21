@@ -2,8 +2,9 @@
 
 [![npm version](https://img.shields.io/npm/v/fad-checker.svg)](https://www.npmjs.com/package/fad-checker)
 [![npm downloads](https://img.shields.io/npm/dm/fad-checker.svg)](https://www.npmjs.com/package/fad-checker)
-[![license](https://img.shields.io/npm/l/fad-checker.svg)](https://github.com/9pings/fad-checker/blob/main/package.json)
+[![license](https://img.shields.io/npm/l/fad-checker.svg)](LICENSE)
 [![node](https://img.shields.io/node/v/fad-checker.svg)](https://nodejs.org)
+[![CI](https://github.com/9pings/fad-checker/actions/workflows/ci.yml/badge.svg)](https://github.com/9pings/fad-checker/actions/workflows/ci.yml)
 
 > **F**abulous **A**utonomous **D**ependency **C**hecker<br>
 > AKA **F**uckin' **A**utonomous **D**ependency **C**hecker<br>
@@ -132,6 +133,20 @@ DB is warmed online (phase 2) and carried by `--export-cache`. Full offline/cach
 - [`docs/COMPARISON.md`](docs/COMPARISON.md) — vs OSV-Scanner / Trivy / Grype / OWASP DC / Snyk, and how it stays build-free.
 - [`docs/DATA-SOURCES.md`](docs/DATA-SOURCES.md) — the public datasets fad-checker uses + their licenses.
 - [`CHANGELOG.md`](CHANGELOG.md) · [`CLAUDE.md`](CLAUDE.md) — release history · code-level orientation for contributors.
+
+## Contributing
+
+The most useful contribution to a young scanner is **telling it where it's wrong**: run it on a
+real project and file a [false positive / false negative report](https://github.com/9pings/fad-checker/issues/new?template=false_positive.yml)
+with the coordinate and the manifest snippet that produced it. Dev setup, ground rules and the
+codec extension point → [`CONTRIBUTING.md`](CONTRIBUTING.md). Vulnerabilities in fad-checker
+itself → [`SECURITY.md`](SECURITY.md) (please report privately).
+
+**On AI assistance:** this codebase is written with heavy use of Claude Code — [`CLAUDE.md`](CLAUDE.md)
+in the repo root is exactly what it looks like. The bar it's held to is the one you can check
+yourself: **606 tests** (`npm test`), the zero-network guarantee enforced by a tripwire test and
+reproducible under `unshare -rn`, and coverage numbers measured against a Snyk baseline rather
+than asserted. Where the code doesn't meet that bar, that's a bug report I want.
 
 ## License
 

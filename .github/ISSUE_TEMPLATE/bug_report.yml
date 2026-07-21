@@ -1,0 +1,69 @@
+name: "Bug report"
+description: A crash, a wrong output, a flag that doesn't behave as documented
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a wrong *finding* (a CVE that shouldn't be there, or one that's missing),
+        please use the **False positive / false negative** template instead.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: Command you ran
+      placeholder: "fad-checker -s ./proj --licenses --fail-on high"
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output / stack trace
+      description: Run again with `--verbose` if you can. Redact paths and internal names freely.
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: fad-checker version
+      description: "`fad-checker --version`"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - npm install -g fad-checker
+        - Single binary from dist/ (bun-compiled)
+        - From source (git clone)
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: OS and Node version
+      placeholder: "Ubuntu 24.04, node 22.14.0  ·  Windows 11, single binary"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: offline
+    attributes:
+      label: Run mode
+      options:
+        - label: It was an `--offline` / air-gapped run
+        - label: A private registry was configured (`--add-repo` / `--repo`)
+        - label: It happens on a fresh cache (`~/.fad-checker/` removed)
