@@ -57,17 +57,21 @@ jobs:
       # ---- build: bun cross-compiles every target from this one runner ----
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: latest }
+      # Each target builds into its own directory under the CANONICAL name, so the file
+      # inside the archive is `fad-checker` (or `fad-checker.exe`) — extract and run, no
+      # renaming. The platform/arch lives in the ARCHIVE name, where it belongs.
       - name: build binaries
         run: |
           set -eu
-          mkdir -p dist
-          build() { bun build fad-checker.js --compile --target="$1" --outfile="dist/$2"; }
-          build bun-linux-x64     fad-checker-linux-x64
-          build bun-linux-arm64   fad-checker-linux-arm64
-          build bun-darwin-x64    fad-checker-macos-x64
-          build bun-darwin-arm64  fad-checker-macos-arm64
-          build bun-windows-x64   fad-checker-windows-x64.exe
-          ls -la dist
+          build() { mkdir -p "build/$2"; bun build fad-checker.js --compile --target="$1" --outfile="build/$2/$3"; }
+          build bun-linux-x64     linux-x64     fad-checker
+          build bun-linux-arm64   linux-arm64   fad-checker
+          build bun-darwin-x64    macos-x64     fad-checker
+          build bun-darwin-arm64  macos-arm64   fad-checker
+          build bun-windows-x64   windows-x64   fad-checker.exe
+          chmod +x build/linux-x64/fad-checker build/linux-arm64/fad-checker \
+                   build/macos-x64/fad-checker build/macos-arm64/fad-checker
+          ls -l build/*/
 
       # ---- smoke: the artifact we ship must run, with no network ----
       # Source-via-node passing does not prove the compiled binary works: it has no
@@ -76,30 +80,31 @@ jobs:
       - name: smoke-test the linux binary offline
         run: |
           set -eu
-          chmod +x dist/fad-checker-linux-x64
-          dist/fad-checker-linux-x64 --version
+          BIN=build/linux-x64/fad-checker
+          "$BIN" --version
           # --offline makes zero network calls by design; a namespace with no interface
           # proves it rather than trusting the flag. Runners may forbid user namespaces,
           # so fall back to a plain offline run instead of failing the release for it.
           if unshare -rn true 2>/dev/null; then
-            unshare -rn dist/fad-checker-linux-x64 -s test/fixtures/monorepo-mixed --offline --no-report
+            unshare -rn "$BIN" -s test/fixtures/monorepo-mixed --offline --no-report
           else
             echo "user namespaces unavailable on this runner — running without one"
-            dist/fad-checker-linux-x64 -s test/fixtures/monorepo-mixed --offline --no-report
+            "$BIN" -s test/fixtures/monorepo-mixed --offline --no-report
           fi
 
       # ---- package: ~100 MB each raw, ~38 MB compressed ----
+      # tar preserves the executable bit, so `tar xzf` yields a runnable fad-checker with
+      # no chmod step. Archives are named per platform; the file inside never is.
       - name: compress and checksum
         run: |
           set -eu
-          cd dist
-          for f in fad-checker-linux-x64 fad-checker-linux-arm64 fad-checker-macos-x64 fad-checker-macos-arm64; do
-            chmod +x "$f"; tar -czf "$f-v${VERSION}.tar.gz" "$f"; rm "$f"
+          mkdir -p dist
+          for t in linux-x64 linux-arm64 macos-x64 macos-arm64; do
+            tar -czf "dist/fad-checker-$t-v${VERSION}.tar.gz" -C "build/$t" fad-checker
           done
-          zip -q -9 "fad-checker-windows-x64-v${VERSION}.zip" fad-checker-windows-x64.exe
-          rm fad-checker-windows-x64.exe
-          sha256sum * > SHA256SUMS
-          cat SHA256SUMS
+          (cd build/windows-x64 && zip -q -9 "../../dist/fad-checker-windows-x64-v${VERSION}.zip" fad-checker.exe)
+          (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+          tar -tvzf "dist/fad-checker-linux-x64-v${VERSION}.tar.gz"
 
       - name: release notes from CHANGELOG
         run: |
