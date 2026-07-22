@@ -45,9 +45,9 @@ Sources: [Syft CycloneDX encoder](https://github.com/anchore/syft/blob/main/syft
 
 ³ Measured on **Apache Dubbo 2.7.8** (105-module reactor, commit `0be2a1bb`), both scanners run
 under `unshare -rn` with no network interface. Against OSV-Scanner's own online output as the
-reference set (657 distinct `package@version | vulnerability` pairs), **fad-checker recovers 575
-(87.5%)** and **OSV-Scanner recovers 37 (5.6%)** — online it finds 92 vulnerable Maven packages
-on this project, offline 3, and the missing 89 are transitive. Full method, the 82 pairs fad
+reference set (657 distinct `package@version | vulnerability` pairs), **fad-checker recovers 579
+(88.1%)** and **OSV-Scanner recovers 37 (5.6%)** — online it finds 92 vulnerable Maven packages
+on this project, offline 3, and the missing 89 are transitive. Full method, the 78 pairs fad
 misses and why, and the caveats (a warmed cache is required; one project is one shape) →
 [`BENCHMARK.md`](BENCHMARK.md). fad resolves the Maven graph from cached POMs, and `--osv-db`
 makes its offline OSV recall cache-independent. OSV-Scanner's own docs, not this measurement,

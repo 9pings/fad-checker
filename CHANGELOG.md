@@ -6,6 +6,30 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **The transitive closure of a test-scoped dependency was never scanned.** Maven's scope
+  matrix says `test → compile = test`: the compile dependencies of a test-scoped dependency
+  are on the test classpath, and so are theirs, recursively (only `test → test` is omitted).
+  `expandWithTransitives` passed test-scoped roots into resolution (`includeTestDeps`, on
+  unless `--ignore-test`) but `resolveTransitiveDeps` then filtered accepted propagated
+  scopes to `compile/runtime/provided`, so **every child of a test root was discarded at the
+  first hop**. Net effect: the dev chapter only ever listed *directly declared* test
+  dependencies, never their transitives. On Apache Dubbo 2.7.8 this hid
+  `spring-boot:1.5.17.RELEASE` and `spring-boot-autoconfigure:1.5.17.RELEASE`, four hops down
+  `registry-test → registry-server-integration → spring-boot-starter`, all of which
+  `mvn dependency:tree` reports at scope=test.
+- **Scope is now widened, never narrowed, when a coord is reached by several paths.** This is
+  the half of the fix above that matters most. The traversal dedupes by `g:a` and keeps the
+  first chain walked, so marking everything under a test root as dev let **BFS order decide
+  the scope**: a coordinate reachable from *both* a test root and a compile root got stamped
+  test if the test path happened to be walked first. Measured: 6 production findings
+  (`spring-core:4.3.16.RELEASE`, `commons-lang:2.6`, …) silently moved into the dev chapter,
+  dropping out of the production count **and out of the `--fail-on` gate**. A false negative
+  on the production classpath is worse than the gap being fixed. A revisit now upgrades
+  `test` to the wider propagated scope and never the reverse. Locked by
+  `test/transitive-test-scope.test.js` (6 tests, including the both-paths case and the
+  `test → test` omission).
+  Net on Dubbo: **575 → 579** recovered pairs, production findings **unchanged at 650**, dev
+  findings 7 → 11.
 - **Maven hard-pin versions (`[1.2.3]`) are now normalised to the bare version.**
   Maven's `[x]` syntax means *exactly* x — a concrete version wearing range brackets —
   and real upstream POMs use it (`io.grpc:grpc-netty:1.22.1` declares
