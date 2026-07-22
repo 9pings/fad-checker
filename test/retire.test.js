@@ -45,7 +45,10 @@ test("extractVendoredInventory lists ALL identified libs (vulnerable or not), so
 	assert.strictEqual(inv[0].vulnerable, true);
 	assert.strictEqual(inv[0].vulnCount, 2);
 	assert.strictEqual(inv[0].maxSeverity, "HIGH");
-	assert.strictEqual(inv[0].file, "web/js/jquery-1.6.1.min.js");   // relative to srcDir
+	// relToSrc uses path.relative, which yields NATIVE separators — backslashes on Windows.
+	// That is deliberate: only the SARIF export normalises to "/" (its spec requires a URI);
+	// the report and the JSON export show native paths a user can paste into their shell.
+	assert.strictEqual(inv[0].file, path.join("web", "js", "jquery-1.6.1.min.js"));
 	// non-vulnerable libs are present (the whole point)
 	const safe = inv.filter(e => !e.vulnerable).map(e => e.component).sort();
 	assert.deepStrictEqual(safe, ["bootstrap", "jquery"]);
