@@ -22,7 +22,7 @@ avoids grading either tool against its own notion of a finding.
 
 | Scanner, **no network at all** | Pairs recovered from the 657 | Wall clock |
 | --- | --- | --- |
-| **fad-checker 2.4.6** `--offline` | **579 (88.1%)** | 4.5 s |
+| **fad-checker 2.4.7** `--offline` | **653 (99.4%)** | 4.5 s |
 | OSV-Scanner 2.4.0 `--offline` | **37 (5.6%)** | 0.8 s |
 
 Both were run under `unshare -rn`, in a namespace with **no network interface**, not merely with
@@ -63,29 +63,26 @@ Compare on `(coordinate@version | vulnerability id)` pairs, restricted to Maven.
 things or the comparison is meaningless: map OSV `GHSA-*` ids to their `CVE-*` alias, and strip
 Maven hard-pin brackets (`[1.2.3]` → `1.2.3`).
 
-Environment for the numbers above: Node 24.14.0, Linux 6.6.87 (WSL2), fad-checker 2.4.6,
+Environment for the numbers above: Node 24.14.0, Linux 6.6.87 (WSL2), fad-checker 2.4.7,
 OSV-Scanner 2.4.0 (osv-scalibr 0.4.5).
 
 ## What fad-checker misses, and why
 
-88.1% is not 100%. The 78 unrecovered pairs are **not** advisory-matching failures. Every one of
-them is a coordinate that fad resolved to a *different version* than deps.dev did. They cluster
-in 7 coordinates:
+99.4% is not 100%. **Four** pairs remain, all on one coordinate:
+`org.hibernate:hibernate-validator@5.2.4.Final`, which `mvn dependency:tree` confirms at
+scope=test in `dubbo-filter-validation`.
 
-| Coordinate | OSV resolved | fad resolved | Pairs missed |
-| --- | --- | --- | --- |
-| `com.fasterxml.jackson.core:jackson-databind` | 2.8.4 | 2.5.2, 2.9.4, 2.9.5, 2.9.9, 2.10.4 | 56 |
-| `org.apache.commons:commons-compress` | 1.18 | 1.8.1 | 6 |
-| `com.google.guava:guava` | 16.0.1, 18.0 | 16.0, 19.0, 20.0, 24.1.1-jre, 26.0-android, 27.1-jre | 6 |
-| `org.hibernate:hibernate-validator` | 5.2.4.Final | 5.4.1.Final | 4 |
-| `com.fasterxml.jackson.core:jackson-core` | 2.8.4 | 2.5.2, 2.8.6, 2.9.4, 2.9.5, 2.9.9, 2.10.4 | 4 |
-| `com.squareup.okhttp3:okhttp` | 3.11.0 | 3.12.2 | 1 |
-| `com.squareup.okio:okio` | 1.14.0 | 1.15.0 | 1 |
+The cause is a distinct bug, in property inheritance rather than in resolution. The reactor
+root sets `<hibernate_validator_version>5.2.4.Final</hibernate_validator_version>`;
+`dubbo-dependencies-bom`, imported into the root's `<dependencyManagement>` with
+`<scope>import</scope>`, redefines the same property to `5.4.1.Final`. fad lets the imported
+BOM's **properties** leak into the importing project's property map, so
+`dubbo-filter-validation`'s `<version>${hibernate_validator_version}</version>` resolves to
+5.4.1.Final instead of the 5.2.4.Final it inherits from the root. Maven resolves an import
+BOM's managed versions in the BOM's own context and does not import its properties.
 
-All of them are now **version-mediation divergence**: two resolvers walking the same graph pick
-different winners for the same coordinate. Neither is obviously wrong — fad applies Maven's own
-nearest-definition-wins semantics per module, deps.dev applies its own resolution. One
-coordinate, `jackson-databind`, accounts for 56 of the 78 on its own.
+Not yet fixed: the change lands in `core.js`'s property merge, which every ecosystem's Maven
+path depends on, and it deserves its own tested change rather than being folded into this one.
 
 ## A bug this benchmark surfaced, and fixed
 
@@ -143,12 +140,46 @@ narrowed.
 Result on Dubbo: **575 → 579** recovered, production findings **unchanged at 650**, dev findings
 7 → 11. Locked by 6 tests in `test/transitive-test-scope.test.js`, including the both-paths case.
 
+## A third gap closed: test-scope versions the global pass masks
+
+The previous round scanned the transitive closure of test-scoped dependencies, but the
+per-module overlay still could not recover a **version** that only a test path holds. The
+overlay exists precisely because the global pass dedupes by `g:a` across the whole reactor and
+keeps one version per coordinate — yet it hardcoded
+`includedScopes: ["compile","runtime","provided"]`, so a version reachable only through a
+test-scoped dependency was structurally unreachable.
+
+That single omission accounted for **every one** of the 78 findings OSV-Scanner reported and
+fad missed. All verified against `mvn dependency:tree`: `jackson-databind:2.8.4:test` in
+dubbo-registry-sofa, `hibernate-validator:5.2.4.Final:test` in dubbo-filter-validation,
+`okhttp:3.11.0` / `okio:1.14.0` at test scope in dubbo-configcenter-apollo,
+`commons-compress:1.18:test` in dubbo-remoting-etcd3.
+
+Three separate correctness rules had to come with it, and each was found by a test that failed
+first:
+
+1. **A version is dev only when EVERY module resolving it does so at test scope.** On Dubbo,
+   `jackson-databind:2.10.4` is test-scoped in dubbo-config-spring and **compile**-scoped in
+   dubbo-configcenter-nacos. Reading the first recorded provenance called it dev and dropped a
+   genuine production finding out of the count and out of `--fail-on`.
+2. **Provenance is recorded per module even when the version is already known.** The overlay
+   used to bail out on the first module to contribute a version, so the compile-scoped
+   provenance in rule 1 was never recorded at all.
+3. **A DECLARED version wins over any transitive provenance for the same version.**
+   `xstream:1.4.10` is declared outright in dubbo-registry-eureka and *also* reached as a
+   test-scoped transitive of dubbo-config-api. Letting the transitive win demoted 35 findings,
+   one of them KEV, into the dev chapter.
+
+Result on Dubbo: **579 → 653** recovered (88.1% → 99.4%), production findings **651**
+(unchanged, +1), dev findings 11 → 147, zero production finding lost. Locked by 6 tests in
+`test/version-overlay-test-scope.test.js` against a 4-module fixture.
+
 ## Honest caveats
 
 - **`--offline` needs a warmed cache.** These numbers come from a cache warmed by one prior
   online run on the same project. On a cold cache the air-gapped run legitimately finds nothing.
   That is the intended air-gapped workflow (`--export-cache` / `--import-cache`), not a trick,
-  but it means "88.1% with no network" is not the same as "88.1% from a standing start".
+  but it means "99.4% with no network" is not the same as "99.4% from a standing start".
 - **The machine had a populated `~/.m2` (287 MB).** It does not affect either tool here
   (OSV-Scanner resolves via deps.dev or Maven Central, not the local repository), but Trivy and
   Syft *do* consult it, so a comparison including them must control for it.

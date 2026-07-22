@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<project>
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.acme</groupId><artifactId>reactor</artifactId><version>1.0.0</version>
+	</parent>
+	<artifactId>module-c</artifactId>
+	<!-- Masks lib 1.5.0 at COMPILE scope. -->
+	<dependencies>
+		<dependency>
+			<groupId>com.acme</groupId><artifactId>other</artifactId><version>1.0.0</version>
+		</dependency>
+	</dependencies>
+</project>

@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<project>
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.acme</groupId><artifactId>reactor</artifactId><version>1.0.0</version>
+	</parent>
+	<artifactId>module-d</artifactId>
+	<!-- Masks the SAME lib 1.5.0, but at TEST scope. A version is dev only when EVERY
+	     module resolving it does so at test scope, so 1.5.0 must stay production. -->
+	<dependencies>
+		<dependency>
+			<groupId>com.acme</groupId><artifactId>probe</artifactId><version>1.0.0</version>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+</project>

@@ -6,6 +6,44 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **The per-module overlay could not recover a version held only on a TEST classpath.**
+  The overlay exists because the global transitive pass dedupes by `g:a` across the whole
+  reactor and keeps one version per coordinate — but it hardcoded
+  `includedScopes: ["compile","runtime","provided"]`, so a version reachable only through a
+  test-scoped dependency was structurally unreachable. Measured on Apache Dubbo 2.7.8, this
+  one omission accounted for **every one** of the 78 findings OSV-Scanner reported that fad
+  missed (`jackson-databind:2.8.4:test` in dubbo-registry-sofa,
+  `hibernate-validator:5.2.4.Final:test` in dubbo-filter-validation, `okhttp:3.11.0` /
+  `okio:1.14.0` in dubbo-configcenter-apollo, `commons-compress:1.18:test` in
+  dubbo-remoting-etcd3 — each verified against `mvn dependency:tree`).
+  Air-gapped recall on that project: **579 → 653 of 657 (88.1% → 99.4%)**, production
+  findings unchanged at 651, dev findings 11 → 147, **zero production finding lost**.
+- **A version is now dev only when EVERY module resolving it does so at test scope.**
+  On Dubbo, `jackson-databind:2.10.4` is test-scoped in `dubbo-config-spring` but
+  **compile**-scoped in `dubbo-configcenter-nacos`. Reading the first recorded provenance
+  called the version dev and dropped a genuine production finding out of the count and out
+  of the `--fail-on` gate.
+- **The overlay records provenance per module even when the version is already known.**
+  It used to `continue` on the first module to contribute a version, so a second module
+  resolving the same version at a different scope left no trace at all — which is exactly
+  what made the previous item invisible.
+- **A DECLARED version now wins over any transitive provenance for the same version.**
+  `xstream:1.4.10` is declared outright in `dubbo-registry-eureka` *and* reached as a
+  test-scoped transitive of `dubbo-config-api`; letting the transitive provenance win
+  demoted 35 findings, one of them KEV, into the dev chapter. A manifest that writes
+  `<version>` for a coordinate is the authority on that version.
+
+### Known issue
+- **An imported BOM's `<properties>` leak into the importing project.** Maven resolves an
+  import BOM's managed versions in the BOM's own context and does **not** import its
+  properties. fad merges them, so on Dubbo the root's
+  `<hibernate_validator_version>5.2.4.Final</hibernate_validator_version>` is overwritten by
+  `dubbo-dependencies-bom`'s `5.4.1.Final`, and `dubbo-filter-validation` resolves the wrong
+  version. This is the only remaining gap in the public benchmark (4 pairs of 657). Not
+  fixed here: it belongs in `core.js`'s property merge, which the whole Maven path depends
+  on, and deserves its own tested change.
+
+### Previously fixed
 - **The transitive closure of a test-scoped dependency was never scanned.** Maven's scope
   matrix says `test → compile = test`: the compile dependencies of a test-scoped dependency
   are on the test classpath, and so are theirs, recursively (only `test → test` is omitted).

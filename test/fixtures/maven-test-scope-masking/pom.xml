@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<project>
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>com.acme</groupId>
+	<artifactId>reactor</artifactId>
+	<version>1.0.0</version>
+	<packaging>pom</packaging>
+	<modules>
+		<module>module-a</module>
+		<module>module-b</module>
+		<module>module-c</module>
+		<module>module-d</module>
+	</modules>
+</project>

@@ -43,15 +43,24 @@ cache back and produces the report, with real paths and manifests, **inside** th
 Sources: [Syft CycloneDX encoder](https://github.com/anchore/syft/blob/main/syft/format/internal/cyclonedxutil/helpers/component.go),
 [Grype README](https://github.com/anchore/grype/blob/main/README.md).
 
-³ Measured on **Apache Dubbo 2.7.8** (105-module reactor, commit `0be2a1bb`), both scanners run
-under `unshare -rn` with no network interface. Against OSV-Scanner's own online output as the
-reference set (657 distinct `package@version | vulnerability` pairs), **fad-checker recovers 579
-(88.1%)** and **OSV-Scanner recovers 37 (5.6%)** — online it finds 92 vulnerable Maven packages
-on this project, offline 3, and the missing 89 are transitive. Full method, the 78 pairs fad
-misses and why, and the caveats (a warmed cache is required; one project is one shape) →
-[`BENCHMARK.md`](BENCHMARK.md). fad resolves the Maven graph from cached POMs, and `--osv-db`
-makes its offline OSV recall cache-independent. OSV-Scanner's own docs, not this measurement,
-are the load-bearing claim:
+³ Measured on **Apache Dubbo 2.7.8** (105-module reactor, commit `0be2a1bb`), every scanner run
+under `unshare -rn` with no network interface. Reference set: OSV-Scanner's own **online**
+output (657 distinct `package@version | vulnerability` pairs, third-party dependencies only).
+
+| Scanner, no network | Recovers | Notes |
+| --- | --- | --- |
+| **fad-checker** `--offline` | **653 (99.4%)** | resolves the Maven graph from cached POMs |
+| Grype + Syft (defaults) | 45 (6.8%) | Syft's transitive option applies to **archives**, not `pom.xml`⁵ |
+| Trivy `--offline-scan` | 40 (6.1%) | warns "Child dependencies will not be found" |
+| OSV-Scanner `--offline` | 37 (5.6%) | transitive resolution disabled offline, per its own docs |
+
+Online, OSV-Scanner finds 92 vulnerable Maven packages here and 3 offline; the missing 89 are
+transitive. Trivy and Grype are **container and SBOM scanners** — pointing them at a raw source
+checkout is not their primary job, and the `~/.m2` on the test machine was populated (287 MB),
+which favours them. A Trivy *online* run could not be completed: Maven Central rate-limited the
+IP (`429`, `Retry-After: 1800`) after the other scans, and Trivy aborts fatally on that. Full
+method, the 4 pairs fad still misses and the caveats → [`BENCHMARK.md`](BENCHMARK.md).
+OSV-Scanner's own docs, not this measurement, are the load-bearing claim:
 > "This feature is enabled by default when scanning, but it can be disabled using the
 > `--no-resolve` flag. It is also disabled in the offline mode."
 > — [supported languages and lockfiles](https://google.github.io/osv-scanner/supported-languages-and-lockfiles/)
@@ -62,10 +71,13 @@ for **OS distributions** (`pkg/detector/ospkg/detect.go`). Snyk's Package Health
 only on `security.snyk.io` package pages; its docs state that CLI, IDE and CI/CD integrations do
 not display package health, so it can't gate a build on it.
 
-⁵ Syft has `java.resolve-transitive-dependencies`, but it is **opt-in and `false` by default**,
-and it relies on Maven Central (`java.use-network`, also `false` by default) or on a populated
-local repository. Syft's own tip is to run `mvn help:effective-pom` first to fetch the POMs,
-which needs both Maven and a network. Source:
+⁵ Syft has `java.resolve-transitive-dependencies`, but it is **opt-in, `false` by default, and
+scoped to archives**: the option lives on `ArchiveCatalogerConfig` and its own doc comment reads
+"for java packages found **within archives**". On a source checkout scanned by the
+`java-pom-cataloger` it therefore does nothing — verified by measurement, enabling it on Dubbo
+2.7.8 changed the result by zero findings (58 → 58). Even for archives it relies on Maven
+Central (`java.use-network`, also `false` by default) or a populated local repository; Syft's
+own tip is to run `mvn help:effective-pom` first, which needs both Maven and a network. Source:
 [`config.go`](https://github.com/anchore/syft/blob/main/syft/pkg/cataloger/java/config.go).
 
 **Versions compared** (table last verified **2026-07-22**): OSV-Scanner **v2.4.0**, Trivy

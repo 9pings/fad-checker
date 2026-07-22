@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<project>
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.acme</groupId><artifactId>reactor</artifactId><version>1.0.0</version>
+	</parent>
+	<artifactId>module-b</artifactId>
+	<!-- Test-only harness. Maven: test -> compile = test, so it drags the OLD
+	     vulnerable lib 1.0.0 onto module-b's TEST classpath only. The global
+	     reactor-wide pass resolves com.acme:lib to 2.0.0 (module-a's path) and
+	     masks 1.0.0 entirely. -->
+	<dependencies>
+		<dependency>
+			<groupId>com.acme</groupId><artifactId>harness</artifactId><version>1.0.0</version>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+</project>
