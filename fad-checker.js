@@ -250,6 +250,7 @@ program
 	.option("--no-all-libs", "skip Maven Central queries (outdated check + missing-on-central check)")
 	.option("--no-osv", "skip OSV.dev (Google/GitHub aggregated Maven CVE feed)")
 	.option("--no-nvd", "skip NIST NVD enrichment of matched CVEs")
+	.option("--nvd-cpe-match", "ALSO match deps against NVD CPE version ranges (opt-in, LOW PRECISION: ~12% of the findings it adds were corroborated by another scanner — triage aid, not a default)")
 	.option("--no-epss", "skip EPSS (FIRST.org exploit-prediction) enrichment")
 	.option("--no-kev", "skip CISA KEV (known-exploited) enrichment")
 	// Output family: each --report-<type> takes an OPTIONAL path (omit → default name
@@ -1090,6 +1091,30 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			try {
 				const { enrichMatches } = require("./lib/nvd");
 				await enrichMatches(cveMatches, { verbose, offline, onProgress: (p, t) => st.tick(p, t) });
+
+				// 4c-bis. NVD CPE ranges as an ADDITIVE tier, curated coordinates only.
+				// OSV/GHSA declare affected ranges per release BRANCH; NVD declares them for
+				// every affected branch. For CVE-2020-9546, OSV covers 2.9.0–2.9.10.4 while
+				// NVD also covers 2.0.0–2.7.9.7, so jackson-databind 2.5.2 is affected and
+				// never got a fix. The data was already in the NVD cache and only ever used
+				// to FILTER. Bounded on purpose: `data/cpe-coord-map.json` coordinates only
+				// (no name heuristics — that is what makes CPE-driven scanners noisy), and
+				// only CVEs already enriched, so this adds no network path of its own.
+				let nvdAdded = 0;
+				if (options.nvdCpeMatch) try {
+					const { matchDepsAgainstNvdCpe } = require("./lib/cpe");
+					const records = {};
+					for (const m of cveMatches) {
+						const id = m.cve?.id;
+						if (id && m.cve.configurations?.length && !records[id]) records[id] = m.cve;
+					}
+					const extra = matchDepsAgainstNvdCpe(resolved, records);
+					if (extra.length) {
+						const before = cveMatches.length;
+						cveMatches = mergeBySource(cveMatches, extra);
+						nvdAdded = cveMatches.length - before;
+					}
+				} catch (err) { ui.warn(`NVD CPE matching skipped: ${err.message}`); }
 				// 4d. CPE refinement — use NVD's CPE configurations to upgrade match
 				// confidence and flag likely false positives (version outside CPE range).
 				let filtered = 0;
@@ -1099,7 +1124,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 					filtered = cveMatches.filter(m => m.cpeFiltered).length;
 				} catch (err) { ui.warn(`CPE refinement skipped: ${err.message}`); }
 				const uniqueCves = new Set(cveMatches.map(m => m.cve?.id)).size;
-				st.done(`${uniqueCves} CVE${filtered ? ` · ${filtered} false-positive(s) filtered` : ""}${hasNvdKey ? "" : " · no key (slow)"}`);
+				st.done(`${uniqueCves} CVE${nvdAdded ? ` · +${nvdAdded} via CPE ranges` : ""}${filtered ? ` · ${filtered} false-positive(s) filtered` : ""}${hasNvdKey ? "" : " · no key (slow)"}`);
 			} catch (err) { st.fail(err.message); }
 		}
 	}

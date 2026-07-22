@@ -5,6 +5,27 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`--nvd-cpe-match` (opt-in, off by default): match dependencies against NVD's CPE version
+  ranges.** OSV/GHSA declare affected ranges per release *branch*; NVD declares them for every
+  affected branch. For `CVE-2020-9546`, OSV covers 2.9.0–2.9.10.4 while NVD also covers
+  2.0.0–2.7.9.7 — so `jackson-databind:2.5.2` is affected and never got a fix. fad already had
+  that data in its NVD cache and only ever used it **subtractively**, to filter false positives.
+  This uses it additively, restricted to coordinates with an **unambiguous 1:1** entry in
+  `data/cpe-coord-map.json` (no name heuristics), and only for CVEs already enriched, so it adds
+  no network path.
+
+  **It is off by default because its measured precision is poor, and the reason is structural.**
+  On Apache Dubbo 2.7.8 it adds 76 findings of which **9 (12%) are corroborated by Snyk**. CPE
+  products are *framework*-level (`spring_framework`, `netty`, `log4j`) while Maven coordinates
+  are *artifact*-level, so a framework CVE lands on every artifact of that framework —
+  `CVE-2016-1000027` is a spring-web flaw and CPE puts it on spring-core, `CVE-2019-20444` is
+  netty-codec-http and CPE puts it on netty-common. Curation cannot fix a granularity mismatch;
+  allowing the map's deliberate 1:N entries made it worse still (262 findings, 8% corroborated).
+  Shipped as a triage aid ("what might I be missing?"), never as a default. Locked by
+  `test/nvd-cpe-match.test.js`, including a test asserting that a coordinate with no curated
+  entry is not matched even when the name heuristic would have accepted it.
+
 ### Fixed
 - **An imported BOM's `<properties>` leaked into the importing project — and won.**
   `<scope>import</scope>` imports a BOM's `<dependencyManagement>` and **nothing else**: the
