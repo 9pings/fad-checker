@@ -90,6 +90,109 @@ populated it. Trivy's dependency is on *a resolved local repository*, which the 
 prior build can supply. fad's cache is coordinate-keyed and travels
 (`--export-cache` / `--import-cache`), which is what makes the air-gapped workflow work.
 
+## Per-ecosystem results
+
+Maven is where fad-checker's design pays off, so it gets its own deep dive above. But it
+claims ten ecosystems, and "we benchmarked one of them" is not an answer. Here are the others,
+same method: OSV-Scanner and fad-checker on the same public project, findings normalised to
+`(package@version | CVE)` with GHSA/PYSEC ids mapped to their CVE alias.
+
+**Expect parity, and that is the point.** For npm, PyPI, Go, RubyGems and Composer the
+transitive graph is *in the lockfile*. Every tool reads the same file, so no scanner has a
+structural advantage and none should. Maven is the exception because its graph is not in the
+tree at all — it has to be resolved from the registry, which is why an offline gap exists there
+and nowhere else.
+
+### Targets
+
+| Ecosystem | Project | Pinned at | Manifest read |
+| --- | --- | --- | --- |
+| Maven | [apache/dubbo](https://github.com/apache/dubbo) 2.7.8 | `0be2a1bb` | 105 × `pom.xml` |
+| npm | [OWASP/NodeGoat](https://github.com/OWASP/NodeGoat) | `c5cb68a` | `package-lock.json`, 1 927 entries |
+| Go | [prometheus/prometheus](https://github.com/prometheus/prometheus) v2.30.0 | `37468d8` | `go.mod` (go 1.14, 97 requires) + `go.sum` (578 modules) |
+| PyPI | [python-poetry/poetry](https://github.com/python-poetry/poetry) 1.1.15 | `46bf7fd` | `poetry.lock`, 91 packages |
+| RubyGems | [mastodon/mastodon](https://github.com/mastodon/mastodon) v3.5.3 | `fbcbf78` | `Gemfile.lock`, 426 specs |
+| Composer | [phpmyadmin/phpmyadmin](https://github.com/phpmyadmin/phpmyadmin) 5.1.1 | `ed65cd2` | `composer.lock`, 224 entries |
+
+Real projects pinned to a released tag, not synthetic fixtures — old enough to carry genuine
+vulnerabilities, and reproducible by anyone.
+
+### Results
+
+| Ecosystem | OSV-Scanner | fad-checker | Both | fad only | OSV only |
+| --- | --- | --- | --- | --- | --- |
+| Maven | 657 | **790** | 657 | 133 | 0 |
+| npm | 274 | 274 | **274** | 0 | 0 |
+| RubyGems | 150 | 150 | **150** | 0 | 0 |
+| Composer¹ | 34 | 34 | **34** | 0 | 0 |
+| Go | 113 | 110 | 110 | 0 | 3 |
+| PyPI | 83 | 79 | 79 | 0 | 4 |
+
+**npm, RubyGems and Composer: identical sets, not merely equal counts.** Zero difference in
+either direction. That is the expected and correct result when both tools read the same
+lockfile, and it is worth publishing precisely because it is unremarkable.
+
+¹ **Composer needed `--no-ignore`.** phpMyAdmin's `.gitignore` lists `composer.lock` on line 57
+even though the file is committed, and OSV-Scanner honours `.gitignore` by default, so its
+recursive scan skipped the lockfile entirely and reported 0 Packagist findings. Pointed straight
+at the file it finds the same 34. Not a bug on either side, a policy difference: fad scans what
+is **on disk**, which for an audit is the right answer — a gitignored-but-present lockfile still
+describes what will be installed.
+
+**Go — 3 pairs, version selection.** `golang.org/x/sys` at a pseudo-version and
+`gopkg.in/yaml.v2@2.2.4`: OSV reads the version from `go.mod`, fad takes the highest version
+carrying a zip hash in `go.sum`. Getting this benchmark to that number meant fixing a real bug
+first — see below.
+
+**PyPI — 4 pairs, and fad is arguably right.** All four are `setuptools@9.1.0`, which
+OSV-Scanner picked up from `tests/utils/fixtures/setups/ansible/requirements.txt` — a **test
+fixture inside poetry's own test suite**, not a dependency of the project. fad reads
+`poetry.lock`, which is authoritative, and ignores stray requirements files when a lockfile
+exists.
+
+### The bug this half of the benchmark found
+
+Go looked like a large fad win at first: 237 findings against OSV-Scanner's 113. It was not.
+`go.sum` records two kinds of line per module — a module **zip** hash (it was downloaded, it is
+in the build) and a bare `/go.mod` hash (its go.mod was read during minimal version selection,
+then the module was rejected). fad matched both and scanned all 578 modules instead of the 187
+actually built, which is how gin, echo **and** go-restful ended up in one report: three mutually
+exclusive web frameworks no single project uses. **70% of that project's Go production findings
+came from modules that were never built.**
+
+Fixed in `lib/codecs/go/parse.js`, along with version selection, which had the same flaw (it
+kept the highest version *seen*, including versions MVS merely weighed). Result on the same
+project: **237 → 110 findings, 127 phantom findings → 0**, agreement with OSV-Scanner **107 →
+110**, OSV-only findings **6 → 3**. False positives fell *and* agreement with an independent
+tool rose, which is the signal that the fix is right rather than merely quieter. The genuine
+transitives OSV-Scanner misses on pre-1.17 modules — `x/crypto`, `grpc` — carry zip hashes and
+stay.
+
+### What parity does not measure
+
+Equal CVE counts do not make two tools equivalent. On these same projects fad additionally
+reported, and OSV-Scanner does not attempt: **1 120 outdated** dependencies and 58 deprecated on
+mastodon, **618 outdated** and 2 EOL frameworks on phpMyAdmin, 65 outdated on poetry. Whether
+that is signal or noise is the auditor's call — the point is that it is a different question,
+not a better score on the same one.
+
+### The air-gapped descriptor, outside Maven
+
+The offline *recall* gap is Maven-only, but the anonymized-descriptor workflow is not — and it
+matters more outside Maven, because a `package-lock.json` names internal packages and carries
+private registry URLs. Measured on the npm target, same project both sides:
+
+| | fad `--export-anonymized` | Syft SBOM |
+| --- | --- | --- |
+| Entries | 804 deps | 419 components |
+| File paths | **absent** | present (`syft:location`) |
+| Registry URLs | **absent** | present |
+| Integrity hashes | **absent** | present |
+
+The descriptor carries `ecosystem, ecosystemType, namespace, name, version, versions, scope,
+isDev` and nothing else. An SBOM is a fine transport for a scan, but it is not an anonymised
+one.
+
 ## Reproducing it
 
 ```bash
