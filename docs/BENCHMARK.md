@@ -1,45 +1,81 @@
-# Air-gapped recall benchmark
+# Scanner benchmark: full capability, and with no network
 
-**Question.** With **zero network access**, how much of a project's known vulnerability set can a
-scanner still find?
+Five scanners on one public project, measured two ways. Everything here is reproducible — the
+target is pinned to a commit, the commands are below, and every number can be recomputed from
+the tools' own JSON output. Run it and tell me if it doesn't hold.
 
-This is the one claim `fad-checker` makes that is hard to make: it resolves the Maven transitive
-graph from cached POMs, so an air-gapped scan still sees the transitive dependency tree. Most
-scanners disable transitive resolution when there is no network, and only direct dependencies
-remain.
+Spoiler for the impatient, so nothing here reads as a sales pitch: **at full capability no tool
+finds everything, fad-checker included** — it leads at 87% of the union and misses 118 pairs
+Snyk found. Its actual differentiator is the second table: what survives when the network is
+gone.
 
-Everything below is reproducible on a public project. Run it yourself and tell me if the numbers
-don't hold.
+## Two different questions
 
-## Result
+A scanner comparison usually conflates two things. This one separates them, because the
+answers are not the same.
 
-Target: **Apache Dubbo 2.7.8**, a 105-module Maven reactor
+1. **At full capability, what does each tool find?** Every scanner online, in its best
+   configuration, with a populated `~/.m2`. This is the fair product comparison.
+2. **With no network, what survives?** The narrower question fad-checker is built around.
+
+Target for both: **Apache Dubbo 2.7.8**, a 105-module Maven reactor
 (`0be2a1bbbf9168490acecaf1eed1bd16cb8db402`).
 
-Reference set: **OSV-Scanner's own online run**, 657 distinct
-`(package@version | vulnerability)` pairs. Using the competitor's online output as the yardstick
-avoids grading either tool against its own notion of a finding.
+Unit: distinct `(coordinate@version | vulnerability)` pairs, Maven only, GHSA and `SNYK-*` ids
+mapped to their CVE alias so every tool sits on one identifier space. Dubbo's **own**
+`org.apache.dubbo` artifacts are excluded on every side: OSV-Scanner filters reactor modules as
+"local/unscannable", so counting them would flatter whoever does scan them.
 
-| Scanner, **no network at all** | Pairs recovered from the 657 | Wall clock |
+## 1. Full capability
+
+Union of everything any tool found: **908** pairs.
+
+| Scanner, best configuration | Found | Unique to it | % of union | Misses |
+| --- | --- | --- | --- | --- |
+| **fad-checker 2.4.8** | **790** | 125 | **87.0%** | 118 |
+| OSV-Scanner 2.4.0 (online) | 657 | 0 | 72.4% | 251 |
+| Snyk 1.1302.1 (`--all-projects`, mvn build) | 603 | **117** | 66.4% | 305 |
+| Trivy 0.72.0 (populated `~/.m2`) | 546 | 0 | 60.1% | 362 |
+| Grype 0.116.0 + Syft 1.49.0 | 45 | 0 | 5.0% | 863 |
+
+**No tool finds everything, including this one.** fad leads on volume and misses 118 pairs that
+another tool found. Every one of those 118 comes from Snyk: 30 carry a proprietary `SNYK-*` id
+with no public CVE alias, so no tool matching public databases can have them — that is a genuine
+advantage of a commercial feed, not a fad bug. The other **88 are public CVEs fad genuinely
+misses** (`logback-classic@1.2.2`, `hessian-lite@3.2.8`, `nacos-common@1.3.1` …), and they are an
+open gap, not a rounding error.
+
+Read the other rows fairly too. Trivy and Grype are **container and SBOM scanners**; a raw Maven
+source checkout is not the job they are built for. Snyk and Trivy at full capability both depend
+on a real Maven build having happened — Snyk invokes `mvn`, and Trivy needs either network access
+or a `~/.m2` that a previous build populated. fad-checker and OSV-Scanner read the tree without
+building. That is a different starting assumption, not a better one, and it is the reason the
+second table exists.
+
+Two measured details worth stating rather than assuming. **Trivy's result is identical online and
+with a fully populated `~/.m2`** (559 raw pairs either way) — the local repository fully
+substitutes for the network. **Grype+Syft does not move at all**: 58 raw pairs with defaults, 58
+with `java.use-network=true` and `java.resolve-transitive-dependencies=true`, because that option
+is scoped to archives, not to `pom.xml` source scanning.
+
+## 2. No network at all
+
+Same tree, every scanner under `unshare -rn`, in a namespace with **no network interface** —
+not merely an offline flag. Reference: OSV-Scanner's own **online** output, 657 pairs.
+
+| Scanner, no network | Recovers | Wall clock |
 | --- | --- | --- |
 | **fad-checker 2.4.8** `--offline` | **657 (100%)** | 4.5 s |
-| Grype 0.116.0 + Syft 1.49.0 (defaults) | 45 (6.8%) | 32 s |
-| Trivy 0.72.0 `--offline-scan` | 40 (6.1%) | 1.0 s |
-| OSV-Scanner 2.4.0 `--offline` | 37 (5.6%) | 0.8 s |
+| Grype + Syft (defaults) | 45 (6.8%) | 32 s |
+| Trivy `--offline-scan`, cold `~/.m2` | 40 (6.1%) | 1.0 s |
+| OSV-Scanner `--offline` | 37 (5.6%) | 0.8 s |
 
-Every row was run under `unshare -rn`, in a namespace with **no network interface**, not merely
-with an offline flag. OSV-Scanner returns the identical 37 with and without the namespace, which
-is the honest reading: it is behaving exactly as documented, not failing.
+100% here means "recovers everything OSV-Scanner finds **with** network access", not "finds
+everything that exists" — table 1 is the honest answer to that, and there fad sits at 87%.
+OSV-Scanner returns the identical 37 with and without the namespace: it behaves exactly as
+documented, it is not failing.
 
-Two things this table is not. **It is not a like-for-like product comparison**: Trivy and Grype
-are container and SBOM scanners, and pointing them at a raw Maven source checkout is not the job
-they are built for. **It is not a measure of absolute correctness**: the reference set is
-OSV-Scanner's own output, so 100% means "recovers everything that tool finds with network
-access", not "finds every vulnerability that exists". The machine also had a populated `~/.m2`
-(287 MB), which can only help Trivy and Syft, since both consult a local repository — fad and
-OSV-Scanner do not read it at all.
-
-The mechanism is not in dispute, it is in OSV-Scanner's own documentation:
+The mechanism is in OSV-Scanner's own documentation:
 
 > "OSV-Scanner supports transitive dependency scanning for Maven pom.xml. This feature is enabled
 > by default when scanning, but it can be disabled using the `--no-resolve` flag. **It is also
@@ -48,6 +84,11 @@ The mechanism is not in dispute, it is in OSV-Scanner's own documentation:
 
 Online, OSV-Scanner finds 92 vulnerable Maven packages on this project. Offline it finds 3. The
 missing 89 are transitive.
+
+Note the asymmetry between the two Trivy rows: 40 pairs on a cold `~/.m2`, 546 once a build has
+populated it. Trivy's dependency is on *a resolved local repository*, which the network or a
+prior build can supply. fad's cache is coordinate-keyed and travels
+(`--export-cache` / `--import-cache`), which is what makes the air-gapped workflow work.
 
 ## Reproducing it
 
@@ -68,14 +109,41 @@ unshare -rn osv-scanner scan source -r ./dubbo --offline \
 fad-checker -s ./dubbo --report-json fad-online.json
 unshare -rn fad-checker -s ./dubbo --offline --report-json fad-airgap.json
 
-# 5. Trivy and Grype, same tree
-trivy fs --scanners vuln --offline-scan --format json --output trivy.json ./dubbo
+# 5. Snyk at full capability — it invokes mvn, so this also populates ~/.m2
+cd dubbo && snyk test --all-projects --json > ../snyk.json; cd ..
+
+# 6. Trivy at full capability. With ~/.m2 populated by step 5 this equals the online
+#    result exactly (559 raw pairs either way), which is worth verifying yourself.
+trivy fs --scanners vuln --offline-scan --format json --output trivy-full.json ./dubbo
+trivy fs --scanners vuln --format json --output trivy-online.json ./dubbo
+
+# 7. Grype + Syft at full capability. Syft's transitive option is scoped to ARCHIVES, so on
+#    a pom.xml source tree it is a no-op — the result does not move, 58 pairs either way.
 grype dir:./dubbo -o json --file grype.json
-# Syft's transitive option is scoped to archives, so on a source tree it is a no-op.
-# Verify rather than take my word for it — the result does not move:
-SYFT_JAVA_RESOLVE_TRANSITIVE_DEPENDENCIES=true syft dir:./dubbo -o syft-json=s.json \
-  && grype sbom:./s.json -o json --file grype-transitive.json
+SYFT_JAVA_RESOLVE_TRANSITIVE_DEPENDENCIES=true SYFT_JAVA_USE_NETWORK=true \
+  syft dir:./dubbo -o syft-json=s.json && grype sbom:./s.json -o json --file grype-full.json
 ```
+
+**If Maven Central rate-limits you** (`429 Too Many Requests`), and running several of these
+back to back will, point Trivy at a mirror instead of waiting it out. Trivy reads
+`settings.xml`, honours `<mirrors>`, and `MAVEN_HOME` keeps it out of your real Maven config:
+
+```bash
+mkdir -p /tmp/mvnhome/conf && cat > /tmp/mvnhome/conf/settings.xml <<'XML'
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <localRepository>${user.home}/.m2/repository</localRepository>
+  <mirrors><mirror>
+    <id>gcs-central</id><mirrorOf>central</mirrorOf>
+    <url>https://maven-central.storage-download.googleapis.com/maven2</url>
+  </mirror></mirrors>
+</settings>
+XML
+MAVEN_HOME=/tmp/mvnhome trivy fs --scanners vuln --format json -o trivy-online.json ./dubbo
+```
+
+That is how the online Trivy row here was obtained: the benchmark IP had been rate-limited by
+the other scans, the penalty renewed on every retry, and the mirror is a different host serving
+identical artifacts.
 
 Compare on `(coordinate@version | vulnerability id)` pairs, restricted to Maven. Normalise two
 things or the comparison is meaningless: map OSV `GHSA-*` ids to their `CVE-*` alias, and strip
@@ -86,15 +154,21 @@ OSV-Scanner 2.4.0 (osv-scalibr 0.4.5).
 
 ## What fad-checker misses, and why
 
-Nothing, on this project: **657 of 657**, with no network.
+**At full capability: 118 pairs**, all of them found by Snyk and by no other tool.
 
-That is not a claim that fad finds everything everywhere. It means that on this reactor, every
-`package@version | vulnerability` pair OSV-Scanner reports **with** network access, fad also
-reports **without** any. The reference set is OSV-Scanner's, so this measures recall against one
-tool's view, not absolute correctness — see the caveats below, which still apply in full.
+- **30** carry a proprietary `SNYK-*` identifier with no public CVE alias. They exist in Snyk's
+  commercial database and in no public one, so no tool matching CVEProject/OSV/NVD can find
+  them. That is what a paid feed buys.
+- **88 are public CVEs that fad genuinely misses** — `logback-classic@1.2.2`,
+  `hessian-lite@3.2.8`, `nacos-common@1.3.1` and others. This is an open gap in fad's matching,
+  not an artefact of the method, and it is not yet diagnosed.
 
-The last gap to close was four pairs on `org.hibernate:hibernate-validator@5.2.4.Final`, and it
-was not a resolution bug but a property-inheritance one. See "A fourth gap" below.
+**With no network: nothing**, on this project — 657 of 657 against OSV-Scanner's online output.
+That is recall against one tool's view in one scenario, not a claim of completeness; the 118
+above are the completeness answer.
+
+Getting there took four bugs, each found by this benchmark and each documented below with the
+`mvn dependency:tree` output that settled it.
 
 ## A bug this benchmark surfaced, and fixed
 

@@ -32,6 +32,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
   Air-gapped recall on the public benchmark reaches **657/657 (100%)** of OSV-Scanner's own
   online finding set, up from 653.
+
+### Changed
+- **The benchmark now measures every scanner at full capability, not just air-gapped.**
+  `docs/BENCHMARK.md` carries two tables, because they answer different questions. **Full
+  capability** (all five online, best configuration, populated `~/.m2`, union 908 pairs):
+  fad-checker 790 (87.0%), OSV-Scanner 657, Snyk 603, Trivy 546, Grype+Syft 45. **No tool
+  finds everything, fad included** — its 118 misses all come from Snyk, 30 of them under a
+  proprietary `SNYK-*` id no public database carries, and **88 genuine public-CVE misses that
+  remain undiagnosed**. **No network** (`unshare -rn`, against OSV-Scanner's online output):
+  fad 657/657, Grype+Syft 45, Trivy 40, OSV-Scanner 37.
+  Also documented: Trivy's result is identical online and with a fully populated `~/.m2` (the
+  local repository substitutes for the network entirely), Grype+Syft does not move at all
+  between default and fully-enabled configuration, and the `settings.xml` mirror trick for
+  reproducing the run when Maven Central rate-limits the IP.
 - **The per-module overlay could not recover a version held only on a TEST classpath.**
   The overlay exists because the global transitive pass dedupes by `g:a` across the whole
   reactor and keeps one version per coordinate — but it hardcoded

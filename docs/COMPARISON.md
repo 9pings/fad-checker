@@ -43,29 +43,37 @@ cache back and produces the report, with real paths and manifests, **inside** th
 Sources: [Syft CycloneDX encoder](https://github.com/anchore/syft/blob/main/syft/format/internal/cyclonedxutil/helpers/component.go),
 [Grype README](https://github.com/anchore/grype/blob/main/README.md).
 
-³ Measured on **Apache Dubbo 2.7.8** (105-module reactor, commit `0be2a1bb`), every scanner run
-under `unshare -rn` with no network interface. Reference set: OSV-Scanner's own **online**
-output (657 distinct `package@version | vulnerability` pairs, third-party dependencies only).
+³ Measured on **Apache Dubbo 2.7.8** (105-module reactor, commit `0be2a1bb`), two ways, on
+distinct `(coordinate@version | vulnerability)` pairs with GHSA/`SNYK-*` ids mapped to their CVE
+alias and the project's own artifacts excluded on every side.
 
-| Scanner, no network | Recovers | Notes |
-| --- | --- | --- |
-| **fad-checker** `--offline` | **657 (100%)** | resolves the Maven graph from cached POMs |
-| Grype + Syft (defaults) | 45 (6.8%) | Syft's transitive option applies to **archives**, not `pom.xml`⁵ |
-| Trivy `--offline-scan` | 40 (6.1%) | warns "Child dependencies will not be found" |
-| OSV-Scanner `--offline` | 37 (5.6%) | transitive resolution disabled offline, per its own docs |
+**At full capability** — every scanner online, best configuration, populated `~/.m2`. Union of
+all findings: 908 pairs.
 
-Online, OSV-Scanner finds 92 vulnerable Maven packages here and 3 offline; the missing 89 are
-transitive. Trivy and Grype are **container and SBOM scanners** — pointing them at a raw source
-checkout is not their primary job, and the `~/.m2` on the test machine was populated (287 MB),
-which favours them. A Trivy *online* run could not be completed: Maven Central rate-limited the
-IP (`429`), every retry extended the block, and Trivy aborts fatally on that — its own error
-text recommends populating `~/.m2` first, which is the dependency being measured. Full
-method and the caveats — this is recall against one tool's view, not absolute
-correctness — → [`BENCHMARK.md`](BENCHMARK.md).
-OSV-Scanner's own docs, not this measurement, are the load-bearing claim:
+| Scanner | Found | Unique to it | Misses |
+| --- | --- | --- | --- |
+| **fad-checker** | **790 (87.0%)** | 125 | 118 |
+| OSV-Scanner 2.4.0 | 657 (72.4%) | 0 | 251 |
+| Snyk 1.1302.1 (mvn build) | 603 (66.4%) | **117** | 305 |
+| Trivy 0.72.0 | 546 (60.1%) | 0 | 362 |
+| Grype 0.116.0 + Syft 1.49.0 | 45 (5.0%) | 0 | 863 |
+
+**No tool finds everything, this one included.** fad's 118 misses all come from Snyk: 30 carry a
+proprietary `SNYK-*` id that exists in no public database, and 88 are public CVEs fad genuinely
+misses. Snyk and Trivy at full capability both assume a real Maven build has happened; fad and
+OSV-Scanner read the tree without one.
+
+**With no network at all** (every tool under `unshare -rn`, against OSV-Scanner's *online* output
+as the reference, 657 pairs): **fad-checker 657 (100%)**, Grype+Syft 45, Trivy 40 on a cold
+`~/.m2`, OSV-Scanner 37 — its transitive resolution is disabled offline, per its own docs:
 > "This feature is enabled by default when scanning, but it can be disabled using the
 > `--no-resolve` flag. It is also disabled in the offline mode."
 > — [supported languages and lockfiles](https://google.github.io/osv-scanner/supported-languages-and-lockfiles/)
+
+100% there means "recovers everything OSV-Scanner finds *with* network access", not "finds
+everything that exists" — the first table is the honest answer to that. Full method, per-tool
+configuration, the mirror trick for Maven Central rate limits, and every caveat →
+[`BENCHMARK.md`](BENCHMARK.md).
 
 ⁴ Scoped deliberately to **application** frameworks and libraries (Spring Boot 2.x, AngularJS,
 Django, a deprecated npm package). Trivy *does* compute an end-of-service-life status, but only
