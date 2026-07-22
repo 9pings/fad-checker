@@ -136,3 +136,43 @@ test("go codec does NOT merge go.sum for a >=1.17 module (pruned graph in go.mod
 	assert.equal(deps.has("go:ex.com/stale-candidate"), false, "go.sum candidates not in the pruned graph stay out");
 	fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// go.sum records TWO kinds of line per module:
+//   mod ver h1:...          the module ZIP — it was downloaded, it is in the build
+//   mod ver/go.mod h1:...   only its go.mod was read, during minimal version selection
+// A module with only the second kind was CONSIDERED and rejected; it is on no classpath.
+// Measured on prometheus v2.30.0 (go 1.14): 187 modules have a zip hash, 391 have only a
+// go.mod hash — and scanning all of them put gin, echo AND go-restful in the same report,
+// three mutually exclusive web frameworks no single build uses. 70% of the Go production
+// findings on that project came from modules absent from the build graph.
+test("parseGoSum keeps only modules that were actually downloaded (zip hash present)", () => {
+	const sum = [
+		"example.com/used v1.2.0 h1:aaa=",
+		"example.com/used v1.2.0/go.mod h1:bbb=",
+		"example.com/considered v9.9.9/go.mod h1:ccc=",   // MVS-only, never downloaded
+		"example.com/alsoused v0.1.0 h1:ddd=",
+	].join("\n");
+	const names = parseGoSum(sum).deps.map(d => d.name).sort();
+	assert.deepEqual(names, ["example.com/alsoused", "example.com/used"],
+		"a module with only a /go.mod hash was never in the build and must not be scanned");
+});
+
+test("parseGoSum picks the version that was downloaded, not the highest considered", () => {
+	const sum = [
+		"example.com/lib v1.0.0 h1:aaa=",
+		"example.com/lib v1.0.0/go.mod h1:bbb=",
+		"example.com/lib v2.5.0/go.mod h1:ccc=",   // considered by MVS, not selected
+	].join("\n");
+	const deps = parseGoSum(sum).deps;
+	assert.equal(deps.length, 1);
+	assert.equal(deps[0].version, "1.0.0",
+		"v2.5.0 was only weighed during selection — reporting it invents a dependency");
+});
+
+test("parseGoSum still keeps the highest version when several were downloaded", () => {
+	const sum = [
+		"example.com/lib v1.0.0 h1:aaa=",
+		"example.com/lib v1.4.0 h1:bbb=",
+	].join("\n");
+	assert.equal(parseGoSum(sum).deps[0].version, "1.4.0");
+});
