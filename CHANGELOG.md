@@ -26,6 +26,21 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `test/nvd-cpe-match.test.js`, including a test asserting that a coordinate with no curated
   entry is not matched even when the name heuristic would have accepted it.
 
+  The investigation behind it also settled what fad's 118 benchmark misses actually are, and
+  the answer is not flattering: **they are real misses, not the other scanner's noise.** All 87
+  public-CVE ones were checked against NVD — 7 confirmed, 13 where NVD's own range disagrees,
+  67 where NVD names no CPE for the artifact. Both minorities were traced. The "NVD is silent"
+  bulk are public-database coverage gaps: `CVE-2023-6481` on `logback-classic@1.2.2` exists in
+  OSV with **no Maven package binding at all** (only a GIT range), while its own fixed-version
+  list `1.2.12, 1.3.13, 1.4.13` shows the 1.2.x branch was affected and fixed at 1.2.12 — so
+  1.2.2 is vulnerable and no public-source scanner can see it. The "NVD contradicts" cases are
+  NVD contradicting itself: sibling jackson-databind gadget CVEs published weeks apart declare
+  `2.0.0–2.7.9.7 / 2.8.0–2.8.11.6 / 2.9.0–2.9.10.4` (CVE-2020-9546) versus `2.9.0–2.9.10.4`
+  alone (CVE-2020-10672). Public advisory data declares ranges per release *branch* and old
+  unpatched branches are routinely absent; a hand-curated commercial database fills that in and
+  aggregating public sources does not reproduce it. Documented in `docs/BENCHMARK.md` rather
+  than left as "not yet diagnosed".
+
 ### Fixed
 - **An imported BOM's `<properties>` leaked into the importing project — and won.**
   `<scope>import</scope>` imports a BOM's `<dependencyManagement>` and **nothing else**: the

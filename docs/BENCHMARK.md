@@ -154,21 +154,69 @@ OSV-Scanner 2.4.0 (osv-scalibr 0.4.5).
 
 ## What fad-checker misses, and why
 
-**At full capability: 118 pairs**, all of them found by Snyk and by no other tool.
+**At full capability: 118 pairs**, all found by Snyk and by no other tool. They were verified
+one by one against NVD rather than assumed, and the verdict is uncomfortable: **they are real
+misses, not Snyk noise.**
 
 - **30** carry a proprietary `SNYK-*` identifier with no public CVE alias. They exist in Snyk's
-  commercial database and in no public one, so no tool matching CVEProject/OSV/NVD can find
-  them. That is what a paid feed buys.
-- **88 are public CVEs that fad genuinely misses** — `logback-classic@1.2.2`,
-  `hessian-lite@3.2.8`, `nacos-common@1.3.1` and others. This is an open gap in fad's matching,
-  not an artefact of the method, and it is not yet diagnosed.
+  commercial database and in no public one.
+- **87** are public CVEs. Checked against NVD's own CPE ranges: 7 confirmed outright, 13 where
+  NVD's range disagrees, 67 where NVD simply has no CPE naming that artifact.
+
+Neither the 13 nor the 67 exonerate fad, and both were traced to their cause.
+
+**The 67 "NVD is silent" cases are public-database coverage gaps.** Take
+`CVE-2023-6481` on `logback-classic@1.2.2`. OSV *has* the CVE, but its entry carries **no Maven
+package binding at all** — only a GIT commit range — so no ecosystem query can return it. Its
+own fixed-version list is `1.2.12, 1.3.13, 1.4.13`, which says plainly that the 1.2.x branch was
+affected and fixed at 1.2.12. The dependency is 1.2.2. It is vulnerable, Snyk says so, and every
+public-source scanner misses it.
+
+**The 13 "NVD contradicts" cases are NVD contradicting itself.** Two sibling jackson-databind
+deserialization CVEs published weeks apart:
+
+| CVE | Ranges NVD declares |
+| --- | --- |
+| CVE-2020-9546 | `2.0.0–2.7.9.7`, `2.8.0–2.8.11.6`, `2.9.0–2.9.10.4` |
+| CVE-2020-10672 | `2.9.0–2.9.10.4` only |
+
+2.5.2 is affected by both or by neither. The narrower entry is incomplete CPE curation, not a
+statement that 2.5.2 is safe.
+
+So the honest summary of this gap: public advisory data declares ranges **per release branch**,
+and old branches that never received a fix are frequently just absent — plus a long tail of
+records with no ecosystem binding. A hand-curated commercial database fills that in. Aggregating
+public sources, however carefully, does not reproduce it. `--nvd-cpe-match` was the attempt, and
+[it fails on precision](#a-negative-result-nvd-cpe-ranges-as-a-matching-tier) for a reason worth
+reading.
 
 **With no network: nothing**, on this project — 657 of 657 against OSV-Scanner's online output.
-That is recall against one tool's view in one scenario, not a claim of completeness; the 118
-above are the completeness answer.
+That is recall against one tool's view in one scenario; the 118 above are the completeness
+answer.
 
 Getting there took four bugs, each found by this benchmark and each documented below with the
 `mvn dependency:tree` output that settled it.
+
+## A negative result: NVD CPE ranges as a matching tier
+
+Since NVD's ranges are broader than OSV's, using them to *match* rather than only to *filter*
+should close part of the gap. It does not, and the reason generalises.
+
+Implemented as `--nvd-cpe-match` (off by default), restricted to coordinates with an unambiguous
+1:1 entry in `data/cpe-coord-map.json`, no name heuristics, and no new network path. Measured on
+Dubbo: **76 new findings, 9 of them (12%) corroborated by Snyk**. Allowing the curated map's
+deliberate 1:N entries was worse — 262 findings, 8% corroborated.
+
+The cause is a granularity mismatch, not bad curation. CPE products are **framework**-level
+(`spring_framework`, `netty`, `log4j`) while Maven coordinates are **artifact**-level, so
+`CVE-2016-1000027` — a spring-web flaw — lands on spring-core, spring-beans and spring-context
+alike, and `CVE-2019-20444` (netty-codec-http) lands on netty-common, netty-codec and
+netty-handler. This is the same limitation that makes CPE-driven scanners noisy.
+
+Worth noting against the earlier finding: Snyk succeeds here precisely because its assertions are
+curated **per artifact**. The problem was never which database to read, it was the granularity of
+what that database asserts. The flag ships as a triage aid ("what might I be missing?") with its
+12% stated in the flag's own help text.
 
 ## A bug this benchmark surfaced, and fixed
 
