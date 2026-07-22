@@ -46,12 +46,19 @@ A free [NVD API key](https://nvd.nist.gov/developers/request-an-api-key) (instan
 ```bash
 fad-checker -s ./proj -e "^com\.acme\."                        # exclude private libs (coord regex)
 fad-checker -s ./proj -t ../clean -e "^com\.acme\." --snyk     # cleaned POM tree + merge Snyk
-fad-checker -s ./proj --offline                                # fully offline (zero network)
+fad-checker -s ./proj --offline                                # fully offline (zero network, needs a warmed cache)
 fad-checker -s ./proj --osv-db --typosquat                     # offline-complete OSV + typosquat
 fad-checker -s ./proj --licenses --fail-on high                # license chapter + CI gate
 fad-checker -s ./proj --report-json --baseline last.json --fail-on-new   # differential audit: fail CI on NEW findings
 fad-checker diff last.json this.json                           # standalone diff of two findings JSONs
 ```
+
+> [!IMPORTANT]
+> **`--offline` reads the cache, it doesn't replace it.** On a *cold* cache there is nothing to
+> match against, so an offline first run legitimately reports **0 CVE / 0 EOL / 0 outdated** —
+> that's an empty cache, not a clean project. Warm it once (a normal online run on any project,
+> or `--import-cache`), then `--offline` returns the full result set with zero network calls.
+> Air-gapped machines get their cache via [`--export-cache` / `--import-cache`](#air-gapped-audits).
 
 A single self-contained binary (no Node), from-source install and shell completion are in → [docs/USAGE.md](docs/USAGE.md).
 
