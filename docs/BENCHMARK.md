@@ -57,6 +57,14 @@ unshare -rn osv-scanner scan source -r ./dubbo --offline \
 # 4. fad-checker: one online run to warm the cache, then no network
 fad-checker -s ./dubbo --report-json fad-online.json
 unshare -rn fad-checker -s ./dubbo --offline --report-json fad-airgap.json
+
+# 5. Trivy and Grype, same tree
+trivy fs --scanners vuln --offline-scan --format json --output trivy.json ./dubbo
+grype dir:./dubbo -o json --file grype.json
+# Syft's transitive option is scoped to archives, so on a source tree it is a no-op.
+# Verify rather than take my word for it — the result does not move:
+SYFT_JAVA_RESOLVE_TRANSITIVE_DEPENDENCIES=true syft dir:./dubbo -o syft-json=s.json \
+  && grype sbom:./s.json -o json --file grype-transitive.json
 ```
 
 Compare on `(coordinate@version | vulnerability id)` pairs, restricted to Maven. Normalise two
