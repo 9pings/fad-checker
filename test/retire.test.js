@@ -183,7 +183,9 @@ test("buildRetireIgnorePatterns: --no-default-excludes drops the defaults but ke
 
 test("buildRetireIgnorePatterns resolves a relative srcDir to absolute (matches retire's absolute file paths)", () => {
 	const lines = R.buildRetireIgnorePatterns({ srcDir: "./proj", excludePath: ["legacy"] });
-	const abs = path.resolve("./proj");
+	// path.resolve() yields backslashes on Windows; the emitted POSIX line always uses "/"
+	// (a native-separator twin is emitted alongside it there — see the Windows tests below).
+	const abs = path.resolve("./proj").replace(/\\/g, "/");
 	assert.ok(lines.some(l => l === `@${abs}/legacy/`), `expected anchored @${abs}/legacy/ in ${JSON.stringify(lines)}`);
 });
 
@@ -200,4 +202,42 @@ test("chooseRetireLauncher: node uses local bin, compiled binary self-invokes, e
 	assert.deepStrictEqual(
 		R.chooseRetireLauncher({ localBin: null, isBun: false, execPath: "/usr/bin/node" }),
 		{ cmd: "retire", env: null });
+});
+
+// Windows: retire turns each ignorefile line into a REGEX and tests it against the file path
+// AND path.resolve(file). Both use backslashes on Windows, so a forward-slash pattern like
+// `D:/proj/node_modules/` never matches `D:\proj\node_modules\x.js` — every exclusion,
+// including the DEFAULT ones, was silently inert there. Caught by CI on windows-latest.
+// `sep` is injectable so the Windows shape is testable from any platform.
+test("buildRetireIgnorePatterns emits a native-separator variant on Windows", () => {
+	// A POSIX-absolute srcDir, because path.resolve() is platform-bound: on Linux
+	// "C:/proj" would be treated as RELATIVE and prefixed with cwd. The drive-letter
+	// shape cannot be simulated off-Windows; the separator handling is what is under test.
+	const root = path.resolve("/proj").replace(/\\/g, "/");
+	const lines = R.buildRetireIgnorePatterns({ srcDir: "/proj", excludePath: ["webapp/legacy"], sep: "\\" });
+	assert.ok(lines.includes(`@${root}/webapp/legacy/`), `posix form kept: ${JSON.stringify(lines)}`);
+	assert.ok(lines.includes(`@${root.split("/").join("\\")}\\webapp\\legacy\\`), `native form added: ${JSON.stringify(lines)}`);
+	// defaults too — these are what keep retire out of node_modules
+	assert.ok(lines.includes("@/node_modules/"));
+	assert.ok(lines.includes("@\\node_modules\\"));
+});
+
+test("a Windows-shaped path is actually excluded by the generated patterns", () => {
+	const lines = R.buildRetireIgnorePatterns({ srcDir: "/proj", excludePath: ["webapp/legacy"], sep: "\\" });
+	const win = path.resolve("/proj").replace(/\//g, "\\");
+	// retire's own regex build + test, against the backslash paths Windows produces
+	const hits = f => lines
+		.map(e => e.slice(1))
+		.map(p => p.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+		.map(p => p.replace(/[*]{1,2}/g, a => (a.length === 2 ? ".*" : "[^/]*")))
+		.some(s => new RegExp(s).test(f));
+	assert.ok(hits(`${win}\\webapp\\legacy\\old.js`), "user glob must exclude a backslash path");
+	assert.ok(hits(`${win}\\node_modules\\lodash\\lodash.js`), "defaults must exclude node_modules on Windows");
+	assert.ok(!hits(`${win}\\src\\app.js`), "a normal source file must NOT be excluded");
+});
+
+test("POSIX output is unchanged — no duplicate lines when the separator is /", () => {
+	const lines = R.buildRetireIgnorePatterns({ srcDir: "/proj", excludePath: ["vendor"], sep: "/" });
+	assert.equal(new Set(lines).size, lines.length, "no duplicates");
+	assert.ok(lines.every(l => !l.includes("\\")), `no backslash lines on POSIX: ${JSON.stringify(lines)}`);
 });
