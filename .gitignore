@@ -6,8 +6,6 @@ dist/
 
 # Generated reports
 fad-checker-report/
-reference-project-report/
-sample-reference-project-report/
 *-report/
 
 # IDE / editor

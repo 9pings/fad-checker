@@ -170,6 +170,7 @@
       <a href="#features">Features</a>
       <a href="#airgap">Air-gapped</a>
       <a href="#compare">Compare</a>
+      <a href="#benchmark">Benchmark</a>
       <a href="#docs">Docs</a>
       <a class="gh" href="https://github.com/9pings/fad-checker">GitHub ↗</a>
     </div>
@@ -309,7 +310,61 @@
         </tbody>
       </table>
     </div>
-    <p class="note reveal">² For <span class="mono">pom.xml</span>, every tool (fad-checker included) must reach Maven Central or use a build/SBOM to resolve transitives. The real "no build" edge is vs Snyk (needs a build) and OWASP DC (needs Maven Central for Java). Reach for Trivy or Grype+Syft for continuous CI, containers and SBOM pipelines.</p>
+    <p class="note reveal">² For <span class="mono">pom.xml</span>, transitives need Maven Central <b>once</b> — after that fad-checker resolves the graph from its cached POMs, which is what makes the air-gapped run work. Snyk needs a real build, Trivy needs the network or a populated <span class="mono">~/.m2</span>. Reach for Trivy or Grype+Syft for continuous CI, containers and SBOM pipelines.</p>
+    <p class="note reveal">³ EOL row is scoped to <b>application</b> frameworks and libraries. Trivy does compute an end-of-service-life status, but only for OS distributions. Snyk's package-health signal exists on its website, not in the CLI or CI output.</p>
+  </section>
+
+
+  <!-- BENCHMARK -->
+  <section id="benchmark">
+    <div class="kicker reveal">Measured, not asserted</div>
+    <h2 class="reveal">Benchmark: Apache Dubbo 2.7.8</h2>
+    <p class="sub reveal">Five scanners, one public 105-module Maven reactor pinned to a commit, two questions. Every number below is recomputable from the tools' own JSON — the commands are in the benchmark doc.</p>
+
+    <h3 class="reveal" style="margin-top:26px;font-size:17px">1 · At full capability</h3>
+    <p class="sub reveal">Every scanner online, best configuration, populated <span class="mono">~/.m2</span>. Union of all findings: 908 pairs.</p>
+    <div class="tablewrap reveal">
+      <table>
+        <thead><tr><th>Scanner</th><th class="me">Found</th><th>Unique to it</th><th>Misses</th></tr></thead>
+        <tbody>
+          <tr><th>fad-checker</th><td class="f me yes">790 · 87.0%</td><td class="f">125</td><td class="f">118</td></tr>
+          <tr><th>OSV-Scanner 2.4.0</th><td class="f">657 · 72.4%</td><td class="f">0</td><td class="f">251</td></tr>
+          <tr><th>Snyk 1.1302.1 (mvn build)</th><td class="f">603 · 66.4%</td><td class="f warn">117</td><td class="f">305</td></tr>
+          <tr><th>Trivy 0.72.0</th><td class="f">546 · 60.1%</td><td class="f">0</td><td class="f">362</td></tr>
+          <tr><th>Grype 0.116.0 + Syft 1.49.0</th><td class="f">45 · 5.0%</td><td class="f">0</td><td class="f">863</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note reveal"><b>No tool finds everything, this one included.</b> fad-checker's 118 misses all come from Snyk — 30 under a proprietary identifier no public database carries, and 88 public CVEs that public advisory data declares per <i>release branch</i>, routinely omitting old branches that never got a fix. That is what a hand-curated commercial feed buys, and no aggregation of public sources reproduces it. Trivy and Grype are container/SBOM scanners: a raw source checkout is not the job they are built for.</p>
+
+    <h3 class="reveal" style="margin-top:26px;font-size:17px">2 · With no network at all</h3>
+    <p class="sub reveal">Same tree, every scanner under <span class="mono">unshare -rn</span> — a namespace with no network interface, not just an offline flag. Reference: OSV-Scanner's own <b>online</b> output, 657 pairs.</p>
+    <div class="tablewrap reveal">
+      <table>
+        <thead><tr><th>Scanner, no network</th><th class="me">Recovers</th></tr></thead>
+        <tbody>
+          <tr><th>fad-checker <span class="mono">--offline</span></th><td class="f me yes">657 · 100%</td></tr>
+          <tr><th>Grype + Syft</th><td class="f">45 · 6.8%</td></tr>
+          <tr><th>Trivy <span class="mono">--offline-scan</span>, cold <span class="mono">~/.m2</span></th><td class="f">40 · 6.1%</td></tr>
+          <tr><th>OSV-Scanner <span class="mono">--offline</span></th><td class="f">37 · 5.6%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note reveal">100% here means "recovers everything OSV-Scanner finds <i>with</i> network access", not "finds everything that exists" — table 1 is the answer to that. OSV-Scanner returns the identical 37 with and without the namespace: it behaves exactly as documented, its transitive resolution is disabled offline by design.</p>
+
+    <div class="split reveal" style="margin-top:30px">
+      <div>
+        <h3 style="font-size:17px;margin:0 0 10px">Why <span class="mono">--snyk</span> exists</h3>
+        <p class="sub" style="margin:0">The benchmark is the argument for it. Snyk contributes <b>117 findings no other scanner produces</b>, because its database is curated per artifact rather than assembled from public advisories. fad-checker takes <span class="mono">snyk test</span> output as an <b>input</b> and merges it — union beats either tool alone, and the merge is one flag.</p>
+      </div>
+      <div class="code">
+        <div class="top"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+<pre><span class="c"># merge a Snyk run into the report</span>
+<span class="p">fad</span> -s ./proj <span class="k">--snyk</span></pre>
+      </div>
+    </div>
+
+    <p class="note reveal" style="margin-top:22px">Full method, per-tool configuration, the four bugs this benchmark found in fad-checker, and every caveat → <a href="https://github.com/9pings/fad-checker/blob/main/docs/BENCHMARK.md">BENCHMARK.md</a>.</p>
   </section>
 
   <!-- DOCS -->
