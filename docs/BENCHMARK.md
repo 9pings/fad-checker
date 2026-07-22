@@ -6,8 +6,7 @@ the tools' own JSON output. Run it and tell me if it doesn't hold.
 
 Spoiler for the impatient, so nothing here reads as a sales pitch: **at full capability no tool
 finds everything, fad-checker included** — it leads at 87% of the union and misses 118 pairs
-Snyk found. Its actual differentiator is the second table: what survives when the network is
-gone.
+Snyk found. Its differentiator is the second table: what survives when the network is gone.
 
 ## Two different questions
 
@@ -141,32 +140,13 @@ describes what will be installed.
 
 **Go — 3 pairs, version selection.** `golang.org/x/sys` at a pseudo-version and
 `gopkg.in/yaml.v2@2.2.4`: OSV reads the version from `go.mod`, fad takes the highest version
-carrying a zip hash in `go.sum`. Getting this benchmark to that number meant fixing a real bug
-first — see below.
+carrying a zip hash in `go.sum`. 
 
 **PyPI — 4 pairs, and fad is arguably right.** All four are `setuptools@9.1.0`, which
 OSV-Scanner picked up from `tests/utils/fixtures/setups/ansible/requirements.txt` — a **test
 fixture inside poetry's own test suite**, not a dependency of the project. fad reads
 `poetry.lock`, which is authoritative, and ignores stray requirements files when a lockfile
 exists.
-
-### The bug this half of the benchmark found
-
-Go looked like a large fad win at first: 237 findings against OSV-Scanner's 113. It was not.
-`go.sum` records two kinds of line per module — a module **zip** hash (it was downloaded, it is
-in the build) and a bare `/go.mod` hash (its go.mod was read during minimal version selection,
-then the module was rejected). fad matched both and scanned all 578 modules instead of the 187
-actually built, which is how gin, echo **and** go-restful ended up in one report: three mutually
-exclusive web frameworks no single project uses. **70% of that project's Go production findings
-came from modules that were never built.**
-
-Fixed in `lib/codecs/go/parse.js`, along with version selection, which had the same flaw (it
-kept the highest version *seen*, including versions MVS merely weighed). Result on the same
-project: **237 → 110 findings, 127 phantom findings → 0**, agreement with OSV-Scanner **107 →
-110**, OSV-only findings **6 → 3**. False positives fell *and* agreement with an independent
-tool rose, which is the signal that the fix is right rather than merely quieter. The genuine
-transitives OSV-Scanner misses on pre-1.17 modules — `x/crypto`, `grpc` — carry zip hashes and
-stay.
 
 ### What parity does not measure
 
@@ -297,9 +277,6 @@ reading.
 That is recall against one tool's view in one scenario; the 118 above are the completeness
 answer.
 
-Getting there took four bugs, each found by this benchmark and each documented below with the
-`mvn dependency:tree` output that settled it.
-
 ## A negative result: NVD CPE ranges as a matching tier
 
 Since NVD's ranges are broader than OSV's, using them to *match* rather than only to *filter*
@@ -321,122 +298,6 @@ curated **per artifact**. The problem was never which database to read, it was t
 what that database asserts. The flag ships as a triage aid ("what might I be missing?") with its
 12% stated in the flag's own help text.
 
-## A bug this benchmark surfaced, and fixed
-
-The first run of this benchmark reported 566/657 and 7 findings carrying a version string of the
-form `[4.1.35.Final]`. That is Maven's *hard-pin* syntax, meaning exactly 4.1.35.Final, and
-`io.grpc:grpc-netty:1.22.1` declares its netty dependency that way. fad kept the brackets
-verbatim, so the coordinate was wrong in the report, in the purl, and in every export, and the
-finding could not be joined with any other tool's output for the same dependency.
-
-Fixed in `lib/maven-version.js#normalizeHardPin`, applied on both paths that produce a version
-(`cve-match.js#resolveDepVersion` for declared deps, `transitive.js` for deps read out of
-upstream POMs). A real range keeps its brackets: choosing a version out of `[1.0,2.0)` is
-resolution, not normalisation, and it should keep surfacing as unresolved. Locked by four tests
-in `test/cve-match.test.js`.
-
-Effect on this benchmark: **566 → 575** recovered pairs, and zero corrupted versions in the
-exports.
-
-One consequence worth knowing, because it is a general property of the offline design: the OSV
-cache is keyed by coordinate **and version**, so fixing a version string invalidates the entries
-warmed under the old one. The air-gapped numbers above were measured after re-warming the cache
-with the fixed code. A version-affecting change means a cache re-warm, not just a re-run.
-
-## A second gap this benchmark closed: the test classpath
-
-The first version of this benchmark listed `org.springframework.boot:spring-boot` and
-`spring-boot-autoconfigure` at 1.5.17.RELEASE as "not resolved", a real gap. It was.
-
-Maven's scope matrix says `test → compile = test`: the compile dependencies of a test-scoped
-dependency are on the test classpath, and so are theirs, recursively. Only `test → test` is
-omitted. In Dubbo the chain is four hops long and `mvn dependency:tree` reports every node at
-scope=test:
-
-```
-dubbo-registry-sofa
-  └─ com.alipay.sofa:registry-test:5.2.0                      (test)
-       └─ com.alipay.sofa:registry-server-integration:5.2.0   (compile → test)
-            └─ org.springframework.boot:spring-boot-starter:1.5.17.RELEASE (compile → test)
-                 └─ org.springframework.boot:spring-boot:1.5.17.RELEASE    (compile → test)
-```
-
-fad passed test-scoped roots into transitive resolution but then filtered accepted scopes to
-compile/runtime/provided, so every child of a test root was discarded at the first hop. The dev
-chapter only ever showed *directly declared* test dependencies, never their transitives.
-
-Fixed, and the fix needed a second half that matters more than the first. Marking everything
-under a test root as dev is wrong: a coordinate reachable from **both** a test root and a
-compile root is on the compile classpath. The traversal dedupes by `g:a` and keeps the first
-chain it walks, so BFS order alone decided the scope — the first cut of this fix silently moved
-6 production findings (`spring-core`, `commons-lang` and 4 others) into the dev chapter, out of
-the production count *and out of the `--fail-on` gate*. A false negative on the production
-classpath is worse than the gap being fixed. Scope is now widened on revisit and never
-narrowed.
-
-Result on Dubbo: **575 → 579** recovered, production findings **unchanged at 650**, dev findings
-7 → 11. Locked by 6 tests in `test/transitive-test-scope.test.js`, including the both-paths case.
-
-## A third gap closed: test-scope versions the global pass masks
-
-The previous round scanned the transitive closure of test-scoped dependencies, but the
-per-module overlay still could not recover a **version** that only a test path holds. The
-overlay exists precisely because the global pass dedupes by `g:a` across the whole reactor and
-keeps one version per coordinate — yet it hardcoded
-`includedScopes: ["compile","runtime","provided"]`, so a version reachable only through a
-test-scoped dependency was structurally unreachable.
-
-That single omission accounted for **every one** of the 78 findings OSV-Scanner reported and
-fad missed. All verified against `mvn dependency:tree`: `jackson-databind:2.8.4:test` in
-dubbo-registry-sofa, `hibernate-validator:5.2.4.Final:test` in dubbo-filter-validation,
-`okhttp:3.11.0` / `okio:1.14.0` at test scope in dubbo-configcenter-apollo,
-`commons-compress:1.18:test` in dubbo-remoting-etcd3.
-
-Three separate correctness rules had to come with it, and each was found by a test that failed
-first:
-
-1. **A version is dev only when EVERY module resolving it does so at test scope.** On Dubbo,
-   `jackson-databind:2.10.4` is test-scoped in dubbo-config-spring and **compile**-scoped in
-   dubbo-configcenter-nacos. Reading the first recorded provenance called it dev and dropped a
-   genuine production finding out of the count and out of `--fail-on`.
-2. **Provenance is recorded per module even when the version is already known.** The overlay
-   used to bail out on the first module to contribute a version, so the compile-scoped
-   provenance in rule 1 was never recorded at all.
-3. **A DECLARED version wins over any transitive provenance for the same version.**
-   `xstream:1.4.10` is declared outright in dubbo-registry-eureka and *also* reached as a
-   test-scoped transitive of dubbo-config-api. Letting the transitive win demoted 35 findings,
-   one of them KEV, into the dev chapter.
-
-Result on Dubbo: **579 → 653** recovered (88.1% → 99.4%), production findings **651**
-(unchanged, +1), dev findings 11 → 147, zero production finding lost. Locked by 6 tests in
-`test/version-overlay-test-scope.test.js` against a 4-module fixture.
-
-## A fourth gap closed: an imported BOM's properties leaking
-
-The reactor root sets `<hibernate_validator_version>5.2.4.Final</hibernate_validator_version>`.
-`dubbo-dependencies-bom`, imported into that root's `<dependencyManagement>` with
-`<scope>import</scope>`, redefines the same property to `5.4.1.Final`. Maven imports a BOM's
-`<dependencyManagement>` and **nothing else** — the BOM resolves its managed versions in its own
-property context, and its `<properties>` never become the importer's.
-
-fad merged them, and merged them so the BOM *won*
-(`{...merged.properties, ...imported.properties}`). So `dubbo-filter-validation`, which declares
-`<version>${hibernate_validator_version}</version>`, resolved to 5.4.1.Final instead of the
-5.2.4.Final it inherits from the root. A different version is a different CVE set.
-`mvn dependency:tree` reports `hibernate-validator:jar:5.2.4.Final:test` for that module.
-
-Fixed at the import boundary in `core.js`: the BOM's managed entries are interpolated against
-the BOM's own properties there, and the properties are dropped
-(`lib/transitive.js#effectivePom` already did the equivalent for *external* import BOMs).
-
-One correctness rule shipped with it, symmetric to the masked-version rule above: **a version
-declared only at test scope is dev**, even when the coordinate is production at another version.
-`isDev` lives on the coord-wide record, so 5.2.4.Final was inheriting the production flag of
-5.4.1.Final and would have counted toward the production total and the `--fail-on` gate.
-Per-version scopes are now recorded next to per-version paths.
-
-Result: **653 → 657 of 657 (100%)**, production 651, dev 147 → 151.
-
 ## Honest caveats
 
 - **`--offline` needs a warmed cache.** These numbers come from a cache warmed by one prior
@@ -454,10 +315,3 @@ Result: **653 → 657 of 657 (100%)**, production 651, dev 147 → 151.
   CVEProject index and NVD. Those are not counted as wins here, and they are not independently
   validated by this benchmark.
 
-## Earlier private measurement
-
-A previous run on a private 25-module Spring/JSF reactor measured 181/202 Snyk-corroborated
-findings for fad-checker against OSV-Scanner v2.3.8's 64/202, and the per-module version
-mediation overlay lifting coverage from 156 to 181. Those numbers are consistent with what this
-public benchmark shows, but they are **not independently reproducible** and should not be quoted
-without that qualification. Prefer the Dubbo numbers.

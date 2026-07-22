@@ -390,7 +390,7 @@
       <div class="panel" data-eco="go" hidden>
         <p class="meta">target <b>prometheus v2.30.0</b> · pinned <b>37468d8</b> · reads <b>go.mod (go 1.14) + go.sum · 578 modules</b></p>
         <div class="tablewrap"><table><thead><tr><th>Scanner</th><th class="me">Pairs</th></tr></thead><tbody><tr><th>OSV-Scanner</th><td class="f">113</td></tr><tr><th>fad-checker</th><td class="f me yes">110</td></tr><tr><th>communs</th><td class="f">110</td></tr><tr><th>fad seul</th><td class="f">0</td></tr><tr><th>OSV seul</th><td class="f">3</td></tr></tbody></table></div>
-        <p class="note">This one found a bug in fad: go.sum lists modules that were weighed by version selection and never built. Scanning all of them put gin, echo AND go-restful in one report. Fixed — 237 → 110 findings, 127 phantom → 0, and agreement with OSV rose 107 → 110.</p>
+        <p class="note">go.sum is not the build graph: it also records modules that version selection merely weighed. Only those carrying a module zip hash are actually built, and only those are scanned — 187 of 578 on this project. The 3 remaining differences are version selection on x/sys and yaml.v2.</p>
       </div>
       <div class="panel" data-eco="pypi" hidden>
         <p class="meta">target <b>poetry 1.1.15</b> · pinned <b>46bf7fd</b> · reads <b>poetry.lock · 91 packages</b></p>
@@ -398,7 +398,7 @@
         <p class="note">The 4 are all setuptools@9.1.0, which OSV picked up from a test fixture inside poetry's own test suite. fad reads poetry.lock, which is authoritative.</p>
       </div>
     </div>
-    <p class="note reveal">Equal CVE counts do not make two tools equivalent: on these same projects fad also reported 1 120 outdated dependencies on mastodon, 618 and 2 EOL frameworks on phpMyAdmin, 65 on poetry — questions OSV-Scanner does not attempt. Full per-ecosystem detail, and the Go bug this exercise uncovered → <a href="https://github.com/9pings/fad-checker/blob/main/docs/BENCHMARK.md">BENCHMARK.md</a>.</p>
+    <p class="note reveal">Equal CVE counts do not make two tools equivalent: on these same projects fad also reported 1 120 outdated dependencies on mastodon, 618 and 2 EOL frameworks on phpMyAdmin, 65 on poetry — questions OSV-Scanner does not attempt. Full per-ecosystem detail, targets and method → <a href="https://github.com/9pings/fad-checker/blob/main/docs/BENCHMARK.md">BENCHMARK.md</a>.</p>
 
     <div class="split reveal" style="margin-top:30px">
       <div>
