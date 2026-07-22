@@ -2,7 +2,7 @@
 
 ## How this project is built
 
-`fad-checker` is written with heavy use of Claude Code. `CLAUDE.md` in the repo root is exactly
+`fad-checker` is based on a personal project then enhanced with heavy use of Claude Code. `CLAUDE.md` in the repo root is exactly
 what it looks like: the orientation map the assistant works from.
 
 I would rather state that plainly than have someone discover it and wonder what else was not

@@ -43,15 +43,15 @@ cache back and produces the report, with real paths and manifests, **inside** th
 Sources: [Syft CycloneDX encoder](https://github.com/anchore/syft/blob/main/syft/format/internal/cyclonedxutil/helpers/component.go),
 [Grype README](https://github.com/anchore/grype/blob/main/README.md).
 
-³ Measured on a 25-module Spring/JSF project, fully air-gapped, comparing against a Snyk
-baseline: fad covered **181/202** corroborated findings vs OSV-Scanner v2.3.8's **64/202**
-(**0 on Maven**, since its transitive resolution is disabled under `--offline`). fad resolves the
-Maven graph from cached POMs, and `--osv-db` makes its offline OSV recall cache-independent.
-**Read this number with its limits**: the project is private, so the run is not independently
-reproducible; the figure is specific to that reactor's shape; and a competitor's result changes
-if the machine has a populated `~/.m2` from a previous build. It is evidence that the offline
-transitive gap is real, not a general benchmark. OSV-Scanner's own docs are the load-bearing
-claim here, not this measurement:
+³ Measured on **Apache Dubbo 2.7.8** (105-module reactor, commit `0be2a1bb`), both scanners run
+under `unshare -rn` with no network interface. Against OSV-Scanner's own online output as the
+reference set (657 distinct `package@version | vulnerability` pairs), **fad-checker recovers 575
+(87.5%)** and **OSV-Scanner recovers 37 (5.6%)** — online it finds 92 vulnerable Maven packages
+on this project, offline 3, and the missing 89 are transitive. Full method, the 82 pairs fad
+misses and why, and the caveats (a warmed cache is required; one project is one shape) →
+[`BENCHMARK.md`](BENCHMARK.md). fad resolves the Maven graph from cached POMs, and `--osv-db`
+makes its offline OSV recall cache-independent. OSV-Scanner's own docs, not this measurement,
+are the load-bearing claim:
 > "This feature is enabled by default when scanning, but it can be disabled using the
 > `--no-resolve` flag. It is also disabled in the offline mode."
 > — [supported languages and lockfiles](https://google.github.io/osv-scanner/supported-languages-and-lockfiles/)
@@ -96,7 +96,7 @@ Because it doesn't need anything you don't already have on disk:
 
 | You don't need | Why |
 | --- | --- |
-| Maven installed | `pom.xml` files are parsed directly with xml2js. Properties, profiles and local BOMs are resolved in-process. Transitive deps fetched from Maven Central if `--transitive` (cached forever). |
+| Maven installed | `pom.xml` files are parsed directly with xml2js. Properties, profiles and local BOMs are resolved in-process. Transitive deps are fetched from Maven Central by default (cached forever); `--no-transitive` disables it. |
 | `mvn dependency:tree` | Same as above. We walk the tree ourselves. |
 | `npm install` / a `node_modules/` | `package-lock.json` (v1/v2/v3), `yarn.lock` (v1 + Berry/v2+) and `pnpm-lock.yaml` (v5/v6/v9) are parsed as text/JSON/YAML. Versions come from the lockfile — no installation. |
 | `yarn install` / `pnpm install` | Same. We read `yarn.lock` (v1 + Berry) and `pnpm-lock.yaml` directly. |

@@ -6,6 +6,49 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **Maven hard-pin versions (`[1.2.3]`) are now normalised to the bare version.**
+  Maven's `[x]` syntax means *exactly* x — a concrete version wearing range brackets —
+  and real upstream POMs use it (`io.grpc:grpc-netty:1.22.1` declares
+  `<version>[4.1.35.Final]</version>`). fad kept the brackets verbatim, so the coordinate
+  was wrong **everywhere downstream**: the report, the purl, and every SBOM/CSAF/SARIF/JSON
+  export carried `netty-codec-http2@[4.1.35.Final]`, which cannot be joined with any other
+  tool's output for the same dependency. Fixed by `lib/maven-version.js#normalizeHardPin`,
+  applied on both paths that produce a version — `cve-match.js#resolveDepVersion` (declared
+  deps, after `${…}` interpolation, so `[${netty.version}]` works) and `lib/transitive.js`
+  (deps read out of upstream POMs, which is where this actually came from). A **genuine
+  range keeps its brackets**: choosing a version out of `[1.0,2.0)` is resolution, not
+  normalisation, and it must keep surfacing as unresolved rather than silently becoming
+  concrete. Found by the new public benchmark, where it cost **9 recovered findings**
+  (566 → 575 of OSV-Scanner's reference set on Apache Dubbo 2.7.8). Note that the OSV cache
+  is keyed by coordinate **and** version, so this fix invalidates entries warmed under the
+  old string — an offline re-run needs a cache re-warm to see the corrected coordinate.
+- **Docs referenced a `--transitive` flag that does not exist.** Transitive resolution is
+  **on by default**; `--no-transitive` disables it. Corrected in `ARCHITECTURE.md` and
+  `COMPARISON.md`.
+
+### Added
+- **`docs/BENCHMARK.md` — a reproducible air-gapped recall benchmark.** Replaces the
+  unverifiable private-project figure that headlined the README. Measured on **Apache Dubbo
+  2.7.8** (105-module reactor, pinned commit), with both scanners run under `unshare -rn` in
+  a namespace with **no network interface**, and graded against **OSV-Scanner's own online
+  output** as the reference set (657 distinct `package@version | vulnerability` pairs) rather
+  than against fad's own notion of a finding: **fad-checker recovers 575 (87.5%)**,
+  **OSV-Scanner recovers 37 (5.6%)**. Documents the exact commands, the tool versions, the
+  82 pairs fad misses **and why** (version-mediation divergence, plus two genuinely
+  unresolved `spring-boot` coordinates), and the caveats — a warmed cache is required, and
+  one project is one shape.
+
+### Changed
+- `docs/COMPARISON.md`: four competitor cells corrected after re-verification against
+  upstream docs and source. Syft **does** have Maven transitive resolution
+  (`java.resolve-transitive-dependencies`, opt-in, off by default); Trivy consults a local
+  `~/.m2` before the network; Trivy **does** report end-of-service-life, but only for OS
+  distributions (the EOL row is now scoped to *application* frameworks); and the
+  "scan without exposing the codebase" row now concedes the SBOM-then-scan-online route,
+  keeping only the two differences that are sourceable. Adds a version stamp for every tool
+  compared and an explicit note that no ⚠️/❌ cell means "unmaintained".
+
+### Previously fixed
 - **External `<parent>` POMs (spring-boot-starter-parent) now backfill their managed
   versions.** A versionless dep whose version is inherited from an external `<parent>`
   (e.g. `spring-boot-starter-actuator` under `spring-boot-starter-parent`, whose own
