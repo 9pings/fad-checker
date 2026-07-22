@@ -14,8 +14,8 @@ of thing a security consultant or a regulated / air-gapped engagement needs.
 | Best-effort when **no lockfile** (pinned versions) | ✅ | ❌ | ❌ | ❌ | ⚠️ | ⚠️ |
 | Vulnerability sources | CVEProject + OSV + NVD + EPSS + KEV + retire.js (+ Snyk), merged | OSV.dev | Aqua DB | Anchore DB | NVD / CPE | Snyk DB |
 | False-positive control | CPE/version cross-check | ecosystem-aware | ecosystem-aware | ecosystem-aware | ⚠️ CPE → noisy | ecosystem-aware |
-| **EOL** (end-of-life) detection | ✅ endoflife.date | ❌ | ❌ | ❌ | ❌ | ~ |
-| **Outdated / deprecated** | ✅ registries + curated | ❌ | ❌ | ❌ | ❌ | ~ |
+| **EOL** of an application framework⁴ | ✅ endoflife.date | ❌ | ⚠️ OS distros only | ❌ | ❌ | ❌ |
+| **Outdated / deprecated** | ✅ registries + curated | ❌ | ❌ | ❌ | ❌ | ⚠️ web UI only |
 | Containers / OS packages | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ |
 | SBOM (CycloneDX/SPDX) | ✅ CycloneDX 1.6 (+ CSAF 2.0 VEX) | ✅ | ✅ | ✅ (Syft) | ~ | ✅ |
 | License compliance | ✅ SPDX + copyleft policy | ~ | ✅ | ~ | ❌ | ✅ |
@@ -24,21 +24,56 @@ of thing a security consultant or a regulated / air-gapped engagement needs.
 | Malware / typosquat | ⚠️ OSV `MAL-` gate + `--typosquat` heuristic | ~ | ~ | ❌ | ❌ | ✅ |
 | Auto-remediation / PRs | ❌ (fix recipes only) | ✅ `fix` | ❌ | ❌ | ❌ | ✅ |
 | Offline | ✅ cache | ✅ local DB | ✅ | ✅ | ✅ feed | ❌ mostly online |
-| Offline Maven **transitive** graph³ | ✅ cached POMs | ❌ disabled offline | ❌ | ❌ | ⚠️ mirror | ❌ |
-| **Scan without exposing the codebase**² | ✅ anonymized descriptor | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Offline Maven **transitive** graph³ | ✅ cached POMs | ❌ disabled under `--offline` | ⚠️ needs a populated `~/.m2` | ⚠️ opt-in, off by default⁵ | ⚠️ mirror | ❌ |
+| **Scan without exposing paths**² | ✅ anonymized descriptor | ❌ | ❌ | ⚠️ SBOM, carries paths | ❌ | ❌ |
 | **Maven private-dep cleanup** (→ Snyk) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Output | **HTML + Word `.doc`** + JSON / SARIF / CycloneDX / CSAF | table/JSON/SARIF | table/JSON/SARIF | table/JSON/SARIF | HTML/XML/JSON | JSON / cloud UI |
 
 ¹ Narrower language coverage — no Rust/Dart/Swift (Go and Ruby are now covered).
 
-² Phase 1 exports only public coordinates; the online scan never sees your source tree —
-see [Air-gapped](../README.md#air-gapped-audits). OSV-Scanner has an offline
-mode, but it still needs the **source on the scanning machine**.
+² Phase 1 exports only public coordinates; the online scan never sees your source tree
+(see [Air-gapped](../README.md#air-gapped-audits)). Two honest qualifications. **(a)** You *can*
+approximate this elsewhere by generating an SBOM on the isolated machine and scanning it online
+(`grype sbom:./sbom.json`, `trivy sbom`). The difference is that a Syft SBOM is **not
+anonymized**: its CycloneDX encoder stamps every component with `syft:location` file paths, so
+the SBOM carries your internal tree layout off the machine. fad's `fad-deps/1` descriptor drops
+paths, registry URLs, integrity hashes and parent chains by construction.
+**(b)** The direction differs: in the SBOM route the *report* is produced online; fad brings a
+cache back and produces the report, with real paths and manifests, **inside** the enclave.
+Sources: [Syft CycloneDX encoder](https://github.com/anchore/syft/blob/main/syft/format/internal/cyclonedxutil/helpers/component.go),
+[Grype README](https://github.com/anchore/grype/blob/main/README.md).
 
-³ Measured on a 25-module Spring/JSF project, fully air-gapped: fad covered **181/202**
-Snyk-corroborated findings vs OSV-Scanner v2.3.8's **64/202** — **0 on Maven**, because its
-transitive resolution is disabled without network. fad resolves the Maven graph from cached
-POMs (and `--osv-db` makes its offline OSV recall cache-independent).
+³ Measured on a 25-module Spring/JSF project, fully air-gapped, comparing against a Snyk
+baseline: fad covered **181/202** corroborated findings vs OSV-Scanner v2.3.8's **64/202**
+(**0 on Maven**, since its transitive resolution is disabled under `--offline`). fad resolves the
+Maven graph from cached POMs, and `--osv-db` makes its offline OSV recall cache-independent.
+**Read this number with its limits**: the project is private, so the run is not independently
+reproducible; the figure is specific to that reactor's shape; and a competitor's result changes
+if the machine has a populated `~/.m2` from a previous build. It is evidence that the offline
+transitive gap is real, not a general benchmark. OSV-Scanner's own docs are the load-bearing
+claim here, not this measurement:
+> "This feature is enabled by default when scanning, but it can be disabled using the
+> `--no-resolve` flag. It is also disabled in the offline mode."
+> — [supported languages and lockfiles](https://google.github.io/osv-scanner/supported-languages-and-lockfiles/)
+
+⁴ Scoped deliberately to **application** frameworks and libraries (Spring Boot 2.x, AngularJS,
+Django, a deprecated npm package). Trivy *does* compute an end-of-service-life status, but only
+for **OS distributions** (`pkg/detector/ospkg/detect.go`). Snyk's Package Health Score exists
+only on `security.snyk.io` package pages; its docs state that CLI, IDE and CI/CD integrations do
+not display package health, so it can't gate a build on it.
+
+⁵ Syft has `java.resolve-transitive-dependencies`, but it is **opt-in and `false` by default**,
+and it relies on Maven Central (`java.use-network`, also `false` by default) or on a populated
+local repository. Syft's own tip is to run `mvn help:effective-pom` first to fetch the POMs,
+which needs both Maven and a network. Source:
+[`config.go`](https://github.com/anchore/syft/blob/main/syft/pkg/cataloger/java/config.go).
+
+**Versions compared** (table last verified **2026-07-22**): OSV-Scanner **v2.4.0**, Trivy
+**v0.72.0**, Grype **v0.116.0** + Syft **v1.49.0**, OWASP Dependency-Check **v12.2.2**, Snyk CLI
+**v1.1306.x**. All of these are actively maintained projects; none of the ⚠️/❌ cells above mean
+"abandoned". Every competitor cell is meant to be checkable against the linked upstream doc. If
+one is wrong or has gone stale, [open an issue](https://github.com/9pings/fad-checker/issues) and
+it gets corrected.
 
 **Where it fits:** a one-shot audit of a polyglot checkout you may not be able to build, a
 presentable HTML/Word deliverable, and confidential / air-gapped engagements.
