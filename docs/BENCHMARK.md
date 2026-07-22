@@ -23,11 +23,21 @@ avoids grading either tool against its own notion of a finding.
 | Scanner, **no network at all** | Pairs recovered from the 657 | Wall clock |
 | --- | --- | --- |
 | **fad-checker 2.4.8** `--offline` | **657 (100%)** | 4.5 s |
-| OSV-Scanner 2.4.0 `--offline` | **37 (5.6%)** | 0.8 s |
+| Grype 0.116.0 + Syft 1.49.0 (defaults) | 45 (6.8%) | 32 s |
+| Trivy 0.72.0 `--offline-scan` | 40 (6.1%) | 1.0 s |
+| OSV-Scanner 2.4.0 `--offline` | 37 (5.6%) | 0.8 s |
 
-Both were run under `unshare -rn`, in a namespace with **no network interface**, not merely with
-an offline flag. OSV-Scanner returns the identical 37 with and without the namespace, which is
-the honest reading: it is behaving exactly as documented, not failing.
+Every row was run under `unshare -rn`, in a namespace with **no network interface**, not merely
+with an offline flag. OSV-Scanner returns the identical 37 with and without the namespace, which
+is the honest reading: it is behaving exactly as documented, not failing.
+
+Two things this table is not. **It is not a like-for-like product comparison**: Trivy and Grype
+are container and SBOM scanners, and pointing them at a raw Maven source checkout is not the job
+they are built for. **It is not a measure of absolute correctness**: the reference set is
+OSV-Scanner's own output, so 100% means "recovers everything that tool finds with network
+access", not "finds every vulnerability that exists". The machine also had a populated `~/.m2`
+(287 MB), which can only help Trivy and Syft, since both consult a local repository — fad and
+OSV-Scanner do not read it at all.
 
 The mechanism is not in dispute, it is in OSV-Scanner's own documentation:
 
