@@ -146,7 +146,10 @@ itself → [`SECURITY.md`](SECURITY.md) (please report privately).
 in the repo root is exactly what it looks like. The bar it's held to is the one you can check
 yourself: **606 tests** (`npm test`), the zero-network guarantee enforced by a tripwire test and
 reproducible under `unshare -rn`, and coverage numbers measured against a Snyk baseline rather
-than asserted. Where the code doesn't meet that bar, that's a bug report I want.
+than asserted. `fad-checker` itself uses **no LLM at runtime** — findings come from public
+vulnerability databases and deterministic parsers, and no report text is generated. Full
+statement, including where review actually caught a bad finding →
+[`AI_POLICY.md`](AI_POLICY.md). Where the code doesn't meet that bar, that's a bug report I want.
 
 ## License
 
