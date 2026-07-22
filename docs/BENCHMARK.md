@@ -32,7 +32,7 @@ Union of everything any tool found: **908** pairs.
 
 | Scanner, best configuration | Found | Unique to it | % of union | Misses |
 | --- | --- | --- | --- | --- |
-| **fad-checker 2.4.5** | **790** | 125 | **87.0%** | 118 |
+| **fad-checker 2.4.6** | **790** | 125 | **87.0%** | 118 |
 | OSV-Scanner 2.4.0 (online) | 657 | 0 | 72.4% | 251 |
 | Snyk 1.1302.1 (`--all-projects`, mvn build) | 603 | **117** | 66.4% | 305 |
 | Trivy 0.72.0 (populated `~/.m2`) | 546 | 0 | 60.1% | 362 |
@@ -65,7 +65,7 @@ not merely an offline flag. Reference: OSV-Scanner's own **online** output, 657 
 
 | Scanner, no network | Recovers | Wall clock |
 | --- | --- | --- |
-| **fad-checker 2.4.5** `--offline` | **657 (100%)** | 4.5 s |
+| **fad-checker 2.4.6** `--offline` | **657 (100%)** | 4.5 s |
 | Grype + Syft (defaults) | 45 (6.8%) | 32 s |
 | Trivy `--offline-scan`, cold `~/.m2` | 40 (6.1%) | 1.0 s |
 | OSV-Scanner `--offline` | 37 (5.6%) | 0.8 s |
@@ -252,7 +252,7 @@ Compare on `(coordinate@version | vulnerability id)` pairs, restricted to Maven.
 things or the comparison is meaningless: map OSV `GHSA-*` ids to their `CVE-*` alias, and strip
 Maven hard-pin brackets (`[1.2.3]` → `1.2.3`).
 
-Environment for the numbers above: Node 24.14.0, Linux 6.6.87 (WSL2), fad-checker 2.4.5,
+Environment for the numbers above: Node 24.14.0, Linux 6.6.87 (WSL2), fad-checker 2.4.6,
 OSV-Scanner 2.4.0 (osv-scalibr 0.4.5).
 
 ## What fad-checker misses, and why
