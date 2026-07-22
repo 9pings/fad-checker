@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<project>
+	<modelVersion>4.0.0</modelVersion>
+	<parent><groupId>com.acme</groupId><artifactId>reactor</artifactId><version>1.0.0</version></parent>
+	<artifactId>module-a</artifactId>
+	<!-- Uses the property it inherits from the reactor → must resolve to 1.0.0. -->
+	<dependencies>
+		<dependency>
+			<groupId>com.acme</groupId><artifactId>lib</artifactId><version>${lib.version}</version>
+		</dependency>
+	</dependencies>
+</project>

@@ -49,7 +49,7 @@ output (657 distinct `package@version | vulnerability` pairs, third-party depend
 
 | Scanner, no network | Recovers | Notes |
 | --- | --- | --- |
-| **fad-checker** `--offline` | **653 (99.4%)** | resolves the Maven graph from cached POMs |
+| **fad-checker** `--offline` | **657 (100%)** | resolves the Maven graph from cached POMs |
 | Grype + Syft (defaults) | 45 (6.8%) | Syft's transitive option applies to **archives**, not `pom.xml`⁵ |
 | Trivy `--offline-scan` | 40 (6.1%) | warns "Child dependencies will not be found" |
 | OSV-Scanner `--offline` | 37 (5.6%) | transitive resolution disabled offline, per its own docs |
@@ -58,8 +58,10 @@ Online, OSV-Scanner finds 92 vulnerable Maven packages here and 3 offline; the m
 transitive. Trivy and Grype are **container and SBOM scanners** — pointing them at a raw source
 checkout is not their primary job, and the `~/.m2` on the test machine was populated (287 MB),
 which favours them. A Trivy *online* run could not be completed: Maven Central rate-limited the
-IP (`429`, `Retry-After: 1800`) after the other scans, and Trivy aborts fatally on that. Full
-method, the 4 pairs fad still misses and the caveats → [`BENCHMARK.md`](BENCHMARK.md).
+IP (`429`), every retry extended the block, and Trivy aborts fatally on that — its own error
+text recommends populating `~/.m2` first, which is the dependency being measured. Full
+method and the caveats — this is recall against one tool's view, not absolute
+correctness — → [`BENCHMARK.md`](BENCHMARK.md).
 OSV-Scanner's own docs, not this measurement, are the load-bearing claim:
 > "This feature is enabled by default when scanning, but it can be disabled using the
 > `--no-resolve` flag. It is also disabled in the offline mode."

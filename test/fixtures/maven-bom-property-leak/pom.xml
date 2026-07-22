@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<project>
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>com.acme</groupId><artifactId>reactor</artifactId><version>1.0.0</version>
+	<packaging>pom</packaging>
+	<modules>
+		<module>bom</module><module>module-a</module><module>module-b</module><module>module-c</module>
+	</modules>
+	<!-- The reactor's OWN value. Maven keeps it: importing a BOM imports its
+	     <dependencyManagement>, never its <properties>. -->
+	<properties>
+		<lib.version>1.0.0</lib.version>
+	</properties>
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>com.acme</groupId><artifactId>bom</artifactId><version>1.0.0</version>
+				<type>pom</type><scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+</project>

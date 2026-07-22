@@ -6,6 +6,32 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **An imported BOM's `<properties>` leaked into the importing project — and won.**
+  `<scope>import</scope>` imports a BOM's `<dependencyManagement>` and **nothing else**: the
+  BOM resolves its managed versions in its own property context, and its `<properties>` never
+  become the importer's. `core.js` merged them, and merged them so the BOM won
+  (`{...merged.properties, ...imported.properties}`), so a BOM silently redefined the
+  importing project's own property values. On Apache Dubbo 2.7.8 the reactor root sets
+  `<hibernate_validator_version>5.2.4.Final</hibernate_validator_version>` and
+  `dubbo-dependencies-bom` redefines it to `5.4.1.Final`, so `dubbo-filter-validation`'s
+  `<version>${hibernate_validator_version}</version>` resolved to the wrong version — and a
+  different version is a different CVE set. (`mvn dependency:tree` reports
+  `hibernate-validator:jar:5.2.4.Final:test` for that module.) The BOM's managed entries are
+  now interpolated against the BOM's own properties at the import boundary and the properties
+  are dropped, mirroring what `transitive.js#effectivePom` already did for EXTERNAL import
+  BOMs. Locked by `test/bom-property-leak.test.js`, which guards both directions: the leak
+  must stop **and** importing a BOM must still supply managed versions.
+- **A version declared only at test scope is now reported as dev.** `isDev` lives on the
+  coord-wide record, so a version declared solely at `<scope>test</scope>` inherited the
+  coordinate's production flag whenever the same coordinate was production at some other
+  version — counting toward the production total and the `--fail-on` gate. Per-version scopes
+  are now recorded next to per-version paths (`versionScopes`, mirror of `versionPaths`), and
+  attribution applies the same widest-wins rule already used for overlay-recovered versions.
+  On Dubbo, `hibernate-validator:5.2.4.Final` moves to the dev chapter, attributed to
+  `dubbo-filter-validation` — exactly what Maven reports.
+
+  Air-gapped recall on the public benchmark reaches **657/657 (100%)** of OSV-Scanner's own
+  online finding set, up from 653.
 - **The per-module overlay could not recover a version held only on a TEST classpath.**
   The overlay exists because the global transitive pass dedupes by `g:a` across the whole
   reactor and keeps one version per coordinate — but it hardcoded
@@ -32,16 +58,6 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   test-scoped transitive of `dubbo-config-api`; letting the transitive provenance win
   demoted 35 findings, one of them KEV, into the dev chapter. A manifest that writes
   `<version>` for a coordinate is the authority on that version.
-
-### Known issue
-- **An imported BOM's `<properties>` leak into the importing project.** Maven resolves an
-  import BOM's managed versions in the BOM's own context and does **not** import its
-  properties. fad merges them, so on Dubbo the root's
-  `<hibernate_validator_version>5.2.4.Final</hibernate_validator_version>` is overwritten by
-  `dubbo-dependencies-bom`'s `5.4.1.Final`, and `dubbo-filter-validation` resolves the wrong
-  version. This is the only remaining gap in the public benchmark (4 pairs of 657). Not
-  fixed here: it belongs in `core.js`'s property merge, which the whole Maven path depends
-  on, and deserves its own tested change.
 
 ### Previously fixed
 - **The transitive closure of a test-scoped dependency was never scanned.** Maven's scope

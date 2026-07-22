@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<project>
+	<modelVersion>4.0.0</modelVersion>
+	<parent><groupId>com.acme</groupId><artifactId>reactor</artifactId><version>1.0.0</version></parent>
+	<artifactId>module-b</artifactId>
+	<!-- No version: takes it from the imported BOM's managed table, which the BOM
+	     resolved in ITS OWN context → 2.0.0. -->
+	<dependencies>
+		<dependency>
+			<groupId>com.acme</groupId><artifactId>lib</artifactId>
+		</dependency>
+	</dependencies>
+</project>

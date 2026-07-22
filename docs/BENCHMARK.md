@@ -22,7 +22,7 @@ avoids grading either tool against its own notion of a finding.
 
 | Scanner, **no network at all** | Pairs recovered from the 657 | Wall clock |
 | --- | --- | --- |
-| **fad-checker 2.4.7** `--offline` | **653 (99.4%)** | 4.5 s |
+| **fad-checker 2.4.8** `--offline` | **657 (100%)** | 4.5 s |
 | OSV-Scanner 2.4.0 `--offline` | **37 (5.6%)** | 0.8 s |
 
 Both were run under `unshare -rn`, in a namespace with **no network interface**, not merely with
@@ -71,26 +71,20 @@ Compare on `(coordinate@version | vulnerability id)` pairs, restricted to Maven.
 things or the comparison is meaningless: map OSV `GHSA-*` ids to their `CVE-*` alias, and strip
 Maven hard-pin brackets (`[1.2.3]` → `1.2.3`).
 
-Environment for the numbers above: Node 24.14.0, Linux 6.6.87 (WSL2), fad-checker 2.4.7,
+Environment for the numbers above: Node 24.14.0, Linux 6.6.87 (WSL2), fad-checker 2.4.8,
 OSV-Scanner 2.4.0 (osv-scalibr 0.4.5).
 
 ## What fad-checker misses, and why
 
-99.4% is not 100%. **Four** pairs remain, all on one coordinate:
-`org.hibernate:hibernate-validator@5.2.4.Final`, which `mvn dependency:tree` confirms at
-scope=test in `dubbo-filter-validation`.
+Nothing, on this project: **657 of 657**, with no network.
 
-The cause is a distinct bug, in property inheritance rather than in resolution. The reactor
-root sets `<hibernate_validator_version>5.2.4.Final</hibernate_validator_version>`;
-`dubbo-dependencies-bom`, imported into the root's `<dependencyManagement>` with
-`<scope>import</scope>`, redefines the same property to `5.4.1.Final`. fad lets the imported
-BOM's **properties** leak into the importing project's property map, so
-`dubbo-filter-validation`'s `<version>${hibernate_validator_version}</version>` resolves to
-5.4.1.Final instead of the 5.2.4.Final it inherits from the root. Maven resolves an import
-BOM's managed versions in the BOM's own context and does not import its properties.
+That is not a claim that fad finds everything everywhere. It means that on this reactor, every
+`package@version | vulnerability` pair OSV-Scanner reports **with** network access, fad also
+reports **without** any. The reference set is OSV-Scanner's, so this measures recall against one
+tool's view, not absolute correctness — see the caveats below, which still apply in full.
 
-Not yet fixed: the change lands in `core.js`'s property merge, which every ecosystem's Maven
-path depends on, and it deserves its own tested change rather than being folded into this one.
+The last gap to close was four pairs on `org.hibernate:hibernate-validator@5.2.4.Final`, and it
+was not a resolution bug but a property-inheritance one. See "A fourth gap" below.
 
 ## A bug this benchmark surfaced, and fixed
 
@@ -182,12 +176,38 @@ Result on Dubbo: **579 → 653** recovered (88.1% → 99.4%), production finding
 (unchanged, +1), dev findings 11 → 147, zero production finding lost. Locked by 6 tests in
 `test/version-overlay-test-scope.test.js` against a 4-module fixture.
 
+## A fourth gap closed: an imported BOM's properties leaking
+
+The reactor root sets `<hibernate_validator_version>5.2.4.Final</hibernate_validator_version>`.
+`dubbo-dependencies-bom`, imported into that root's `<dependencyManagement>` with
+`<scope>import</scope>`, redefines the same property to `5.4.1.Final`. Maven imports a BOM's
+`<dependencyManagement>` and **nothing else** — the BOM resolves its managed versions in its own
+property context, and its `<properties>` never become the importer's.
+
+fad merged them, and merged them so the BOM *won*
+(`{...merged.properties, ...imported.properties}`). So `dubbo-filter-validation`, which declares
+`<version>${hibernate_validator_version}</version>`, resolved to 5.4.1.Final instead of the
+5.2.4.Final it inherits from the root. A different version is a different CVE set.
+`mvn dependency:tree` reports `hibernate-validator:jar:5.2.4.Final:test` for that module.
+
+Fixed at the import boundary in `core.js`: the BOM's managed entries are interpolated against
+the BOM's own properties there, and the properties are dropped
+(`lib/transitive.js#effectivePom` already did the equivalent for *external* import BOMs).
+
+One correctness rule shipped with it, symmetric to the masked-version rule above: **a version
+declared only at test scope is dev**, even when the coordinate is production at another version.
+`isDev` lives on the coord-wide record, so 5.2.4.Final was inheriting the production flag of
+5.4.1.Final and would have counted toward the production total and the `--fail-on` gate.
+Per-version scopes are now recorded next to per-version paths.
+
+Result: **653 → 657 of 657 (100%)**, production 651, dev 147 → 151.
+
 ## Honest caveats
 
 - **`--offline` needs a warmed cache.** These numbers come from a cache warmed by one prior
   online run on the same project. On a cold cache the air-gapped run legitimately finds nothing.
   That is the intended air-gapped workflow (`--export-cache` / `--import-cache`), not a trick,
-  but it means "99.4% with no network" is not the same as "99.4% from a standing start".
+  but it means "100% with no network" is not the same as "100% from a standing start".
 - **The machine had a populated `~/.m2` (287 MB).** It does not affect either tool here
   (OSV-Scanner resolves via deps.dev or Maven Central, not the local repository), but Trivy and
   Syft *do* consult it, so a comparison including them must control for it.
