@@ -18,5 +18,9 @@ fad-checker-report/
 .claude/
 docs/superpowers/
 
+# Working documents (not part of the project)
+launch-kit.md
+rr2.json
+
 # OS junk
 Thumbs.db
