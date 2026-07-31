@@ -212,9 +212,10 @@ standalone chapters (Warnings, baseline diff) pinned at the top:
   2.3 Unmanaged / vendored JavaScript
   2.4 Certificates & key material (certs + private/public keys + keystores)
 3. Maintenance / lifecycle (X EOL, Y obsolete, Z outdated)   ← ROOT
-  3.1 End-of-Life frameworks
+  3.1 End-of-Life frameworks    ← split: Direct dependencies (declared or parent-POM-inherited)
+                                   then Transitive dependencies (via-chain shown; bump the puller)
   3.2 Obsolete / deprecated
-  3.3 Outdated
+  3.3 Outdated                  ← direct deps only; Maven skips transitives at FETCH time (perf)
 4. Licenses                     ← ROOT (standalone); grouped by SPDX policy category (copyleft/unknown flagged)
 5. Fix Recommendations          ← ROOT (standalone); per-ecosystem snippets (Maven depMgmt / npm overrides / yarn resolutions / …)
 6. Scan context & limitations   ← ROOT

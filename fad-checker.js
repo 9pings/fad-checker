@@ -1047,6 +1047,9 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// INDIRECT (transitive) dep's "latest" isn't directly actionable — you'd bump the parent
 	// — so drop transitives from the Outdated chapter (EOL/obsolete keep them: security).
 	// scope==="transitive" is the marker set by the Maven/Gradle resolver and the npm parser.
+	// The Maven pass (checkOutdatedDeps) already skips transitives at FETCH time (perf);
+	// this filter covers the npm/composer/pypi/nuget registry passes, which must still
+	// query transitives for the authoritative deprecation signal.
 	outdatedResults = outdatedResults.filter(r => r.dep.scope !== "transitive");
 
 	// 4b. OSV.dev — Maven-native CVE+GHSA feed (huge recall win over raw CVEProject)
@@ -1362,7 +1365,8 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		if (certFindings.length > 10) console.log(chalk.dim(`    …and ${certFindings.length - 10} more (see report ch.2.4)`));
 	}
 
-	heading("EOL frameworks", eolResults.length);
+	const eolDirectN = eolResults.filter(e => e.dep?.scope !== "transitive").length;
+	heading("EOL frameworks", eolResults.length, eolResults.length ? chalk.dim(`${eolDirectN} direct, ${eolResults.length - eolDirectN} transitive`) : "");
 	for (const e of eolResults.slice(0, 8)) console.log("    " + chalk.yellow(e.product.padEnd(18)) + " " + chalk.dim(`${coordOf(e.dep)}:${e.dep.version}`) + " " + chalk.dim(e.eol === true ? "EOL" : String(e.eol)) + definedInOf(e.dep));
 	if (eolResults.length > 8) console.log(chalk.dim(`    …and ${eolResults.length - 8} more`));
 
