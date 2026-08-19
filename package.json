@@ -74,7 +74,7 @@
     "p-limit": "^3.1.0",
     "retire": "^5.4.2",
     "rimraf": "^6.0.1",
-    "smol-toml": "^1.6.1",
+    "smol-toml": "^1.8.0",
     "xml2js": "^0.6.2"
   },
   "engines": {
