@@ -5,6 +5,35 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- **Dependency refresh: 7 advisories to 0, all of them already permitted by the declared
+  ranges.** `package.json` allowed every fix; only `package-lock.json` was stale, so a plain
+  `npm update` closed the lot. `js-yaml` 4.1.1 → 4.3.2 (three HIGH: quadratic-complexity DoS
+  in merge-key handling and `!!omap` resolution, incl. CVE-2026-59870), `retire` 5.4.2 → 5.7.0
+  (drops `uuid` entirely, and carries `ip-address` past three HIGH SSRF/trust-boundary
+  bypasses via `proxy-agent`), `rimraf` 6.0.1 → 6.1.3 (pulls `glob` 11.0.3 → 13.0.6, past a
+  HIGH command injection, and `minimatch` 10.0.3 → 10.2.6, past three HIGH ReDoS), plus
+  `commander` 14.0.3 and `smol-toml` 1.8.0.
+
+  Two of these are reachable from **attacker-controlled input**, which is the reason this is a
+  Security entry rather than a chore: `js-yaml` parses `pnpm-lock.yaml` and Berry `yarn.lock`
+  from the audited tree, and `minimatch` compiles `--exclude-path` patterns. A scanner is
+  pointed at untrusted repositories by definition.
+
+  The declared **floors** were raised to the fixed versions, not just the lockfile. With
+  `^4.1.1` left in place a consumer that already has `js-yaml` 4.1.1 in its tree would
+  deduplicate fad-checker onto the vulnerable copy; the floor is what actually states the
+  security minimum.
+
+### Fixed
+- **`minimatch` was a phantom dependency.** `lib/path-filter.js` has always done
+  `require("minimatch")` — the engine behind every `--exclude-path` glob — while
+  `package.json` never declared it. It resolved only because `rimraf → glob` happened to hoist
+  it to the top level of `node_modules`. Under a strict store (pnpm), or the day `rimraf` stops
+  depending on `glob`, `--exclude-path` would have thrown at runtime on a resolution nothing in
+  the manifest guaranteed. Now declared directly (`^10.2.6`). An audit of every external
+  `require()` across `lib/`, `test/` and `fad-checker.js` found no other undeclared package.
+
 ### Added
 - **`--nvd-cpe-match` (opt-in, off by default): match dependencies against NVD's CPE version
   ranges.** OSV/GHSA declare affected ranges per release *branch*; NVD declares them for every

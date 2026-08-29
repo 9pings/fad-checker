@@ -152,7 +152,7 @@ itself → [`SECURITY.md`](SECURITY.md) (please report privately).
 
 **On AI assistance:** this codebase is written with heavy use of Claude Code; [`CLAUDE.md`](CLAUDE.md)
 in the repo root is exactly what it looks like. The bar it's held to is the one you can check
-yourself: **606 tests** (`npm test`), the zero-network guarantee enforced by a tripwire test and
+yourself: **642 tests** (`npm test`), the zero-network guarantee enforced by a tripwire test and
 reproducible under `unshare -rn`, and coverage numbers measured against a Snyk baseline rather
 than asserted. `fad-checker` itself uses **no LLM at runtime**; findings come from public
 vulnerability databases and deterministic parsers, and no report text is generated. Full

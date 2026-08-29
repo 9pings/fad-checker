@@ -13,7 +13,7 @@ work is actually held to.
 
 None of this is a claim about how the code was written. All of it is checkable by you:
 
-- **606 tests**, run with `npm test`. No test touches the network.
+- **642 tests**, run with `npm test`. No test touches the network.
 - **`test/offline-guarantee.test.js`** is a tripwire: it installs a fetcher that throws if
   anything reaches for the network under `--offline`, on a cold cache. The zero-network
   guarantee is a test, not a promise. It is also reproducible outside the suite:
