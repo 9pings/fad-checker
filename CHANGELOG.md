@@ -26,6 +26,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   security minimum.
 
 ### Fixed
+- **endoflife.date cache never refreshed.** `fetchEndoflife` returned whatever the cache held
+  before looking at the 7-day TTL (an `{error}` entry included), and every run — offline
+  included — restamped `meta.fetchedAt`, so the TTL could never trigger a refetch and a cached
+  `support`/`eol` date was frozen forever. Now stamped **per product** on a successful fetch only:
+  online, a stale entry is refetched (a failed refetch keeps serving the stale list, error
+  entries are retried); offline, the warmed cache is served regardless of age, never blocking.
+  Legacy cache files are upgraded in place.
 - **`minimatch` was a phantom dependency.** `lib/path-filter.js` has always done
   `require("minimatch")` — the engine behind every `--exclude-path` glob — while
   `package.json` never declared it. It resolved only because `rimraf → glob` happened to hoist

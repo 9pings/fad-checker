@@ -201,7 +201,7 @@ Test fixtures live in `test/fixtures/`:
 | NVD CVE record | `~/.fad-checker/nvd-cache/<cveId>.json` | 7 d (online; **offline ignores the TTL + schema check** and serves the warmed body so air-gapped enrichment incl. CWEs is never dropped) |
 | EPSS scores | `~/.fad-checker/epss-cache.json` | 24 h |
 | CISA KEV catalogue | `~/.fad-checker/kev-cache.json` | 24 h |
-| endoflife.date cycles | `~/.fad-checker/eol-cache.json` | 7 d |
+| endoflife.date cycles | `~/.fad-checker/eol-cache.json` | 7 d **per product** (`fetchedAt[product]`; stamped only by a successful fetch — an offline run never makes the cache look fresh). Online: a stale entry is refetched, a failed refetch keeps serving the stale list, an `{error}` entry is always retried. Offline: served regardless of age, never blocks. |
 | Maven Central latest | `~/.fad-checker/version-cache.json` | 24 h |
 | npm registry (deprecation + latest) | `~/.fad-checker/npm-registry-cache.json` | 24 h |
 | Go module proxy (latest) | `~/.fad-checker/go-proxy-cache.json` | 24 h |
