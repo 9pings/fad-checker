@@ -9,7 +9,8 @@
 | [NIST NVD](https://nvd.nist.gov/) | Canonical CVE description + CVSS vectors + CPE configurations + CWE | US-gov public domain | `GET services.nvd.nist.gov/rest/json/cves/2.0?cveId=…` — free [API key](https://nvd.nist.gov/developers/request-an-api-key) bumps the rate limit 10× |
 | [FIRST.org EPSS](https://www.first.org/epss/) | Exploit-prediction score + percentile per CVE | CC-BY 4.0 | `GET api.first.org/data/v1/epss?cve=…` (batched) |
 | [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | Known-exploited-vulnerability catalogue membership | US-gov public domain | `GET cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` |
-| [endoflife.date](https://endoflife.date/) | Framework / runtime EOL cycle data | MIT | `GET endoflife.date/api/{product}.json` |
+| [endoflife.date](https://endoflife.date/) | Framework / runtime lifecycle — both the `eol` date (always) and the `support` date (`--eol-support`) | MIT | `GET endoflife.date/api/{product}.json` |
+| [Packagist](https://packagist.org/) p2 metadata | **Dev-time only** — `replace: self.version` tables of `symfony/symfony` / `laravel/framework` to generate `data/eol-composer-frameworks.json` (`scripts/gen-composer-eol-map.js`). Never queried during a scan. | MIT (metadata) | `GET repo.packagist.org/p2/{vendor}/{pkg}.json` |
 | [Maven Central](https://search.maven.org/) | Latest-version lookups + transitive POM fetches | Free public service | Solr `search.maven.org/solrsearch/select?q=…` + `repo1.maven.org/maven2/<coord>` |
 | [npm registry](https://registry.npmjs.org/) | Per-version `deprecated` + `dist-tags.latest` | Free public service | `GET registry.npmjs.org/<pkg>` |
 | [Packagist](https://packagist.org/) | Latest stable + `abandoned` flag | Free public service | `GET packagist.org/packages/<vendor>/<pkg>.json` |

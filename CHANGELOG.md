@@ -35,6 +35,17 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `require()` across `lib/`, `test/` and `fad-checker.js` found no other undeclared package.
 
 ### Added
+- **Two-level EOL lifecycle + reliable PHP.** `--eol-support` reports frameworks/runtimes whose
+  active (bug-fix) support has ended while security fixes continue (endoflife.date `support`
+  field — Symfony 5.4 LTS since 2024-11-30, React 16/17/18, Django 5.2), as an "Out of active
+  support" band; default output unchanged. Symfony/Laravel components are mapped from a
+  generated, zero-false-positive list (`data/eol-composer-frameworks.json`, the monorepo's
+  `replace: self.version` table — `symfony/monolog-bundle`, `*-contracts`, `polyfill-*` stay out)
+  and reported as **one row per framework** with `anchor` + `components[]`. The **PHP runtime**
+  is evaluated from the Composer platform constraint: a finding only when it proves an EOL PHP
+  (`^7.4`, an exact pin), a chapter-0 `php-runtime-undetermined` note otherwise. JSON `eol[]`
+  gains `status/cycle/support/anchor/components`; `--baseline` diffs treat a status change as a
+  change.
 - **`--nvd-cpe-match` (opt-in, off by default): match dependencies against NVD's CPE version
   ranges.** OSV/GHSA declare affected ranges per release *branch*; NVD declares them for every
   affected branch. For `CVE-2020-9546`, OSV covers 2.9.0–2.9.10.4 while NVD also covers

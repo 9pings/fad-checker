@@ -38,6 +38,7 @@ fad-checker -s . --no-go --no-ruby            # skip Go + Ruby
 fad-checker -s . --no-jars                    # skip embedded .jar/.war/.ear scanning
 fad-checker -s . --no-binaries                # skip committed native-binary scanning
 fad-checker -s . --no-certs                   # skip certificate / key-material scanning
+fad-checker -s . --eol-support                # also flag "security-only" frameworks (e.g. Symfony 5.4 LTS since 2024-11-30)
 fad-checker -s . --cert-expiry-days 30        # warn on certs expiring within 30 days (default 90)
 ```
 
@@ -46,6 +47,8 @@ fad-checker -s . --cert-expiry-days 30        # warn on certs expiring within 30
 > **Committed native binaries**: `.dll`/`.exe`/`.so`/`.dylib` files are detected by extension **and** magic-byte confirmation (PE/ELF/Mach-O — images/fonts/assets are rejected even with a spoofed extension), hashed (SHA-1 + SHA-256) and **identified by checksum** online: **deps.dev** maps the hash to an exact package coordinate (byte-identical to a published artifact → *pristine*, and a candidate to declare as a real dependency); **CIRCL hashlookup** recognises known OS/distro/CDN/NSRL files (*known-good*) and carries a free `KnownMalicious` flag. Files no source knows are *unknown*; a filename disagreeing with the resolved identity is *name≠checksum*. Reported in the **Unmanaged / vendored binaries** chapter (1C) and the JSON export (`unmanaged` array). Cached + `--offline`-aware; the binary scan is on by default in `auto` mode and disabled with `--no-binaries`. No malware/AV lane.
 
 > **Certificates & key material**: committed cryptographic files are inventoried in chapter **2.4** and the JSON export (`certificates` array) + SARIF (`FAD-*` rules). Detected by extension (`.pem`/`.crt`/`.cer`/`.der`/`.key`/`.pub`/`.p12`/`.pfx`/`.jks`/`.keystore`/`.ppk`/`.asc`/`.gpg`) **and** conventional SSH filenames (`id_rsa`/`id_ed25519`/…/`authorized_keys`/`known_hosts`), then classified by content: **X.509 certificates** (parsed with Node's built-in `crypto.X509Certificate` — flagged `expired`, `expiring` within `--cert-expiry-days` (default 90), `weak key` RSA<2048 / weak EC curve, `weak signature` MD5/SHA1, `self-signed`); **keys** — every one labelled **private** (a committed secret → *critical*) or **public** (*low*, inventory) — covering PEM (PKCS#1/PKCS#8/SEC1), **OpenSSH of every algorithm** (RSA/DSA/ECDSA/Ed25519 incl. FIDO `-sk`), PuTTY `.ppk`, PGP, and one-line SSH public keys; and **keystores** (JKS/JCEKS by magic, PKCS#12 by extension — contents not decrypted, hashed + flagged *medium*). **100% offline** — no network, no decryption. On by default; `--no-certs` disables it, `--cert-expiry-days <n>` sets the expiry window. (Inventory only — these findings don't affect the `--fail-on` gate.)
+
+> **PHP runtime**: for every Composer project the declared PHP constraint is read (`composer.lock` `platform-overrides.php` › `composer.json` `config.platform.php` › `composer.lock` `platform.php` › `composer.json` `require.php`). A finding is emitted **only** when the constraint proves an end-of-life runtime — an exact pin, or a bounded range such as `^7.4` (= `<8.0`) whose newest allowed PHP is EOL. An open constraint (`>=7.2.5`) proves nothing about the deployed runtime and produces a chapter-0 `php-runtime-undetermined` note instead. Symfony/Laravel components are reported as **one row per framework** (the anchor package + a component count), never one row per component.
 
 > **npm without a lockfile**: a `package.json` lacking a sibling
 > `package-lock.json`/`yarn.lock` is now scanned **best-effort** — pinned exact
@@ -122,6 +125,7 @@ Each data source can be disabled independently:
 | `--no-binaries` | Skip scanning committed native binaries (`.dll`/`.exe`/`.so`/`.dylib`) — no checksum identity/integrity (chapter 1C) |
 | `--no-certs` | Skip the certificate / key-material scan (chapter 2.4) — committed certs, private/public keys and keystores |
 | `--cert-expiry-days <n>` | Window for the certificate **expiring-soon** warning (default `90`) |
+| `--eol-support` | Also report frameworks/runtimes whose **active (bug-fix) support has ended** while security fixes are still provided (endoflife.date `support` field) — rendered as an "Out of active support" band under chapter 3.1, status `unsupported` in the JSON. Off by default: the default EOL set is unchanged. |
 | `--ignore-test` | Drop test-scoped Maven deps and dev npm deps from the scan entirely (chapter 2 will be empty) |
 
 ## Outputs
@@ -134,7 +138,7 @@ Every output has its own `--report-<type>` flag, each taking an **optional** pat
 | `--report-doc [file]` | `cve-report.doc` | The same report as a Word-compatible `.doc`. |
 | `--report-sbom [file]` | `sbom.cdx.json` | A **CycloneDX 1.6** SBOM with `vulnerabilities` inline (a VDR). Components carry purls + detected licenses (+ `fad:provenance`/`fad:location` for embedded-jar coords); vulnerabilities carry CVSS ratings, CWEs, affected purls, and `fad:epss` / `fad:kev` / `fad:priorityBand` properties. |
 | `--report-csaf [file]` | `csaf-vex.json` | A **CSAF 2.0 VEX** (`csaf_vex`) document: a `product_tree` of every dep (purl-identified) plus per-CVE `product_status.known_affected`, `cvss_v3` scores, a KEV `exploited` flag, and prioritization notes. |
-| `--report-json [file]` | `findings.json` | A flat **findings JSON** (fad's own format): every chapter (CVE/EOL/obsolete/outdated/licenses/vendored) + an `unmanaged` array (native-binary inventory with identity/integrity/signals), an `embedded` array (every JAR/WAR/EAR coordinate, vuln or not, with `vulnCount`/`maxSeverity`), EOL entries carrying their `productSlug`/`via`/`viaKey` origin, + a summary, easy to diff between audits and post-process. |
+| `--report-json [file]` | `findings.json` | A flat **findings JSON** (fad's own format): every chapter (CVE/EOL/obsolete/outdated/licenses/vendored) + an `unmanaged` array (native-binary inventory with identity/integrity/signals), an `embedded` array (every JAR/WAR/EAR coordinate, vuln or not, with `vulnCount`/`maxSeverity`), EOL entries carrying their `productSlug`/`via`/`viaKey` origin + `status`/`cycle`/`support` and, for grouped frameworks, `anchor`/`components[]`, + a summary, easy to diff between audits and post-process. |
 | `--report-sarif [file]` | `fad.sarif` | A **SARIF 2.1.0** log for GitHub Code Scanning / GitLab: one rule per CVE with `security-severity` (drives GitHub's severity), KEV tags, and the manifest (or embedding jar) as the result location. |
 | `--report-output <dir>` | `./fad-checker-report` | Base directory for any output left at its default name. |
 
