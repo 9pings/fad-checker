@@ -121,9 +121,14 @@ test("findEolProduct reports the matched rule + key (origin traceability)", () =
 	assert.equal(webjar.via, "webjar");
 	assert.equal(webjar.viaKey, "angularjs");
 
-	const composer = findEolProduct({ ecosystem: "composer", namespace: "laravel", name: "framework" });
+	// laravel/framework is a framework COMPONENT (generated list) → the framework rule wins;
+	// drupal/core is only in the hand-curated by_composer_name table.
+	const composerFw = findEolProduct({ ecosystem: "composer", namespace: "laravel", name: "framework" });
+	assert.equal(composerFw.via, "composer-framework");
+	assert.equal(composerFw.viaKey, "laravel/framework");
+	const composer = findEolProduct({ ecosystem: "composer", namespace: "drupal", name: "core" });
 	assert.equal(composer.via, "composer-name");
-	assert.equal(composer.viaKey, "laravel/framework");
+	assert.equal(composer.viaKey, "drupal/core");
 
 	// Returned object must be a COPY — never mutate the shared EOL_MAPPING entry.
 	const { EOL_MAPPING } = require("../lib/outdated");

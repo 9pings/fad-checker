@@ -1,0 +1,36 @@
+{
+  "symfony": {
+    "product": "symfony",
+    "label": "Symfony",
+    "anchors": ["symfony/framework-bundle", "symfony/symfony", "symfony/http-kernel", "symfony/console"],
+    "components": [
+      "symfony/amazon-mailer", "symfony/asset", "symfony/asset-mapper", "symfony/browser-kit", "symfony/cache", "symfony/clock",
+      "symfony/config", "symfony/console", "symfony/css-selector", "symfony/debug", "symfony/debug-bundle", "symfony/dependency-injection",
+      "symfony/doctrine-bridge", "symfony/dom-crawler", "symfony/dotenv", "symfony/emoji", "symfony/error-handler", "symfony/event-dispatcher",
+      "symfony/expression-language", "symfony/filesystem", "symfony/finder", "symfony/form", "symfony/framework-bundle", "symfony/google-mailer",
+      "symfony/http-client", "symfony/http-foundation", "symfony/http-kernel", "symfony/inflector", "symfony/intl", "symfony/ldap",
+      "symfony/lock", "symfony/mailchimp-mailer", "symfony/mailer", "symfony/mailgun-mailer", "symfony/messenger", "symfony/mime",
+      "symfony/monolog-bridge", "symfony/notifier", "symfony/options-resolver", "symfony/password-hasher", "symfony/postmark-mailer", "symfony/process",
+      "symfony/property-access", "symfony/property-info", "symfony/proxy-manager-bridge", "symfony/rate-limiter", "symfony/remote-event", "symfony/routing",
+      "symfony/scheduler", "symfony/security", "symfony/security-bundle", "symfony/security-core", "symfony/security-csrf", "symfony/security-guard",
+      "symfony/security-http", "symfony/semaphore", "symfony/sendgrid-mailer", "symfony/serializer", "symfony/stopwatch", "symfony/string",
+      "symfony/symfony", "symfony/templating", "symfony/translation", "symfony/twig-bridge", "symfony/twig-bundle", "symfony/type-info",
+      "symfony/uid", "symfony/validator", "symfony/var-dumper", "symfony/var-exporter", "symfony/web-link", "symfony/web-profiler-bundle",
+      "symfony/web-server-bundle", "symfony/webhook", "symfony/workflow", "symfony/yaml"
+    ]
+  },
+  "laravel": {
+    "product": "laravel",
+    "label": "Laravel",
+    "anchors": ["laravel/framework", "illuminate/support"],
+    "components": [
+      "illuminate/auth", "illuminate/broadcasting", "illuminate/bus", "illuminate/cache", "illuminate/collections", "illuminate/concurrency",
+      "illuminate/conditionable", "illuminate/config", "illuminate/console", "illuminate/container", "illuminate/contracts", "illuminate/cookie",
+      "illuminate/database", "illuminate/encryption", "illuminate/events", "illuminate/filesystem", "illuminate/hashing", "illuminate/http",
+      "illuminate/json-schema", "illuminate/log", "illuminate/macroable", "illuminate/mail", "illuminate/notifications", "illuminate/pagination",
+      "illuminate/pipeline", "illuminate/process", "illuminate/queue", "illuminate/redis", "illuminate/reflection", "illuminate/routing",
+      "illuminate/session", "illuminate/support", "illuminate/testing", "illuminate/translation", "illuminate/validation", "illuminate/view",
+      "laravel/framework"
+    ]
+  }
+}
