@@ -88,3 +88,83 @@ test("checkEolDeps: a supported cycle is never a finding", async () => {
 	const r = await checkEolDeps(resolved, { cycles: { symfony: SYMFONY }, now: NOW, eolSupport: true });
 	assert.deepEqual(r, []);
 });
+
+test("grouping: framework components in one manifest at one cycle → ONE finding with anchor + components", async () => {
+	const L = "/proj/composer.lock";
+	const resolved = new Map();
+	for (const [n, v] of [["yaml", "5.4.45"], ["framework-bundle", "5.4.45"], ["console", "5.4.47"], ["http-kernel", "5.4.51"]]) {
+		resolved.set(`composer:symfony/${n}`, dep("symfony", n, v, L));
+	}
+	const r = await checkEolDeps(resolved, { cycles: { symfony: SYMFONY }, now: NOW, eolSupport: true });
+	assert.equal(r.length, 1);
+	assert.equal(r[0].anchor, "symfony/framework-bundle", "first declared anchor present wins");
+	assert.equal(r[0].dep.name, "framework-bundle");
+	assert.equal(r[0].dep.version, "5.4.45");
+	assert.deepEqual(r[0].dep.manifestPaths, [L]);
+	assert.equal(r[0].dep.pomPaths, r[0].dep.manifestPaths, "pomPaths must be the SAME array object");
+	assert.equal(r[0].status, "unsupported");
+	assert.equal(r[0].cycle, "5.4");
+	assert.deepEqual(r[0].components, [
+		{ name: "symfony/console", version: "5.4.47" },
+		{ name: "symfony/framework-bundle", version: "5.4.45" },
+		{ name: "symfony/http-kernel", version: "5.4.51" },
+		{ name: "symfony/yaml", version: "5.4.45" },
+	]);
+});
+
+test("grouping: two cycles in one manifest → two findings, never one merged", async () => {
+	const L = "/proj/composer.lock";
+	const resolved = new Map([
+		["composer:symfony/yaml", dep("symfony", "yaml", "3.4.49", L)],
+		["composer:symfony/framework-bundle", dep("symfony", "framework-bundle", "5.4.45", L)],
+	]);
+	const r = await checkEolDeps(resolved, { cycles: { symfony: SYMFONY }, now: NOW, eolSupport: true });
+	assert.equal(r.length, 2);
+	const byCycle = Object.fromEntries(r.map(f => [f.cycle, f]));
+	assert.equal(byCycle["3.4"].status, "eol");
+	assert.equal(byCycle["3.4"].anchor, "symfony/yaml");
+	assert.equal(byCycle["5.4"].status, "unsupported");
+	assert.equal(byCycle["5.4"].anchor, "symfony/framework-bundle");
+});
+
+test("grouping: no declared anchor present → the first component (sorted) is the anchor", async () => {
+	const resolved = new Map([
+		["composer:symfony/yaml", dep("symfony", "yaml", "5.4.45")],
+		["composer:symfony/validator", dep("symfony", "validator", "5.4.48")],
+	]);
+	const r = await checkEolDeps(resolved, { cycles: { symfony: SYMFONY }, now: NOW, eolSupport: true });
+	assert.equal(r.length, 1);
+	assert.equal(r[0].anchor, "symfony/validator");
+	assert.equal(r[0].components.length, 2);
+});
+
+test("grouping: the same framework in two manifests → one finding per manifest", async () => {
+	const A = "/mono/app-a/composer.lock", B = "/mono/app-b/composer.lock";
+	const resolved = new Map([
+		["composer:symfony/console", dep("symfony", "console", "5.4.47", A)],
+		["composer:symfony/yaml", dep("symfony", "yaml", "5.4.45", B)],
+	]);
+	const r = await checkEolDeps(resolved, { cycles: { symfony: SYMFONY }, now: NOW, eolSupport: true });
+	assert.equal(r.length, 2);
+	assert.deepEqual(r.map(f => f.dep.manifestPaths[0]).sort(), [A, B]);
+});
+
+test("grouping never mutates the shared dep record", async () => {
+	const d = dep("symfony", "console", "5.4.47", "/a/composer.lock");
+	d.manifestPaths.push("/b/composer.lock");   // a coord-wide record seen in two lockfiles
+	const before = JSON.stringify(d);
+	const resolved = new Map([["composer:symfony/console", d]]);
+	const r = await checkEolDeps(resolved, { cycles: { symfony: SYMFONY }, now: NOW, eolSupport: true });
+	assert.equal(r.length, 2, "one finding per manifest the record was seen in");
+	assert.equal(JSON.stringify(d), before, "shared record untouched");
+});
+
+test("non-framework EOL findings are untouched by grouping (no anchor / components fields)", async () => {
+	const hib = makeDepRecord({ ecosystem: "maven", namespace: "org.hibernate", name: "hibernate-core", version: "5.6.15.Final", manifestPath: "/p/pom.xml" });
+	const HIBERNATE = [{ cycle: "5.6", eol: "2023-12-31", support: "2023-12-31", latest: "5.6.15.Final" }];
+	const r = await checkEolDeps(new Map([[hib.coordKey, hib]]), { cycles: { hibernate: HIBERNATE }, now: NOW });
+	assert.equal(r.length, 1);
+	assert.equal(r[0].anchor, undefined);
+	assert.equal(r[0].components, undefined);
+	assert.equal(r[0].dep, hib, "the original record is passed through");
+});
