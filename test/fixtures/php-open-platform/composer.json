@@ -1,0 +1,4 @@
+{
+  "name": "acme/modern-app",
+  "require": { "php": ">=7.2.5", "symfony/console": "5.4.*" }
+}

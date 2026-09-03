@@ -1,0 +1,14 @@
+{
+  "name": "acme/legacy-app",
+  "require": {
+    "php": "^7.4",
+    "symfony/framework-bundle": "5.4.*",
+    "symfony/security-bundle": "5.4.*",
+    "symfony/console": "5.4.*",
+    "symfony/monolog-bundle": "^3.10",
+    "doctrine/annotations": "^1.14"
+  },
+  "require-dev": {
+    "symfony/phpunit-bridge": "^6.4"
+  }
+}
