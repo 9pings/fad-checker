@@ -112,3 +112,25 @@ test("buildFindings includes the embedded inventory (coords with and without CVE
 	assert.ok(doc.embedded.some(e => e.artifactId === "guava" && e.vulnCount === 0));
 	assert.ok(doc.embedded.some(e => e.artifactId === "log4j-core" && e.vulnCount === 1));
 });
+
+test("eol entries carry status / cycle / support / anchor / components; summary splits unsupported", () => {
+	const sf = makeDepRecord({ ecosystem: "composer", namespace: "symfony", name: "framework-bundle", version: "5.4.45", manifestPath: "/proj/composer.lock" });
+	const doc = buildFindings({
+		eolResults: [
+			{ product: "Symfony", productSlug: "symfony", via: "composer-framework", viaKey: "symfony/framework-bundle", cycle: "5.4", status: "unsupported", eol: "2029-02-28", support: "2024-11-30", anchor: "symfony/framework-bundle", components: [{ name: "symfony/framework-bundle", version: "5.4.45" }, { name: "symfony/yaml", version: "5.4.45" }], dep: sf },
+			{ product: "log4j", eol: true, dep: sf },   // legacy shape: no status → "eol"
+		],
+		resolvedDeps: new Map(), projectInfo: { name: "demo", src: "/proj", generatedAt: "2026-09-02T00:00:00Z" },
+	});
+	assert.equal(doc.summary.eol, 2);
+	assert.equal(doc.summary.unsupported, 1);
+	assert.equal(doc.eol[0].status, "unsupported");
+	assert.equal(doc.eol[0].cycle, "5.4");
+	assert.equal(doc.eol[0].support, "2024-11-30");
+	assert.equal(doc.eol[0].anchor, "symfony/framework-bundle");
+	assert.deepEqual(doc.eol[0].components.map(c => c.name), ["symfony/framework-bundle", "symfony/yaml"]);
+	assert.equal(doc.eol[1].status, "eol");
+	assert.equal(doc.eol[1].cycle, null);
+	assert.equal(doc.eol[1].anchor, null);
+	assert.equal(doc.eol[1].components, null);
+});

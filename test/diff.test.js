@@ -64,3 +64,16 @@ test("diffFindings tolerates a baseline document missing a category", () => {
 	assert.strictEqual(d.cve.unchanged.length, 1);
 	assert.strictEqual(d.eol.added.length, 0);
 });
+
+const { eolKey } = require("../lib/diff");
+
+test("eol identity includes status: unsupported → eol on the same dep is a CHANGE, legacy docs default to eol", () => {
+	const dep = { ecosystem: "composer", coord: "symfony/framework-bundle", version: "5.4.45" };
+	const base = doc([], { eol: [{ product: "Symfony", status: "unsupported", dep }] });
+	const cur = doc([], { eol: [{ product: "Symfony", status: "eol", dep }] });
+	const d = diffFindings(base, cur);
+	assert.strictEqual(d.eol.added.length, 1);
+	assert.strictEqual(d.eol.removed.length, 1);
+	assert.strictEqual(d.eol.unchanged.length, 0);
+	assert.strictEqual(eolKey({ dep }), eolKey({ status: "eol", dep }), "a pre-status baseline entry equals a status:eol entry");
+});
