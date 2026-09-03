@@ -17,13 +17,16 @@ const outdated = require("../lib/outdated");
 const { findEolProduct, findCycleForVersion, isEol, checkEolDeps, EOL_MAPPING, EOL_CACHE_PATH } = outdated;
 
 const CACHE_DIR = path.join(os.homedir(), ".fad-checker");
-function withSeededCache(file, data, fn) {
+// Seeds a REAL cache file under ~/.fad-checker for the duration of `fn`, then restores the
+// user's file. `fn` is async (checkEolDeps saves the cache at its END), so it MUST be awaited
+// here — restoring before it finishes lets its final save overwrite the user's real cache.
+async function withSeededCache(file, data, fn) {
 	const had = fs.existsSync(file);
 	const backup = had ? fs.readFileSync(file) : null;
 	try {
 		fs.mkdirSync(path.dirname(file), { recursive: true });
 		fs.writeFileSync(file, JSON.stringify(data));
-		return fn();
+		return await fn();
 	} finally {
 		if (had) fs.writeFileSync(file, backup); else { try { fs.unlinkSync(file); } catch { /* ignore */ } }
 	}
