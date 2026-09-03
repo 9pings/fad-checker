@@ -304,6 +304,7 @@ program
 	.option("--no-jars", "skip scanning embedded .jar/.war/.ear binaries for Maven coordinates")
 	.option("--no-certs", "skip scanning committed certificates, private/public keys (PEM/SSH/PuTTY/PGP) and keystores")
 	.option("--cert-expiry-days <n>", "warn on certificates expiring within N days", "90")
+	.option("--eol-support", "also report frameworks/runtimes whose active (bug-fix) support has ended but still receive security fixes (status: unsupported)")
 	.option("--no-js", "alias: skip JS/npm/yarn manifests even if present (Maven-only)")
 	.option("--repo <eco=url...>", "extra registry as <ecosystem>=<url> (e.g. npm=https://npm.acme/) tried before the public one. Repeatable. Supports https://user:pass@host/.")
 	.option("--add-repo <eco>", "persist a registry: --add-repo <ecosystem> <name> <url> [--auth user:pass] [--token TOK]")
@@ -586,6 +587,7 @@ async function timedPhase(label, fn) {
 	const resolved = new Map();
 	let mavenCtx = null;
 	let gradleCtx = null;
+	let composerCtx = null;
 	const collectWarnings = [];
 	// Every descriptor file each codec actually parsed (tagged with its ecosystemType =
 	// codec id), so the report's "Scanned dependency descriptors" appendix is a COMPLETE
@@ -607,6 +609,7 @@ async function timedPhase(label, fn) {
 		for (const p of (res.parsedManifests || [])) parsedManifests.push({ path: p, ecosystemType: id });
 		if (id === "maven") mavenCtx = res._maven;
 		if (id === "gradle") gradleCtx = res._gradle;
+		if (id === "composer") composerCtx = res._composer;
 	}
 
 	// --- Collection summary ---
@@ -803,7 +806,7 @@ async function timedPhase(label, fn) {
 	// The scan always runs — it feeds the terminal summary, the file outputs and the
 	// CI gate. Which files get written is decided by the --report-* family inside
 	// (HTML + .doc by default; --no-report writes nothing).
-	await runReportFlow(resolved, { activeIds, runMaven, runGradle, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings, mavenPropsByPom: mavenCtx?.propsByPom, mavenStore: mavenCtx?.store, gradlePlatformBoms: gradleCtx?.platformBoms || [], parsedManifests, walkOpts });
+	await runReportFlow(resolved, { activeIds, runMaven, runGradle, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings, mavenPropsByPom: mavenCtx?.propsByPom, mavenStore: mavenCtx?.store, gradlePlatformBoms: gradleCtx?.platformBoms || [], parsedManifests, composerPlatforms: composerCtx?.platforms || [], walkOpts });
 	if (!readOnly) {
 		ui.section("Next step");
 		ui.info(`run Snyk on the cleaned tree:`);
@@ -812,7 +815,7 @@ async function timedPhase(label, fn) {
 })();
 
 async function runReportFlow(resolved, ecoFlags = {}) {
-	const { activeIds = [], runMaven = true, runGradle = false, runNpm = false, privateLibIds = [], mavenRepos = [], regMap = {}, collectWarnings = [], mavenPropsByPom = null, mavenStore = null, gradlePlatformBoms = [], parsedManifests = [], walkOpts = {} } = ecoFlags;
+	const { activeIds = [], runMaven = true, runGradle = false, runNpm = false, privateLibIds = [], mavenRepos = [], regMap = {}, collectWarnings = [], mavenPropsByPom = null, mavenStore = null, gradlePlatformBoms = [], parsedManifests = [], composerPlatforms = [], walkOpts = {} } = ecoFlags;
 	const { excludePath = [], defaultExcludes = true } = walkOpts;
 	const registriesFor = eco => regMap[eco] || [];
 	const { expandWithTransitives } = require("./lib/cve-match");
@@ -982,12 +985,33 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		} catch (err) { st.fail(err.message); }
 	}
 
-	// 2. EOL frameworks (endoflife.date) — always a step.
+	// 2. EOL frameworks (endoflife.date) — always a step. --eol-support adds the band
+	// "active support ended, security fixes still provided" (status: unsupported).
+	const eolSummaryLabel = list => {
+		const u = list.filter(e => e.status === "unsupported").length;
+		return `${list.length - u} EOL${u ? `, ${u} out of support` : ""}`;
+	};
 	let eolResults = [];
 	{
 		const st = progress.start("EOL frameworks (endoflife.date)");
-		try { eolResults = await outdated.checkEolDeps(resolved, { verbose, offline }); st.done(`${eolResults.length} EOL`); }
-		catch (err) { st.fail(err.message); }
+		try {
+			eolResults = await outdated.checkEolDeps(resolved, { verbose, offline, eolSupport: !!options.eolSupport });
+			st.done(eolSummaryLabel(eolResults));
+		} catch (err) { st.fail(err.message); }
+	}
+
+	// 2b. PHP runtime — the Composer platform constraint against endoflife.date/php.
+	// A FINDING, never a dependency: it does not enter `resolved` (no CVE/OSV/SBOM/purl).
+	if (composerPlatforms.length) {
+		const { evaluatePhpRuntime } = require("./lib/codecs/composer/platform");
+		const st = progress.start("PHP runtime (endoflife.date/php)");
+		try {
+			const phpCycles = await outdated.getEolCycles("php", { offline });
+			const r = evaluatePhpRuntime(composerPlatforms, phpCycles, { eolSupport: !!options.eolSupport });
+			eolResults.push(...r.findings);
+			scanWarnings.push(...r.warnings);
+			st.done(r.findings.length ? eolSummaryLabel(r.findings) : (r.warnings.length ? "undetermined from manifests (see chapter 0)" : "supported"));
+		} catch (err) { st.fail(err.message); }
 	}
 
 	// License findings accumulate from each registry pass (same fetched metadata)
@@ -1297,7 +1321,8 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const stats = computeStats(prodActive);
 	const devStats = computeStats(devActive);
 	const sev = ui.sevColor;
-	const depLabel = d => d.ecosystem === "npm" ? `npm:${d.artifactId}` : `${d.groupId}:${d.artifactId}`;
+	// A vendor-less coord (the PHP runtime finding: namespace "" / name "php") has no group to show.
+	const depLabel = d => d.ecosystem === "npm" ? `npm:${d.artifactId}` : d.groupId ? `${d.groupId}:${d.artifactId}` : `${d.ecosystem}:${d.artifactId}`;
 	const coordOf = depLabel;   // npm deps show as "npm:name", others as "g:a"
 	// Where a finding's dependency was declared — the pom.xml / package.json / jar
 	// (embedded jars carry a "app.jar!/BOOT-INF/lib/…" manifestPath). Shown so EOL /
@@ -1367,7 +1392,8 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 
 	const eolDirectN = eolResults.filter(e => e.dep?.scope !== "transitive").length;
 	heading("EOL frameworks", eolResults.length, eolResults.length ? chalk.dim(`${eolDirectN} direct, ${eolResults.length - eolDirectN} transitive`) : "");
-	for (const e of eolResults.slice(0, 8)) console.log("    " + chalk.yellow(e.product.padEnd(18)) + " " + chalk.dim(`${coordOf(e.dep)}:${e.dep.version}`) + " " + chalk.dim(e.eol === true ? "EOL" : String(e.eol)) + definedInOf(e.dep));
+	const eolWhenText = e => e.status === "unsupported" ? `support ended ${e.support}` : (e.eol === true || e.eol === "true" ? "EOL" : `EOL ${e.eol}`);
+	for (const e of eolResults.slice(0, 8)) console.log("    " + chalk.yellow(e.product.padEnd(18)) + " " + chalk.dim(`${coordOf(e.dep)}:${e.dep.version}`) + " " + chalk.dim(eolWhenText(e)) + (e.components?.length > 1 ? chalk.dim(` (+${e.components.length - 1} components)`) : "") + definedInOf(e.dep));
 	if (eolResults.length > 8) console.log(chalk.dim(`    …and ${eolResults.length - 8} more`));
 
 	heading("Obsolete / deprecated", obsoleteResults.length);
