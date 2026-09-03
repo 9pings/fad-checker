@@ -56,3 +56,31 @@ test("findEolProduct: by_composer_name still serves non-framework entries (drupa
 	assert.equal(r.via, "composer-name");
 	assert.equal(r.frameworkId, undefined);
 });
+
+const { computeCoreComponents, FRAMEWORKS } = require("../scripts/gen-composer-eol-map");
+
+test("computeCoreComponents: last NON-EMPTY replace per major, unioned, monorepo included, lowercased + sorted", () => {
+	// Packagist p2 lists versions newest-first. v7.3.1 has no replace (the map is absent on
+	// some patch releases) → the rule must fall through to v7.2.9 for the 7.x majors we track.
+	const versions = [
+		{ version: "v7.3.1", replace: {} },
+		{ version: "v7.2.9", replace: { "symfony/asset": "self.version", "symfony/type-info": "self.version" } },
+		{ version: "v6.4.45", replace: { "symfony/asset": "self.version", "symfony/Templating": "self.version" } },
+		{ version: "v5.4.53", replace: { "symfony/asset": "self.version", "symfony/security-guard": "self.version", "symfony/not-core": "1.2.3" } },
+		{ version: "v5.4.0", replace: { "symfony/monolog-bundle": "self.version" } },   // older patch of the same major: ignored
+	];
+	const out = computeCoreComponents(versions, ["5.4", "6.4", "7.2"], "symfony/symfony");
+	assert.deepEqual(out, ["symfony/asset", "symfony/security-guard", "symfony/symfony", "symfony/templating", "symfony/type-info"]);
+});
+
+test("computeCoreComponents: a major with no version carrying replace contributes nothing (no crash)", () => {
+	const out = computeCoreComponents([{ version: "v8.0.1", replace: {} }], ["8.0"], "symfony/symfony");
+	assert.deepEqual(out, ["symfony/symfony"]);
+});
+
+test("generator config: every configured anchor is present in the committed data", () => {
+	for (const [id, fw] of Object.entries(FRAMEWORKS)) {
+		for (const a of fw.anchors) assert.ok(COMPOSER_FRAMEWORKS[id].components.includes(a), `${id}: anchor ${a}`);
+		assert.deepEqual(COMPOSER_FRAMEWORKS[id].anchors, fw.anchors, `${id}: anchors in data == anchors in generator config`);
+	}
+});
