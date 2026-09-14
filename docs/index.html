@@ -307,13 +307,13 @@
       <table>
         <thead><tr><th>Capability</th><th class="me">fad-checker</th><th>OSV-Scanner</th><th>Trivy</th><th>Grype+Syft</th><th>OWASP DC</th><th>Snyk OSS</th></tr></thead>
         <tbody>
-          <tr><th>Reads lockfiles without build</th><td class="f me yes">✓</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f warn">~Java</td><td class="f no">build</td></tr>
-          <tr><th>Best-effort without a lockfile</th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f warn">~</td><td class="f warn">~</td></tr>
+          <tr><th>Reads lockfiles without build</th><td class="f me yes">✓</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f warn">~Java</td><td class="f warn">~Maven/pip build</td></tr>
+          <tr><th>Best-effort without a lockfile</th><td class="f me yes">✓</td><td class="f warn">~</td><td class="f no">✗</td><td class="f no">✗</td><td class="f warn">~</td><td class="f warn">~</td></tr>
           <tr><th>EOL detection</th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f warn">~</td></tr>
-          <tr><th>Outdated / deprecated</th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f warn">~</td></tr>
-          <tr><th>EPSS / KEV prioritization</th><td class="f me yes">✓</td><td class="f warn">~</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f no">✗</td><td class="f yes">✓</td></tr>
-          <tr><th>License compliance</th><td class="f me yes">✓</td><td class="f warn">~</td><td class="f yes">✓</td><td class="f warn">~</td><td class="f no">✗</td><td class="f yes">✓</td></tr>
-          <tr><th>SBOM / VEX export</th><td class="f me yes">✓ CDX+CSAF</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f warn">~</td><td class="f yes">✓</td></tr>
+          <tr><th>Outdated / deprecated</th><td class="f me yes">✓</td><td class="f warn">~exp.</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f warn">~</td></tr>
+          <tr><th>EPSS / KEV prioritization</th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f yes">✓</td><td class="f warn">KEV</td><td class="f warn">~web</td></tr>
+          <tr><th>License compliance</th><td class="f me yes">✓</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f warn">~</td><td class="f warn">~</td><td class="f yes">✓ paid</td></tr>
+          <tr><th>SBOM / VEX export</th><td class="f me yes">✓ CDX+CSAF</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f warn">~</td><td class="f warn">✓ Enterprise</td></tr>
           <tr><th>HTML + Word report</th><td class="f me yes">✓</td><td class="f no">json</td><td class="f no">json</td><td class="f no">json</td><td class="f warn">html</td><td class="f no">cloud</td></tr>
           <tr><th>Air-gapped, code never exposed</th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td></tr>
           <tr><th>Containers / OS packages</th><td class="f me no">✗</td><td class="f warn">~</td><td class="f yes">✓</td><td class="f yes">✓</td><td class="f no">✗</td><td class="f yes">✓</td></tr>
@@ -321,7 +321,7 @@
       </table>
     </div>
     <p class="note reveal">² For <span class="mono">pom.xml</span>, transitives need Maven Central <b>once</b> — after that fad-checker resolves the graph from its cached POMs, which is what makes the air-gapped run work. Snyk needs a real build, Trivy needs the network or a populated <span class="mono">~/.m2</span>. Reach for Trivy or Grype+Syft for continuous CI, containers and SBOM pipelines.</p>
-    <p class="note reveal">³ EOL row is scoped to <b>application</b> frameworks and libraries. Trivy does compute an end-of-service-life status, but only for OS distributions. Snyk's package-health signal exists on its website, not in the CLI or CI output.</p>
+    <p class="note reveal">³ EOL row is scoped to <b>application</b> frameworks and libraries. Trivy does compute an end-of-service-life status, but only for OS distributions. Snyk's package-health signal exists on its website, not in the CLI or CI output. Cells re-verified against upstream docs on 2026-09-14 (OSV-Scanner 2.6.0, Trivy 0.74.0, Grype 0.118.0 + Syft 1.51.1, Dependency-Check 13.0.0, Snyk CLI 1.1307.2) — detail and sources in <a href="https://github.com/9pings/fad-checker/blob/main/docs/COMPARISON.md">COMPARISON.md</a>.</p>
   </section>
 
 
