@@ -109,3 +109,36 @@ test("fetchMavenMetadata hits the maven-metadata.xml path", async () => {
 	assert.ok(seen[0].endsWith("org/apache/logging/log4j/log4j-core/maven-metadata.xml"),
 		`unexpected URL: ${seen[0]}`);
 });
+
+// ---- fail-fast on an unreachable network (offline VM without --offline) ----
+// A HEAD against a blackholed route hangs until the OS TCP timeout; with 100+
+// existence probes that is minutes of silence. Every request carries an abort
+// signal bounded by opts.timeoutMs.
+test("tryRepos gives up on a hung request after timeoutMs", async () => {
+	let gotSignal = false;
+	const fetcher = (url, init) => {
+		// No abort signal = no way to interrupt a hung socket. Answer at once so the
+		// test fails on the assertion below instead of hanging the suite.
+		if (!init || !init.signal) return Promise.resolve({ ok: false, status: 599 });
+		gotSignal = true;
+		return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted"))));
+	};
+	const repos = buildRepoList([{ name: "blackhole", url: "https://10.255.255.1/" }]);
+	const t0 = Date.now();
+	const hit = await tryRepos(repos, "g/a/maven-metadata.xml", { fetcher, method: "HEAD", timeoutMs: 50 });
+	assert.equal(hit, null);
+	assert.ok(gotSignal, "every request must carry an AbortSignal bounded by timeoutMs");
+	assert.ok(Date.now() - t0 < 2000, "bounded by timeoutMs, not the OS TCP timeout");
+});
+
+test("reachableRepos keeps repos that answer ANY HTTP status and drops network errors/timeouts", async () => {
+	const { reachableRepos } = require("../lib/maven-repo");
+	const fetcher = (url, init) => {
+		if (url.startsWith("https://nexus.acme/")) return Promise.resolve({ ok: false, status: 401 });   // auth wall, but alive
+		if (url.startsWith("https://dead.acme/")) return Promise.reject(new Error("ENETUNREACH"));
+		return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted")))); // Central blackholed
+	};
+	const repos = buildRepoList([{ name: "nexus", url: "https://nexus.acme/" }, { name: "dead", url: "https://dead.acme/" }]);
+	const live = await reachableRepos(repos, { fetcher, timeoutMs: 50 });
+	assert.deepEqual(live.map(r => r.name), ["nexus"]);
+});

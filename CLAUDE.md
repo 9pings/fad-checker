@@ -30,7 +30,7 @@ npm test                  # 642 unit tests via node --test
 
 # basic cleanup workflow
 node fad-checker.js -s ./proj                                        # read-only, full report
-node fad-checker.js -s ./proj -t ../pom-clean -e "^client\\."        # write cleaned tree
+node fad-checker.js -s ./proj -t ../pom-clean -e "^client\\."        # extract only: write cleaned tree, no scan
 node fad-checker.js -s ./proj -t ../pom-clean -e "^client\\." --snyk # also drive snyk
 
 # read the full usage doc
@@ -46,7 +46,7 @@ npm run build         # both
 ```
 
 Guardrails enforced at startup:
-- `--target` is required only when you want a cleaned POM tree. Without it the run is read-only.
+- `--target` is required only when you want a cleaned POM tree — and `-t` is an **extraction step, not a scan**: after the cleaned tree + Maven POM analysis (missing parents, excluded libs, and the online *existence* check for private-lib classification — the only network call, skipped under `--offline` or when `reachableRepos()` finds no repo answering a 5 s HEAD preflight) the run **returns** (`extractOnly` in `fad-checker.js`). The scan + report join only when something consumes them: `--snyk`, any `--report-<type>`, `--fail-on`/`--fail-on-new`, `--baseline` (`scanRequested`). Locked by `test/extract-mode.test.js`. Without `-t` the run is read-only and produces the full report.
 - `--target` may not equal or be a subdirectory of `--src`.
 - `--target` is `rimraf`'d before being rewritten — never point at anything precious.
 

@@ -225,9 +225,9 @@ if (process.argv[2] === "diff") {
 const USAGE = `
 (1) fad-checker -s ./proj                                              # read-only: full report (CVE + EOL + obsolete + outdated + transitive)
 (2) fad-checker -s ./proj -e "^(org.private|client)"                   # same, with regex exclusion of private deps
-(3) fad-checker -s ./proj -t ../pom-clean -e "^(org.private|client)"   # write cleaned POMs + full report
+(3) fad-checker -s ./proj -t ../pom-clean -e "^(org.private|client)"   # EXTRACT: cleaned POM tree + mirrored manifests, no scan
 (4) fad-checker -s ./proj --no-transitive --no-all-libs                # faster, only direct deps, no Maven Central queries
-(5) fad-checker -s ./proj -t ../pom-clean -e "^..." --snyk             # also run snyk and merge findings
+(5) fad-checker -s ./proj -t ../pom-clean -e "^..." --snyk             # extract + scan + run snyk and merge findings
 `;
 
 program
@@ -235,7 +235,7 @@ program
 	.version(pkg.version)
 	.showHelpAfterError()
 	.usage(USAGE)
-	.option("-t, --target <target>", "output directory (will be rm before written). If omitted, the run is read-only.")
+	.option("-t, --target <target>", "EXTRACTION mode: write the cleaned POM tree + mirrored manifests to <target> (rm'd first) and stop — no vulnerability scan unless --snyk / --report-<type> / --fail-on / --baseline is also given. If omitted, the run is read-only and produces the full report.")
 	// Not a requiredOption: --import-anonymized scans a descriptor with no source tree.
 	.option("-s, --src <src>", "root directory containing pom.xml files")
 	.option("--source <src>", "alias of --src (also the JSON config key 'source')")
@@ -352,6 +352,13 @@ if (options.failOn) {
 }
 // Read-only when no target is given. No need for an explicit --test flag.
 const readOnly = !options.target;
+// -t is an EXTRACTION step (walk + link the reactor + cleaned tree + POM analysis),
+// not a scan. The vulnerability scan only joins the run when something explicitly
+// needs its output: a Snyk merge, a report file, or a CI gate.
+const scanRequested = !!(options.snyk || options.baseline || options.failOnNew
+	|| (options.failOn && options.failOn !== "none")
+	|| [options.reportHtml, options.reportDoc, options.reportSbom, options.reportCsaf, options.reportJson, options.reportSarif].some(v => v !== undefined));
+const extractOnly = !readOnly && !scanRequested;
 
 // --src is required for every mode except --import-anonymized (which scans a
 // descriptor and has no source tree).
@@ -749,8 +756,18 @@ async function timedPhase(label, fn) {
 		if (options.allLibs) {
 			const { loadJsonCache, saveJsonCache } = require("./lib/outdated");
 			const existsCache = loadJsonCache(MAVEN_EXISTS_CACHE_PATH);
+			// Preflight BEFORE touching the cache: one bounded HEAD per repo root. A box that
+			// is offline without --offline (DNS ok, route blackholed) otherwise sits through
+			// 100+ probes × the OS TCP timeout right after "no missing Maven parent POMs".
+			let probeRepos = mavenRepos;
+			if (!options.offline) {
+				const { reachableRepos } = require("./lib/maven-repo");
+				probeRepos = await reachableRepos(mavenRepos, { timeoutMs: 5000 });
+				if (!probeRepos.length) ui.warn(`no Maven repository reachable (${mavenRepos.map(r => r.name).join(", ")}) — existence check skipped, cache reused; pass --offline on an air-gapped box`);
+			}
+			const noNetwork = options.offline || !probeRepos.length;
 			const fresh = existsCache.meta?.fetchedAt && (Date.now() - existsCache.meta.fetchedAt) < MAVEN_EXISTS_MAX_AGE_MS;
-			if (!fresh && !options.offline) existsCache.entries = {};   // refresh stale probes when online
+			if (!fresh && !noNetwork) existsCache.entries = {};   // refresh stale probes when online
 			if (!existsCache.entries) existsCache.entries = {};
 
 			const anyMissingLibs = Object.keys(allPomMetadata.anyMissingById)
@@ -762,14 +779,14 @@ async function timedPhase(label, fn) {
 			const limit = pLimit(10);
 			const results = await Promise.all(anyMissingLibs.map(id => {
 				const [g, a] = id.split(":");
-				return limit(async () => ({ id, found: await checkMavenLibExist(g, a, mavenRepos, existsCache, { offline: options.offline }) }));
+				return limit(async () => ({ id, found: await checkMavenLibExist(g, a, probeRepos, existsCache, { offline: noNetwork }) }));
 			}));
 			let unknown = 0;
 			for (const r of results) {
 				if (r.found === false) privateLibIds.push(r.id);
 				else if (r.found === null) unknown++;
 			}
-			if (!options.offline) { existsCache.meta = { fetchedAt: Date.now() }; saveJsonCache(MAVEN_EXISTS_CACHE_PATH, existsCache); }
+			if (!noNetwork) { existsCache.meta = { fetchedAt: Date.now() }; saveJsonCache(MAVEN_EXISTS_CACHE_PATH, existsCache); }
 			if (privateLibIds.length) {
 				ui.warn(`${privateLibIds.length} lib(s) absent from Maven Central (likely private):`);
 				for (const id of privateLibIds.slice(0, 10)) ui.info(chalk.magenta(id));
@@ -800,6 +817,19 @@ async function timedPhase(label, fn) {
 
 	if (!readOnly && copiedManifests) {
 		ui.ok(`${chalk.bold(copiedManifests)} non-Maven lockfile/manifest(s) mirrored → ${chalk.white(options.target)} ${chalk.dim("(so snyk --all-projects scans every ecosystem)")}`);
+	}
+
+	// ---------- Extraction mode: -t without an explicit scan consumer stops here ----------
+	// The tree is written, the reactor is linked, the POM analysis (incl. the online
+	// existence check, when online) is printed. No CVE/EOL/outdated pass, no report.
+	if (extractOnly) {
+		ui.section("Extraction done");
+		ui.info(chalk.dim("-t is an extraction step: cleaned tree + POM analysis only, no vulnerability scan."));
+		ui.info(chalk.dim("for the fad-checker report: ") + chalk.white(`fad-checker -s ${options.src}`) + chalk.dim("  ·  or add --snyk / --report-<type> / --fail-on to this command"));
+		ui.section("Next step");
+		ui.info(`run Snyk on the cleaned tree:`);
+		console.log("    " + chalk.white(`cd ${options.target} && snyk test --json --all-projects | snyk-to-html -o ../snyk-deps-check.html`));
+		return;
 	}
 
 	// ---------- Scan flow (CVE / EOL / Obsolete) ----------

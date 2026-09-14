@@ -5,6 +5,26 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **`-t <dir>` is now an extraction step, not a scan.** It walks the tree, links the reactor
+  modules, writes the cleaned POM tree + mirrored manifests, prints the Maven POM analysis
+  (missing parents / private libs) and **stops**. Before, every `-t` run also went through the
+  full CVE/EOL/outdated pass and wrote a report nobody asked for — minutes of "hang" on a
+  large reactor, offline or not, for a step whose only job is to produce a tree for Snyk. The
+  scan still runs when something explicitly consumes it: `--snyk`, any `--report-<type>`,
+  `--fail-on` / `--fail-on-new`, `--baseline`. A read-only run (no `-t`) is unchanged.
+
+### Fixed
+- **Existence check hung on an offline box that was not told `--offline`.** The private-lib
+  classification HEADs `maven-metadata.xml` for every non-local coord (100+ on a real
+  reactor) with no request timeout, so a blackholed route (DNS fine, no egress — the usual
+  audit VM) sat through the OS TCP timeout per probe, right after
+  `✓ no missing Maven parent POMs`, with nothing on screen. Every Maven-repo request now
+  carries a 20 s abort deadline, and the probe fan-out is preceded by **one bounded 5 s
+  preflight per repository** (`reachableRepos`): when none answers the check is skipped
+  with a visible warning, the cache is reused as-is (never wiped or restamped), and the run
+  goes on.
+
 ### Security
 - **Dependency refresh: 7 advisories to 0, all of them already permitted by the declared
   ranges.** `package.json` allowed every fix; only `package-lock.json` was stale, so a plain

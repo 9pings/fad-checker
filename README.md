@@ -45,7 +45,8 @@ A free [NVD API key](https://nvd.nist.gov/developers/request-an-api-key) (instan
 
 ```bash
 fad-checker -s ./proj -e "^com\.acme\."                        # exclude private libs (coord regex)
-fad-checker -s ./proj -t ../clean -e "^com\.acme\." --snyk     # cleaned POM tree + merge Snyk
+fad-checker -s ./proj -t ../clean -e "^com\.acme\."            # extract only: cleaned POM tree + manifests, no scan
+fad-checker -s ./proj -t ../clean -e "^com\.acme\." --snyk     # extract + scan + merge Snyk
 fad-checker -s ./proj --offline                                # fully offline (zero network, needs a warmed cache)
 fad-checker -s ./proj --osv-db --typosquat                     # offline-complete OSV + typosquat
 fad-checker -s ./proj --licenses --fail-on high                # license chapter + CI gate
