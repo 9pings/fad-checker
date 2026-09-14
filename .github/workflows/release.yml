@@ -25,23 +25,27 @@ jobs:
       release: ${{ steps.v.outputs.release }}
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }        # tags are the state we compare against
+      # The state we compare against is the RELEASE, not the tag: a tag pushed by hand (or
+      # left behind by a failed run) without a release must not turn every later push into
+      # "nothing to release" — that is exactly what silently swallowed v2.4.8.
       - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
-            echo "v$VERSION is already tagged — nothing to release."
+          if gh release view "v$VERSION" --json tagName >/dev/null 2>&1; then
+            echo "v$VERSION is already released — nothing to do."
             echo "release=false" >> "$GITHUB_OUTPUT"
           else
-            echo "v$VERSION has no tag yet — releasing."
+            echo "v$VERSION has no release yet — releasing."
             echo "release=true" >> "$GITHUB_OUTPUT"
           fi
 
   release:
     needs: guard
     if: needs.guard.outputs.release == 'true'
-    name: build & publish v${{ needs.guard.outputs.version }}
+    name: build & publish
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.guard.outputs.version }}
@@ -118,6 +122,23 @@ jobs:
           '
           head -20 RELEASE_NOTES.md
 
+      # The tag must point at the commit the binaries were built from. Normally there is
+      # no tag yet and `gh release create` makes it at HEAD; a stray pre-existing tag
+      # (pushed by hand, or from a run that died before publishing) is moved here so the
+      # published assets, notes and tag never disagree.
+      - name: align the tag with this commit
+        run: |
+          set -eu
+          TAG="v${VERSION}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            REMOTE=$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)
+            [ -n "$REMOTE" ] || REMOTE=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
+            if [ "$REMOTE" != "$GITHUB_SHA" ]; then
+              echo "$TAG exists at ${REMOTE:0:7}, moving it to ${GITHUB_SHA:0:7} (the released commit)"
+              git push --force origin "$GITHUB_SHA:refs/tags/$TAG"
+            fi
+          fi
+
       # gh is preinstalled on the runner — no third-party action in the release path of a
       # security tool.
       - name: create release
@@ -127,4 +148,5 @@ jobs:
           gh release create "v${VERSION}" dist/* \
             --title "v${VERSION}" \
             --notes-file RELEASE_NOTES.md \
+            --target "$GITHUB_SHA" \
             --verify-tag=false
