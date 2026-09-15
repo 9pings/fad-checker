@@ -115,7 +115,7 @@ fad-checker --import-anonymized deps.json     # scans coordinates → OSV/NVD/CV
 fad-checker --export-cache fad-cache.tar.gz   # bundle the warmed ~/.fad-checker/
 
 # ── Phase 3; OFFLINE (audited machine): full report, all local context ──
-fad-checker --import-cache fad-cache.tar.gz
+fad-checker --import-cache fad-cache.tar.gz   # merged into the enclave's own cache
 fad-checker -s ./proj --offline               # re-collect locally (real paths) + cache hits
 #   → full HTML/.doc report with manifests & structure, generated inside the enclave.
 ```

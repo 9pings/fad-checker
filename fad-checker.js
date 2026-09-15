@@ -168,8 +168,16 @@ if (process.argv.includes("--export-cache") || process.argv.includes("--import-c
 					process.exit(1);
 				}
 				const force = process.argv.includes("--force");
-				const { dir } = await importCache(src, { verbose, force });
-				console.log(chalk.green(`✅ Cache imported → ${dir}`));
+				const replace = process.argv.includes("--replace");
+				const { dir, mode, stats } = await importCache(src, { verbose, force, replace });
+				if (mode === "merge") {
+					console.log(chalk.green(`✅ Cache merged → ${dir}`));
+					console.log(chalk.gray(`   ${stats.added} new, ${stats.updated} refreshed, ${stats.merged} merged key-by-key, ${stats.kept} kept (local copy was fresher)`));
+					if (stats.skipped.length) console.log(chalk.gray(`   Left untouched (machine-local): ${stats.skipped.join(", ")}`));
+				} else {
+					console.log(chalk.green(`✅ Cache imported → ${dir}`));
+					console.log(chalk.gray(`   --replace: previous cache ${force ? "removed" : "moved to ~/.fad-checker.bak-<timestamp>"}`));
+				}
 			}
 			process.exit(0);
 		} catch (err) {
@@ -273,11 +281,12 @@ program
 	.option("--set-nvd-key <key>", "save NVD API key to ~/.fad-checker/config.json (10× faster NVD enrichment)")
 	.option("--show-config", "print the persisted ~/.fad-checker/config.json")
 	.option("--export-cache <file>", "tar.gz/zip the ~/.fad-checker/ caches to <file> (excludes config.json by default)")
-	.option("--import-cache <file>", "restore ~/.fad-checker/ from a previously exported archive (existing dir is moved to .bak unless --force)")
+	.option("--import-cache <file>", "merge a previously exported archive into ~/.fad-checker/ (keeps the local cache + config.json; newest entry wins)")
+	.option("--replace", "with --import-cache: replace ~/.fad-checker/ wholesale instead of merging (previous dir kept as .bak unless --force)")
 	.option("--include-config", "with --export-cache: also bundle config.json (contains the NVD API key)")
 	.option("--export-anonymized <file>", "offline: write an anonymized dependency descriptor (public coordinates only, no paths/URLs) for air-gapped audits, then exit")
 	.option("--import-anonymized <file>", "online: scan an anonymized descriptor (no --src) to warm the caches; pair with --export-cache for offline reporting")
-	.option("--force", "with --import-cache: replace ~/.fad-checker/ without backup")
+	.option("--force", "with --import-cache --replace: replace ~/.fad-checker/ without keeping a backup")
 	.option("--report-output <dir>", "report output directory", "./fad-checker-report")
 	.option("--ignore-test", "skip test-scoped dependencies in report")
 	.option("--cve-refresh", "force re-download of CVE database")

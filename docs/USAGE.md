@@ -251,13 +251,25 @@ fad-checker -s . --osv-db --osv-db-refresh       # force re-download of the OSV 
 # Cache export / import (useful for air-gapped boxes)
 fad-checker --export-cache fad-cache.tar.gz
 fad-checker --export-cache fad-cache.tar.gz --include-config   # bundle NVD key too
-fad-checker --import-cache fad-cache.tar.gz
-fad-checker --import-cache fad-cache.tar.gz --force            # replace existing without backup
+fad-checker --import-cache fad-cache.tar.gz                    # merge into the existing cache
+fad-checker --import-cache fad-cache.tar.gz --replace           # wholesale swap, previous kept as .bak
+fad-checker --import-cache fad-cache.tar.gz --replace --force   # wholesale swap, no backup
 ```
 
 The cache archive bundles everything under `~/.fad-checker/` (except `config.json`),
 including retire.js findings **and** the warmed retire.js signature DB, so an importing
 machine can scan vendored JavaScript fully offline.
+
+**Import merges, it doesn't overwrite.** An enclave is usually already warm from earlier
+air-gapped runs, so `--import-cache` unions the archive with what's there rather than
+swapping it in: per-key caches (OSV/NVD/POM/retire entries) merge file by file, the
+`entries{}` maps (versions, registry answers, EOL, EPSS, …) merge key by key with the
+fresher value winning, and whole-corpus snapshots (KEV, the `cve-data/` index) take the
+freshest side as a block — so importing a *stale* archive can't roll a fresher enclave
+back. `config.json` is never touched: it holds the machine's own NVD key and private
+registry credentials, and `--export-cache` doesn't bundle it, so an import could only
+ever lose it. Pass `--replace` for the old wholesale swap (previous cache kept as
+`~/.fad-checker.bak-<timestamp>`), or `--replace --force` to swap without a backup.
 
 ### Zero-data-sent guarantee (air-gap)
 
@@ -306,7 +318,7 @@ fad-checker --import-anonymized deps.json     # OSV/NVD/CVE/registry/EOL + retir
 fad-checker --export-cache fad-cache.tar.gz   # carry the warmed caches back
 
 # Phase 3 — OFFLINE (audited machine): full report with real paths/manifests.
-fad-checker --import-cache fad-cache.tar.gz
+fad-checker --import-cache fad-cache.tar.gz   # merged into the enclave's own cache
 fad-checker -s ./proj --offline               # re-collect locally + cache hits → full report
 ```
 
@@ -492,7 +504,7 @@ fad-checker --import-anonymized deps.json      # warms ~/.fad-checker/ caches fr
 fad-checker --export-cache fad-cache.tar.gz
 
 # OFFLINE again — full report with real paths
-fad-checker --import-cache fad-cache.tar.gz
+fad-checker --import-cache fad-cache.tar.gz    # merged, the enclave keeps what it had
 fad-checker -s ./real-project --offline
 ```
 

@@ -120,7 +120,7 @@ lib/scan-completeness.js     Warnings for deps fad-checker couldn't fully resolv
 lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 + Berry, pnpm-lock.yaml (v5/6/9) parsers.
 lib/codecs/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
 lib/codecs/npm/registry.js          npm registry packument query → per-version deprecation + dist-tags.latest (npm EOL feeds via lib/outdated.js).
-lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/ (incl. retire findings + signatures).
+lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/ (incl. retire findings + signatures). Import **merges** (`--replace` = old wholesale swap): per-key file caches union file-by-file, `entries{}` maps union key-by-key (fresher value wins, merged stamp = the OLDER `fetchedAt`), whole-corpus snapshots (kev) + atomic `cve-data/` take the freshest side as a block, `config.json` never touched (machine-local secrets, never exported). Replacing silently cost an enclave its warm cache AND its NVD key / private registry creds, and left a full `.bak-<ts>` copy per import.
 lib/deps-descriptor.js       Anonymized dep descriptor serialize/deserialize (anonymized offline→online round-trip).
 lib/config.js                Persistent user config in ~/.fad-checker/config.json (mode 0600): NVD key + `registries` map.
 lib/registries.js            Per-ecosystem registry list assembly (union across layers, dedup, public base last) + Basic/Bearer auth + fan-out. Generalizes maven-repo.js to npm/pypi/ruby/go.

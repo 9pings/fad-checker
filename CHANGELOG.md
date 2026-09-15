@@ -6,6 +6,28 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **`--import-cache` now MERGES instead of replacing the cache.** It moved the whole
+  `~/.fad-checker/` aside as `.fad-checker.bak-<timestamp>` (or deleted it with `--force`)
+  and unpacked the archive in its place, so an enclave that was already warm lost every
+  cache entry the archive didn't happen to carry — and `--offline` on the resulting cold
+  cache reports **0 CVE / 0 EOL / 0 outdated**, which reads exactly like a clean project.
+  Worse, `--export-cache` deliberately never bundles `config.json`, so replacing the
+  directory also wiped the target's **NVD key and private registry credentials**, silently.
+  And each import left a full copy of the cache in `$HOME` (123 MB on a real one), never
+  cleaned up — a weekly sneakernet refresh grew to gigabytes.
+  The import now reconciles the two sides, per cache family:
+  per-key file caches (`osv-cache/`, `nvd-cache/`, `poms-cache/`, `retire-cache/`,
+  `retire-signatures/`, `osv-db/`) union file by file; `entries{}` maps (`version-`,
+  `maven-exists-`, `npm-registry-`, `eol-`, `epss-`, `packagist-`, `pypi-`, `nuget-`,
+  `go-proxy-`, `rubygems-`, `hash-id-cache.json`) union key by key, the fresher side winning
+  a collision and the merged map stamped with the **older** of the two `fetchedAt` (a union is
+  only as fresh as its stalest half — antedating it would let a TTL check treat stale entries
+  as just-fetched); whole-corpus snapshots (`kev-cache.json`) and the atomic `cve-data/`
+  (index + `meta.json` must describe the same build) take the freshest side as a block.
+  `config.json` is never touched. A stale archive can no longer roll a fresher enclave back.
+  `--replace` restores the old wholesale swap (with the `.bak`), `--force` still means
+  "replace, no backup". Locked by `test/cache-archive-merge.test.js`.
+
 - **`-t <dir>` is now an extraction step, not a scan.** It walks the tree, links the reactor
   modules, writes the cleaned POM tree + mirrored manifests, prints the Maven POM analysis
   (missing parents / private libs) and **stops**. Before, every `-t` run also went through the
