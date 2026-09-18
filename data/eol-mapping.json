@@ -78,10 +78,6 @@
       "product": "spring-security",
       "label": "Spring Security"
     },
-    "org.springframework": {
-      "product": "spring-framework",
-      "label": "Spring Framework"
-    },
     "org.springframework.cloud": {
       "product": "spring-cloud",
       "label": "Spring Cloud"
@@ -171,6 +167,12 @@
     "microsoft.entityframeworkcore": {
       "product": "dotnet",
       "label": "EF Core (.NET)"
+    }
+  },
+  "by_group_exact": {
+    "org.springframework": {
+      "product": "spring-framework",
+      "label": "Spring Framework"
     }
   }
 }
