@@ -59,7 +59,7 @@ checkable.
 
 ² **657 of 657** of OSV-Scanner's *online* Maven result, under `unshare -rn` — no network interface. Tripwire-tested; only public coordinates ever leave the enclave.
 
-³ Chapter 0 names every coordinate absent from the configured repositories, with the manifest(s) declaring it. `-e <regex>` then excludes them.
+³ Chapter 0 names every coordinate that **every** configured registry answered 404 for — Maven, npm, PyPI, NuGet, Composer, Go and RubyGems — with the manifest(s) declaring it. A registry that timed out or errored is never counted: an inconclusive answer would otherwise accuse a client of shipping internal packages because their proxy was flaky. `-e <regex>` then excludes them.
 
 ⁴ `-t <dir>`: normalised POMs plus every non-Maven lockfile mirrored, private coordinates stripped. Archivable, and scannable by anything — `--snyk` included.
 

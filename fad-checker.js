@@ -869,6 +869,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// for --import-anonymized they were shown in the "Anonymized descriptor" section.
 	const npmWarnings = collectWarnings || [];
 	let scanWarnings = [];
+	let registryPrivateHits = [];
 	const directCount = resolved.size;
 	// NOTE: scan-completeness (unresolved-versions) is computed LATER — after the BOM
 	// version-resolution step backfills external-BOM-managed versions — so it reflects
@@ -1084,10 +1085,14 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			obsoleteResults = obsoleteResults.concat(npmReg.deprecated);
 			outdatedResults = outdatedResults.concat(npmReg.outdated);
 			licenseFindings = licenseFindings.concat(npmReg.licensed || []);
+			registryPrivateHits = registryPrivateHits.concat(npmReg.private || []);
 			st.done(`${npmReg.deprecated.length} deprecated, ${npmReg.outdated.length} outdated`);
 		} catch (err) { st.fail(err.message); }
 	}
 
+	// Coordinates every configured registry answered 404/410 for — internal packages.
+	// Maven finds these with a dedicated probe; the other ecosystems get it for free from the
+	// registry pass they already run.
 	// 4b. Per-codec registry for ecosystems beyond maven/npm (composer/pypi/nuget).
 	for (const id of otherRegistryIds) {
 		const codec = getCodec(id);
@@ -1097,6 +1102,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			obsoleteResults = obsoleteResults.concat(reg.deprecated || []);
 			outdatedResults = outdatedResults.concat(reg.outdated || []);
 			licenseFindings = licenseFindings.concat(reg.licensed || []);
+			registryPrivateHits = registryPrivateHits.concat(reg.private || []);
 			st.done(`${(reg.deprecated || []).length} deprecated, ${(reg.outdated || []).length} outdated`);
 		} catch (err) { st.fail(err.message); }
 	}
@@ -1546,16 +1552,27 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		...npmWarnings,
 		...scanWarnings,
 		...retireWarnings,
-		...(privateLibIds.length ? [{
-			type: "private-libs",
-			count: privateLibIds.length,
-			items: privateLibIds.map(id => {
+		...(() => {
+			// Maven probes for these explicitly; every other ecosystem now reports the same thing
+			// out of its registry pass. One warning either way — an auditor wants "here is what
+			// is internal", not one list per package manager.
+			const { buildPrivateItems } = require("./lib/private-deps");
+			const mavenItems = privateLibIds.map(id => {
 				const dep = resolved.get(id);
 				const paths = (dep?.pomPaths || []).map(p => path.relative(options.src, p));
-				return { id, manifestPaths: paths };
-			}),
-			message: `${privateLibIds.length} Maven coord(s) not found on Maven Central — they are private/internal libraries. Their CVEs (if any) cannot be detected by fad-checker; if you have an internal CVE feed, audit them separately.`,
-		}] : []),
+				return { id, ecosystem: "maven", manifestPaths: paths };
+			});
+			const otherItems = buildPrivateItems(registryPrivateHits, { relativise: p => path.relative(options.src, p) });
+			const items = [...mavenItems, ...otherItems];
+			if (!items.length) return [];
+			const ecos = [...new Set(items.map(i => i.ecosystem))].sort().join(", ");
+			return [{
+				type: "private-libs",
+				count: items.length,
+				items,
+				message: `${items.length} coordinate(s) found in none of the configured registries (${ecos}) — they are private/internal packages. Their CVEs (if any) cannot be detected by fad-checker; if you have an internal CVE feed, audit them separately. Registries that timed out or errored are NOT counted here, only definitive 404/410 answers.`,
+			}];
+		})(),
 	];
 
 	// Differential audit vs --baseline: build the current findings doc once, diff it
