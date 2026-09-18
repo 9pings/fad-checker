@@ -166,14 +166,16 @@ reads the same input, and the benchmark measures **identical finding sets** on n
 Composer. The delta is a Java-ecosystem phenomenon, not a general one.
 
 **What buys Snyk those 118 is mostly not seeing vulnerabilities nobody else sees.** **88 of the
-118 are public CVEs** — already in NVD or OSV, free to read. What the public record is missing is
-the *mapping*: which Maven artifact, at which versions, is affected. Public advisories declare
-ranges **per release branch**, and branches that never received a fix are routinely just absent.
-`CVE-2023-6481` on `logback-classic@1.2.2` is the clean example: OSV has the CVE, but its entry
-carries **no Maven package binding at all** — only a git commit range — so no ecosystem query can
-return it, while its own fixed-version list (`1.2.12`, `1.3.13`, `1.4.13`) says plainly that the
-1.2.x branch was affected. The remaining **30** carry a proprietary `SNYK-*` identifier with no
-public CVE alias at all.
+118 are public CVEs** — already in NVD or OSV, free to read. Only **30** carry a proprietary
+`SNYK-*` identifier with no public CVE alias at all.
+
+**How many of the 88 are real misses is currently unverified.** The original per-pair analysis
+misread OSV's `affected[].versions` (the **affected** versions) as a list of fixed versions, and
+read the CVE-converted record without its GHSA alias — where the Maven binding actually lives. Its
+worked example, `CVE-2023-6481` on `logback-classic@1.2.2`, turns out to be a Snyk false positive:
+the advisory binds `logback-core`, introduced at `1.2.12`. `scripts/adjudicate-gap.js` now
+classifies each claimed miss against the public record, and only a `CONFIRMED_MISS` is worth
+engineering against — chasing the rest is how a scanner acquires mass false positives.
 
 **So the differentiator is a curation layer, kept behind the paywall.** Snyk's per-artifact
 affected-version assertions are its product, and they are not contributed back to OSV or NVD —

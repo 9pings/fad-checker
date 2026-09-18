@@ -40,9 +40,10 @@ Union of everything any tool found: **908** pairs.
 **No tool finds everything, including this one.** fad leads on volume and misses 118 pairs that
 another tool found. Every one of those 118 comes from Snyk: 30 carry a proprietary `SNYK-*` id
 with no public CVE alias, so no tool matching public databases can have them — that is a genuine
-advantage of a commercial feed, not a fad bug. The other **88 are public CVEs fad genuinely
-misses** (`logback-classic@1.2.2`, `hessian-lite@3.2.8`, `nacos-common@1.3.1` …), and they are an
-open gap, not a rounding error.
+advantage of a commercial feed, not a fad bug. The other **88 are public CVEs** — how many are
+genuine misses is unverified, see the correction under
+[What fad-checker misses](#what-fad-checker-misses-and-why); adjudicate them with
+`scripts/adjudicate-gap.js` before treating any as a recall bug.
 
 Read the other rows fairly too. Trivy and Grype are **container and SBOM scanners**; a raw Maven
 source checkout is not the job they are built for. Snyk and Trivy at full capability both depend
@@ -237,9 +238,24 @@ OSV-Scanner 2.4.0 (osv-scalibr 0.4.5).
 
 ## What fad-checker misses, and why
 
-**At full capability: 118 pairs**, all found by Snyk and by no other tool. They were verified
-one by one against NVD rather than assumed, and the verdict is uncomfortable: **they are real
-misses, not Snyk noise.**
+**At full capability: 118 pairs**, all found by Snyk and by no other tool.
+
+> **Correction — 2026-09-18.** The per-class analysis that follows read OSV's
+> `affected[].versions` as a list of *fixed* versions. It is the list of **affected**
+> versions, and the worked example below was wrong in both directions: `CVE-2023-6481` binds
+> `ch.qos.logback:logback-core` (not `logback-classic`) with
+> `{introduced: 1.2.12, fixed: 1.2.13}` — so `1.2.2` predates the flaw. That pair is a Snyk
+> **false positive**, not a fad miss. The Maven binding lives on the GHSA alias
+> (`GHSA-gm62-rw4g-vrc4`), which the original analysis never fetched: OSV keeps the
+> CVE-converted record and the GHSA as separate documents, and the CVE one carries only a GIT
+> range.
+>
+> So the claim "they are real misses, not Snyk noise" is **not established**, and the 88/30
+> split below is the original assertion rather than a verified result. Re-adjudicate before
+> treating any of these as a recall bug — `node scripts/adjudicate-gap.js --snyk snyk.json`
+> classifies every pair against the public record using the scanner's own range evaluation.
+> Building recall against unadjudicated pairs is how this tool would acquire the false
+> positives it is built to avoid.
 
 - **30** carry a proprietary `SNYK-*` identifier with no public CVE alias. They exist in Snyk's
   commercial database and in no public one.
@@ -248,12 +264,13 @@ misses, not Snyk noise.**
 
 Neither the 13 nor the 67 exonerate fad, and both were traced to their cause.
 
-**The 67 "NVD is silent" cases are public-database coverage gaps.** Take
-`CVE-2023-6481` on `logback-classic@1.2.2`. OSV *has* the CVE, but its entry carries **no Maven
-package binding at all** — only a GIT commit range — so no ecosystem query can return it. Its
-own fixed-version list is `1.2.12, 1.3.13, 1.4.13`, which says plainly that the 1.2.x branch was
-affected and fixed at 1.2.12. The dependency is 1.2.2. It is vulnerable, Snyk says so, and every
-public-source scanner misses it.
+**The 67 "NVD is silent" cases were classified from the CVE record alone.** The worked example
+used to be `CVE-2023-6481` on `logback-classic@1.2.2`, described as a coverage gap because the
+CVE entry carries no Maven binding — only a GIT commit range. Fetching its GHSA alias shows the
+binding does exist: `ch.qos.logback:logback-core`, `{introduced: 1.2.12, fixed: 1.2.13}`. The
+audited dependency is a *different artifact* at a version *below the introduction*, so nothing
+was missed. Whether the other 66 survive the same check is an open question, and
+`scripts/adjudicate-gap.js` is what answers it per pair.
 
 **The 13 "NVD contradicts" cases are NVD contradicting itself.** Two sibling jackson-databind
 deserialization CVEs published weeks apart:
