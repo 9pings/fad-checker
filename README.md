@@ -25,7 +25,7 @@
 - **No build tools**; reads `pom.xml`, `build.gradle(.kts)`/`gradle.lockfile`/`libs.versions.toml`, `package-lock`/`yarn.lock`/`pnpm-lock`, `composer.lock`, `poetry`/`Pipfile`/`uv`/`pdm` locks, `packages.lock.json`/`*.csproj`, `go.mod`, `Gemfile.lock` directly. No `mvn`/`gradle`/`npm install`/`pip`/`dotnet restore`/`go build`/`bundle`, no `node_modules/`. → [how it stays build-free](docs/COMPARISON.md#how-its-autonomous-no-build-tools)
 - **CVE, merged & prioritised**; CVEProject + OSV.dev + NVD, CPE/version cross-checked to cut false positives, ranked **CISA KEV → EPSS → CVSS**.
 - **Per-module Maven version mediation**; recovers vulnerable transitive versions that a global `<dependencyManagement>` pin hides in another module, applying Maven's own nearest-wins semantics per module rather than resolving the whole reactor as one tree.
-- **Air-gapped**; **zero network under `--offline`** (regression-tested), offline Maven transitive resolution, and `--osv-db` for cache-independent offline OSV recall. Benchmarked against OSV-Scanner, Snyk, Trivy and Grype+Syft on **six public projects across six ecosystems**: identical finding sets on npm, RubyGems and Composer (parity is the correct outcome when the graph is in the lockfile), and on Maven — where it is not — fad recovers **657/657** of OSV-Scanner's *online* result with **no network interface at all**, versus 45 / 40 / 37 for the others. At full capability no tool finds everything, fad included: it leads at 87% of a 908-pair union and still misses 118 that Snyk finds. → [Benchmark](docs/BENCHMARK.md) · [Air-gapped](#air-gapped-audits)
+- **Air-gapped**; **zero network under `--offline`** (regression-tested), offline Maven transitive resolution, and `--osv-db` for cache-independent offline OSV recall. Benchmarked against OSV-Scanner, Snyk, Trivy and Grype+Syft on **six public projects across six ecosystems**: identical finding sets on npm, RubyGems and Composer (parity is the correct outcome when the graph is in the lockfile), and on Maven — where it is not — fad recovers **657/657** of OSV-Scanner's *online* result with **no network interface at all**, versus 45 / 40 / 37 for the others. At full capability no tool finds everything, fad included: it leads at 87% of a 908-pair union and still misses 118 that Snyk finds — [why, exactly](#coverage-honestly-the-118-that-snyk-finds-and-fad-checker-doesnt). → [Benchmark](docs/BENCHMARK.md) · [Air-gapped](#air-gapped-audits)
 - **Supply-chain risk**; known-**malicious** advisories (`MAL-`, always block the CI gate) + suspected **typosquats** (`--typosquat`).
 - **Lifecycle**; EOL (endoflife.date — with an opt-in "out of active support" level, `--eol-support`), PHP runtime EOL from the Composer constraint, obsolete/deprecated, outdated; across every ecosystem.
 - **Licenses** *(opt-in `--licenses`)*; SPDX-normalised, copyleft/proprietary flagged.
@@ -33,6 +33,50 @@
 - **Outputs & CI**; HTML + Word `.doc`, CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on` / `--fail-on-new`, triage with `--ignore`/`--vex`. Private registries for Maven, npm, PyPI, Ruby, Go, **NuGet** and **Composer**.
 
 📖 **[Usage & all flags](docs/USAGE.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Comparison vs other tools](docs/COMPARISON.md)** · **[Data sources](docs/DATA-SOURCES.md)**
+
+## Why fad-checker for an audit?
+
+Most scanners are built for a CI pipeline: fail the build, emit JSON, move on. An audit has
+different requirements — a deliverable, a defensible method, a stated scope, and a client whose
+code cannot leave the room. That is the gap this tool is built for.
+
+- **The deliverable *is* the output.** A self-contained **HTML + Word `.doc`** report, chaptered
+  like an audit (0 Warnings → 6 Scan context & limitations), every finding attributed to the
+  **manifest that declares it**, with per-ecosystem fix recipes. Not a JSON blob you then have to
+  turn into a document.
+- **Private / internal modules are named, not silently skipped.** Every Maven coordinate the scan
+  could not find on Maven Central is listed in **chapter 0** with the manifest(s) that declare it
+  — so an in-house artifact becomes a *known, reported* hole in the coverage, auditable against
+  the client's internal feed, instead of a dependency that quietly returned zero CVEs. `-e <regex>`
+  excludes them from the scan; `-t <dir>` extracts the whole dependency-descriptor tree with those
+  coordinates stripped — archivable as-is, and scannable by anything you point at it.
+- **Scan completeness is itself a finding.** Missing lockfiles, Maven deps whose version only a
+  BOM resolves, Yarn Berry lockfiles, an undeterminable PHP runtime — surfaced in chapter 0
+  instead of silently shrinking the finding count.
+- **Defensible and reproducible.** Every report carries a **provenance manifest** — tool version,
+  runtime, online/offline mode, the run configuration, and the **freshness of every data source**
+  — plus a `SHA256SUMS` integrity manifest. Six months later you can still state exactly what you
+  ran and against which data.
+- **The scope is stated, including what is outside it.** A **Methodology, data sources &
+  limitations** chapter spells out what fad-checker does *not* assess (reachability, secrets, IaC,
+  container base images…). An audit that doesn't bound its own scope isn't one.
+- **The client's code never leaves the enclave.** `--offline` makes **zero network calls**
+  (tripwire-tested, reproducible under `unshare -rn`), and the three-phase anonymized descriptor
+  sends only public package coordinates off the secure machine. → [Air-gapped](#air-gapped-audits)
+- **Audit a checkout you cannot build.** No `mvn`, no `npm install`, no Docker, no network needed.
+  The legacy projects that most need auditing are exactly the ones whose build no longer runs.
+- **The questions clients actually ask, beyond CVEs.** EOL and out-of-active-support frameworks,
+  deprecated / abandoned / yanked packages, outdated versions with release dates, SPDX licenses
+  and copyleft exposure, committed certificates and **private keys**. An EOL framework with no CVE
+  is still a finding.
+- **False positives are shown, not hidden.** CPE-filtered matches go to a **"likely false
+  positives"** appendix instead of being dropped, and `--ignore` / `--vex` triage stays flagged in
+  the JSON/SBOM/CSAF exports.
+- **Repeat engagements are first-class.** `--baseline` adds a **Δ Changes since baseline** chapter
+  (new / fixed / unchanged per category, plus the list of new production CVEs) and `--fail-on-new`
+  gates CI on *new* findings only.
+
+Design rationale for these features → [`docs/SPEC-audit-pro.md`](docs/SPEC-audit-pro.md).
 
 ## Quick start
 
@@ -45,14 +89,29 @@ A free [NVD API key](https://nvd.nist.gov/developers/request-an-api-key) (instan
 
 ```bash
 fad-checker -s ./proj -e "^com\.acme\."                        # exclude private libs (coord regex)
-fad-checker -s ./proj -t ../clean -e "^com\.acme\."            # extract only: cleaned POM tree + manifests, no scan
-fad-checker -s ./proj -t ../clean -e "^com\.acme\." --snyk     # extract + scan + merge Snyk
+fad-checker -s ./proj -t ../clean -e "^com\.acme\."            # extract only: normalised descriptors, private modules flagged
+fad-checker -s ./proj -t ../clean -e "^com\.acme\." --snyk     # same extraction + scan + merge Snyk
 fad-checker -s ./proj --offline                                # fully offline (zero network, needs a warmed cache)
 fad-checker -s ./proj --osv-db --typosquat                     # offline-complete OSV + typosquat
 fad-checker -s ./proj --licenses --fail-on high                # license chapter + CI gate
 fad-checker -s ./proj --report-json --baseline last.json --fail-on-new   # differential audit: fail CI on NEW findings
 fad-checker diff last.json this.json                           # standalone diff of two findings JSONs
 ```
+
+**What `-t <dir>` actually does.** It is an **extraction** step, not a Snyk adapter. It writes a
+parallel tree of **normalised dependency descriptors**: every `pom.xml` reduced to the
+dependency-relevant nodes (coordinates, `properties`, `dependencyManagement`, `dependencies`,
+`modules`), reactor parents rewired to their real in-tree `relativePath`, `${…}` resolved in
+coordinates — **plus every non-Maven lockfile/manifest mirrored** at the same relative path
+(`package-lock`/`yarn.lock`/`pnpm-lock`, `composer.lock`, `poetry`/`Pipfile`/`uv`/`pdm`,
+`*.csproj`/`packages.lock.json`, `go.mod`/`go.sum`, `Gemfile.lock`, and companions like
+`Directory.Packages.props` or `nuget.config`). Online it also **probes every coordinate against
+the configured Maven repositories** and reports the ones that don't exist there — your
+**private/internal modules** — which `-e <regex>` then strips from the rewritten POMs. Then it
+**stops**: no CVE/EOL pass and no report unless you also pass `--snyk`, a `--report-<type>`,
+`--fail-on*` or `--baseline`. What you get is a buildless, sanitised dependency inventory you can
+archive as audit evidence, hand to a client or a legal review, or point any scanner at — Snyk via
+`--snyk` being one of them.
 
 > [!IMPORTANT]
 > **`--offline` reads the cache, it doesn't replace it.** On a *cold* cache there is nothing to
@@ -82,6 +141,44 @@ The report is organised into **root chapters** (each grouping related sub-chapte
 The HTML report opens in any browser, contains every detail (CVSS vectors, references, full descriptions, CPE configurations, via-paths for transitives) and ships a Word-compatible `.doc` twin. Every match carries a **composite priority** (KEV-exploited > EPSS likelihood > CVSS severity), and the run can additionally emit a **CycloneDX 1.6 SBOM** (`--report-sbom`, vulnerabilities inline) and a **CSAF 2.0 VEX** (`--report-csaf`) for downstream tooling.
 
 <p align="center"><img src="docs/assets/report.png" alt="fad-checker HTML report; executive summary with severity tiles and a detailed CVE table with CWE, descriptions and fix versions" width="900"></p>
+
+## Coverage, honestly: the 118 that Snyk finds and fad-checker doesn't
+
+The benchmark's headline is that no tool finds everything — fad-checker leads at **87% of a
+908-pair union** and still misses **118 pairs**. Those 118 deserve an explanation, because the
+reason is not the one you'd assume.
+
+**Two things scope them.** They are **all Snyk's**: OSV-Scanner, Trivy and Grype+Syft each
+contributed **0** findings no one else had, so this is not "fad is behind the field" — it is one
+commercial database against the whole of public advisory data. And they are all on the
+**Maven/Java** target. Outside Maven the resolved graph is already in the lockfile, every scanner
+reads the same input, and the benchmark measures **identical finding sets** on npm, RubyGems and
+Composer. The delta is a Java-ecosystem phenomenon, not a general one.
+
+**What buys Snyk those 118 is mostly not seeing vulnerabilities nobody else sees.** **88 of the
+118 are public CVEs** — already in NVD or OSV, free to read. What the public record is missing is
+the *mapping*: which Maven artifact, at which versions, is affected. Public advisories declare
+ranges **per release branch**, and branches that never received a fix are routinely just absent.
+`CVE-2023-6481` on `logback-classic@1.2.2` is the clean example: OSV has the CVE, but its entry
+carries **no Maven package binding at all** — only a git commit range — so no ecosystem query can
+return it, while its own fixed-version list (`1.2.12`, `1.3.13`, `1.4.13`) says plainly that the
+1.2.x branch was affected. The remaining **30** carry a proprietary `SNYK-*` identifier with no
+public CVE alias at all.
+
+**So the differentiator is a curation layer, kept behind the paywall.** Snyk's per-artifact
+affected-version assertions are its product, and they are not contributed back to OSV or NVD —
+which is exactly why no aggregation of public sources reproduces them, however careful.
+`--nvd-cpe-match` was the attempt at closing it from public data and it
+[fails on precision](docs/BENCHMARK.md#a-negative-result-nvd-cpe-ranges-as-a-matching-tier)
+(12% corroborated), because CPE names **frameworks** while Maven names **artifacts**. That is a
+commercial moat, not a technical lead — and it is worth naming as such rather than pretending the
+gap doesn't exist.
+
+**Which is why `--snyk` exists.** fad-checker takes `snyk test` output as an **input** and merges
+it, so you get the union rather than picking a side; the merge is one flag. On a tree with private
+modules, extract it with `-t` first — the normalised descriptors it writes have those coordinates
+stripped, so Snyk gets something it can actually resolve. Full per-finding verification of all 118, and the
+negative result on `--nvd-cpe-match`, in → [`docs/BENCHMARK.md`](docs/BENCHMARK.md).
 
 ## Air-gapped audits
 
@@ -141,6 +238,7 @@ DB is warmed online (phase 2) and carried by `--export-cache`. Full offline/cach
 - [`docs/COMPARISON.md`](docs/COMPARISON.md); vs OSV-Scanner / Trivy / Grype / OWASP DC / Snyk, and how it stays build-free.
 - [`docs/BENCHMARK.md`](docs/BENCHMARK.md) — reproducible air-gapped recall benchmark vs OSV-Scanner on a public 105-module project.
 - [`docs/DATA-SOURCES.md`](docs/DATA-SOURCES.md); the public datasets fad-checker uses + their licenses.
+- [`docs/SPEC-audit-pro.md`](docs/SPEC-audit-pro.md); the audit-grade features (provenance, differential audit, methodology/integrity) and why each was built that way.
 - [`CHANGELOG.md`](CHANGELOG.md) · [`CLAUDE.md`](CLAUDE.md); release history · code-level orientation for contributors.
 
 ## Contributing

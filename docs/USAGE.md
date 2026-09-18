@@ -9,7 +9,7 @@ fad-checker -s <src> [-t <target>] [-e <regex>] [other options]
 ```
 
 - `-s, --src <src>` — **required**. Root of the source tree to scan. Contains `pom.xml` and/or `package(-lock).json` / `yarn.lock`.
-- `-t, --target <dir>` — optional. **Extraction mode.** Write a parallel directory of "cleaned" POMs (private/excluded deps stripped, reactor modules linked to each other) to `<dir>` **and mirror every non-Maven lockfile/manifest** (`package-lock.json`/`yarn.lock`/`pnpm-lock.yaml`, `composer.lock`, `poetry.lock`/`Pipfile.lock`/…, `*.csproj`/`packages.lock.json`, `go.mod`/`go.sum`, `Gemfile.lock`, …) into it — so `snyk test --all-projects` on `<dir>` scans **every** ecosystem, not just Maven. The run then **stops**: the only network action is the Maven-Central *existence* check that classifies private libs (skipped under `--offline`, or when no repository answers a 5 s preflight). No CVE/EOL/outdated pass, no report — add `--snyk`, a `--report-<type>`, `--fail-on`/`--fail-on-new` or `--baseline` to also run the scan. Without `-t`, the run is read-only and produces the full report.
+- `-t, --target <dir>` — optional. **Extraction mode.** Write a parallel directory of "cleaned" POMs (private/excluded deps stripped, reactor modules linked to each other) to `<dir>` **and mirror every non-Maven lockfile/manifest** (`package-lock.json`/`yarn.lock`/`pnpm-lock.yaml`, `composer.lock`, `poetry.lock`/`Pipfile.lock`/…, `*.csproj`/`packages.lock.json`, `go.mod`/`go.sum`, `Gemfile.lock`, …) into it — so **any** scanner pointed at `<dir>` (`snyk test --all-projects` among them) sees **every** ecosystem, not just Maven. Each POM is reduced to the dependency-relevant nodes (coordinates, `properties`, `dependencyManagement`, `dependencies`, `modules`), reactor parents are rewired to their real in-tree `relativePath`, and `${…}` is resolved in coordinates. The run then **stops**: the only network action is the Maven-repository *existence* check, which is also what **identifies your private/internal modules** (coordinates that exist in no configured repository) — skipped under `--offline`, or when no repository answers a 5 s preflight. No CVE/EOL/outdated pass, no report — add `--snyk`, a `--report-<type>`, `--fail-on`/`--fail-on-new` or `--baseline` to also run the scan. Without `-t`, the run is read-only and produces the full report.
 
 ## Output
 
@@ -442,7 +442,7 @@ If the snyk run itself **fails** — not authenticated, an unsupported project, 
 | Mode | Trigger | What runs | Disk writes |
 | --- | --- | --- | --- |
 | Read-only (scan) | `-t` omitted (default) | full scan + report | Only `~/.fad-checker/` caches and the report dir |
-| Extraction | `-t <dir>` | walk + reactor linking + cleaned tree + POM analysis (existence check when online), then stop | The cleaned POM tree at `<dir>` (`rimraf`'d first!) + the existence cache |
+| Extraction | `-t <dir>` | walk + reactor linking + normalised descriptor tree + POM analysis (existence check → private-module list, when online), then stop | The normalised descriptor tree at `<dir>` (`rimraf`'d first!) + the existence cache |
 | Extraction + scan | `-t <dir>` with `--snyk`, a `--report-<type>`, `--fail-on`, `--fail-on-new` or `--baseline` | both of the above | Both of the above |
 
 The `--target` guardrails refuse:

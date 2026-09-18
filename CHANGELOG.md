@@ -5,6 +5,12 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **The report links back to the project.** The `fad-checker <version>` line in the HTML /
+  `.doc` report header is now a link to the repository. A report is a hand-over artifact:
+  someone who receives only the file has to be able to find the tool that produced it — its
+  version, its docs, its issue tracker — without asking whoever ran the scan.
+
 ### Changed
 - **`--import-cache` now MERGES instead of replacing the cache.** It moved the whole
   `~/.fad-checker/` aside as `.fad-checker.bak-<timestamp>` (or deleted it with `--force`)
@@ -32,11 +38,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   modules, writes the cleaned POM tree + mirrored manifests, prints the Maven POM analysis
   (missing parents / private libs) and **stops**. Before, every `-t` run also went through the
   full CVE/EOL/outdated pass and wrote a report nobody asked for — minutes of "hang" on a
-  large reactor, offline or not, for a step whose only job is to produce a tree for Snyk. The
+  large reactor, offline or not, for a step whose only job is to produce that tree. The
   scan still runs when something explicitly consumes it: `--snyk`, any `--report-<type>`,
   `--fail-on` / `--fail-on-new`, `--baseline`. A read-only run (no `-t`) is unchanged.
 
 ### Fixed
+- **CSAF VEX declared the wrong publisher namespace.** `document.publisher.namespace` pointed at
+  a stale `github.com/nathb2b/fad-checker`; it is now the canonical
+  `github.com/9pings/fad-checker`, matching `package.json` and the SARIF `informationUri`.
+
 - **Existence check hung on an offline box that was not told `--offline`.** The private-lib
   classification HEADs `maven-metadata.xml` for every non-local coord (100+ on a real
   reactor) with no request timeout, so a blackholed route (DNS fine, no egress — the usual

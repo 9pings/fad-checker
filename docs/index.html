@@ -110,6 +110,21 @@
   .card h3{font-family:var(--mono);font-size:17px;margin:0 0 9px;letter-spacing:-.3px}
   .card p{margin:0;color:var(--muted);font-size:15px;line-height:1.55}
 
+  /* auditor ledger — teal left rule, deliberately not another card grid */
+  .audit{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:820px){.audit{grid-template-columns:1fr}}
+  .arow{background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);
+        border-left:3px solid var(--teal);border-radius:0 12px 12px 0;padding:20px 22px;transition:.18s}
+  .arow:hover{border-color:var(--line2);border-left-color:var(--amber);transform:translateX(3px)}
+  .arow h3{font-family:var(--mono);font-size:15.5px;margin:0 0 8px;letter-spacing:-.3px;line-height:1.35}
+  .arow h3 .ck{color:var(--teal);margin-right:8px}
+  .arow:hover h3 .ck{color:var(--amber)}
+  .arow p{margin:0;color:var(--muted);font-size:14.5px;line-height:1.6}
+  .arow p b{color:var(--text);font-weight:600}
+  .arow p .mono{color:var(--amber);font-size:13.5px}
+  .auditnote{margin-top:22px;border-left:3px solid var(--line2);padding:2px 0 2px 16px;color:var(--muted);font-size:15px}
+  .auditnote a{color:var(--amber);text-decoration:underline}
+
   /* report showcase */
   .showcase{background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
   figure{margin:0}
@@ -178,6 +193,7 @@
     <a class="brand" href="#top">fad<span class="blink"></span>checker</a>
     <div class="navlinks">
       <a href="#features">Features</a>
+      <a href="#audit">For auditors</a>
       <a href="#airgap">Air-gapped</a>
       <a href="#compare">Compare</a>
       <a href="#benchmark">Benchmark</a>
@@ -214,7 +230,7 @@
         <button class="copy" data-copy="npm i -g fad-checker && fad -s ./your-project">copy</button>
       </div>
       <p class="reveal" style="margin-top:18px;font-size:14px;color:var(--muted);border-left:3px solid var(--amber);background:rgba(255,180,84,.06);padding:10px 14px;border-radius:0 8px 8px 0;max-width:560px">
-        ⚠️ <b style="color:var(--text)">Young project — expect rough edges.</b> fad-checker is new and under active development, so it may still contain bugs (false positives / negatives). Treat its output as a strong first pass, double-check anything critical, and <a href="https://github.com/9pings/fad-checker/issues" style="color:var(--amber);text-decoration:underline">report issues</a> — they get fixed fast.
+        ⚠️ fad-checker is new and may still contain ( rare ) bugs. Treat its output as a strong first pass, <b style="color:var(--text)">double-check anything critical</b>, and please <a href="https://github.com/9pings/fad-checker/issues" style="color:var(--amber);text-decoration:underline">report issues</a>; they get fixed fast.
       </p>
     </div>
     <div class="shotwrap reveal">
@@ -249,13 +265,39 @@
       <div class="card reveal"><div class="ic">05</div><h3>Reports you can hand over</h3><p>One self-contained <b>HTML</b> + Word-compatible <b>.doc</b>, organised by ecosystem and by the manifest that declares each dep, with per-tool fix recipes.</p></div>
       <div class="card reveal"><div class="ic">06</div><h3>Exports &amp; CI gating</h3><p>Emit <b>CycloneDX 1.6</b> SBOM, <b>CSAF 2.0 VEX</b>, flat <b>JSON</b> and <b>SARIF 2.1.0</b> (GitHub/GitLab code scanning). Gate with <span class="mono">--fail-on critical|kev</span> or — for repeat audits — on <b>new</b> findings only with <span class="mono">--baseline</span> + <span class="mono">--fail-on-new</span>; triage false-positives via <span class="mono">--ignore</span> / <span class="mono">--vex</span>.</p></div>
       <div class="card reveal"><div class="ic">07</div><h3>Air-gapped</h3><p>Export an <b>anonymized</b> descriptor (public coordinates only), enrich online, report offline. The confidential codebase never leaves the enclave.</p></div>
-      <div class="card reveal"><div class="ic">08</div><h3>Maven private-dep cleanup</h3><p>Strip private/internal dependencies into a parallel tree of <b>cleaned POMs</b>, ready to feed straight into Snyk.</p></div>
+      <div class="card reveal"><div class="ic">08</div><h3>Extract &amp; normalise the descriptors</h3><p><span class="mono">-t &lt;dir&gt;</span> writes a parallel tree of <b>normalised dependency descriptors</b>: each <span class="mono">pom.xml</span> reduced to the dependency-relevant nodes, reactor parents rewired to their real in-tree path, <span class="mono">${…}</span> resolved in coordinates — plus <b>every non-Maven lockfile/manifest mirrored</b> (npm/yarn/pnpm, Composer, PyPI, NuGet, Go, Ruby). Online it also probes each coordinate and reports the ones <b>absent from Maven Central</b> — your private/internal modules — which <span class="mono">-e &lt;regex&gt;</span> then strips. Then it <b>stops</b>: a buildless, sanitised dependency inventory to archive, hand over, or feed to any scanner.</p></div>
       <div class="card reveal"><div class="ic">09</div><h3>Native binaries, by checksum</h3><p>Committed <span class="mono">.dll</span>/<span class="mono">.exe</span>/<span class="mono">.so</span>/<span class="mono">.dylib</span> (magic-byte confirmed — images/assets are never picked up) are <b>identified by hash</b> via <b>deps.dev</b> + <b>CIRCL</b>: flags tampered/<b>unknown</b> files and libraries that <b>should be declared dependencies</b>. No malware/AV lane.</p></div>
       <div class="card reveal"><div class="ic">10</div><h3>Private registries &amp; config files</h3><p>Point it at private <b>Nexus/Artifactory</b> (Maven), <b>Verdaccio/GitHub Packages</b> (npm), <b>devpi</b> (PyPI), <b>Gemfury</b> (Ruby), <b>GOPROXY</b> (Go), <b>Azure Artifacts/BaGet</b> (NuGet) or <b>Satis/Private Packagist</b> (Composer) — tried first, public last, Basic or Bearer auth. Stash reusable defaults in <span class="mono">.fad-env.json</span> / <span class="mono">--config</span> or the <span class="mono">FAD_CHECKER_ENV</span> variable, and prune sub-paths with gitignore-style <span class="mono">--exclude-path</span> — every skipped directory is listed back in the report's <b>Ignored directories</b> appendix.</p></div>
       <div class="card reveal"><div class="ic">11</div><h3>Unmanaged vendored JS, inventoried</h3><p>Every standalone JS lib committed into the tree (jQuery, Bootstrap, PDF.js, …) that <b>no package manager governs</b> is inventoried — <b>vulnerable or not</b> (via retire.js <span class="mono">--verbose</span>). A cyber-hygiene constat on unknown-provenance third-party code, the JS twin of the native-binary scan.</p></div>
       <div class="card reveal"><div class="ic">12</div><h3>Audit-grade &amp; reproducible</h3><p>Every report carries a <b>provenance manifest</b> (data-source freshness + run config) and a <b>Methodology, data sources &amp; limitations</b> chapter that states what fad <i>doesn't</i> assess. Artifacts ship a <span class="mono">SHA256SUMS</span> integrity manifest (<span class="mono">sha256sum -c</span>). <b>Differential audits</b> diff a scan against a prior run (<span class="mono">--baseline</span>, or <span class="mono">fad diff a.json b.json</span>) so CI can fail on <b>new</b> findings only.</p></div>
       <div class="card reveal"><div class="ic">13</div><h3>Certificates &amp; keys</h3><p>Finds committed <b>X.509 certificates</b> (flags <b>expired</b>, expiring, <b>weak key</b> RSA&lt;2048, <b>weak signature</b> MD5/SHA1, self-signed), <b>private &amp; public keys</b> — each labelled <b>private</b> (a leaked secret) or <b>public</b> — across PEM, <b>OpenSSH every algorithm</b>, PuTTY, PGP and one-line SSH (<span class="mono">id_rsa</span>, <span class="mono">authorized_keys</span>, <span class="mono">known_hosts</span>), plus JKS/PKCS#12 keystores. Parsed <b>100% offline</b> with the built-in X.509 parser — no network.</p></div>
     </div>
+  </section>
+
+  <!-- FOR AUDITORS -->
+  <section id="audit">
+    <div class="kicker reveal">For auditors</div>
+    <h2 class="reveal">Why use fad-checker for an audit?</h2>
+    <p class="sub reveal">Most scanners are built for a CI pipeline: fail the build, emit JSON, move on.
+      An audit has different requirements &mdash; a <b>deliverable</b>, a <b>defensible method</b>, a
+      <b>stated scope</b>, and a client whose code <b>cannot leave the room</b>. That is the gap this tool
+      is built for, and these are the things the CI-first scanners don't do.</p>
+    <div class="audit">
+      <div class="arow reveal"><h3><span class="ck">&#10003;</span>The deliverable <i>is</i> the output</h3><p>A self-contained <b>HTML + Word <span class="mono">.doc</span></b> report, chaptered like an audit (0&nbsp;Warnings &rarr; 6&nbsp;Scan context &amp; limitations), every finding attributed to <b>the manifest that declares it</b>, with per-ecosystem fix recipes. Not a JSON blob you then have to turn into a document.</p></div>
+      <div class="arow reveal"><h3><span class="ck">&#10003;</span>Private modules are named, not silently skipped</h3><p>Every Maven coordinate the scan could not find on Maven Central is listed in <b>chapter 0</b>, with the manifest(s) that declare it. An in-house artifact becomes a <b>known, reported hole</b> in the coverage &mdash; auditable against the client's internal feed &mdash; instead of a dependency that quietly returned zero CVEs. <span class="mono">-e &lt;regex&gt;</span> excludes them from the scan, and <span class="mono">-t &lt;dir&gt;</span> extracts the whole dependency-descriptor tree with them stripped &mdash; archivable, and scannable by anything you point at it.</p></div>
+      <div class="arow reveal"><h3><span class="ck">&#10003;</span>Scan completeness is itself a finding</h3><p>Missing lockfiles, Maven deps whose version only a BOM resolves, Yarn&nbsp;Berry lockfiles, an undeterminable PHP runtime &mdash; all surfaced in <b>chapter 0</b> instead of silently shrinking the finding count. You learn where the scan is thin before the client does.</p></div>
+      <div class="arow reveal"><h3><span class="ck">&#10003;</span>Defensible and reproducible</h3><p>Every report carries a <b>provenance manifest</b> &mdash; tool version, runtime, online/offline mode, the run configuration and the <b>freshness of every data source</b> &mdash; plus a <span class="mono">SHA256SUMS</span> integrity manifest. Six months later you can still state exactly what you ran, and against which data.</p></div>
+      <div class="arow reveal"><h3><span class="ck">&#10003;</span>The scope is stated &mdash; including what's outside it</h3><p>A <b>Methodology, data sources &amp; limitations</b> chapter spells out what fad-checker does <i>not</i> assess: reachability, secrets, IaC, container base images. An audit that doesn't bound its own scope isn't one.</p></div>
+      <div class="arow reveal"><h3><span class="ck">&#10003;</span>The client's code never leaves the enclave</h3><p><span class="mono">--offline</span> makes <b>zero network calls</b> &mdash; tripwire-tested and reproducible under <span class="mono">unshare -rn</span>, a namespace with no network interface. The three-phase <b>anonymized descriptor</b> sends only public package coordinates off the secure machine.</p></div>
+      <div class="arow reveal"><h3><span class="ck">&#10003;</span>Audit a checkout you cannot build</h3><p>No <span class="mono">mvn</span>, no <span class="mono">npm install</span>, no Docker, no network required. The legacy projects that most need auditing are exactly the ones whose build no longer runs &mdash; and it still resolves the <b>Maven transitive graph</b> from cached POMs.</p></div>
+      <div class="arow reveal"><h3><span class="ck">&#10003;</span>Beyond CVEs: what clients actually ask</h3><p><b>EOL</b> and out-of-active-support frameworks, <b>deprecated / abandoned / yanked</b> packages, outdated versions with release dates, <b>SPDX licenses</b> and copyleft exposure, committed certificates and <b>private keys</b>. An EOL framework with no CVE is still a finding.</p></div>
+      <div class="arow reveal"><h3><span class="ck">&#10003;</span>False positives are shown, not hidden</h3><p>CPE-filtered matches go to a <b>&ldquo;likely false positives&rdquo;</b> appendix instead of being dropped, and <span class="mono">--ignore</span> / <span class="mono">--vex</span> triage stays <b>flagged</b> in the JSON/SBOM/CSAF exports. Your triage decisions remain visible to whoever reviews the audit.</p></div>
+      <div class="arow reveal"><h3><span class="ck">&#10003;</span>Repeat engagements are first-class</h3><p><span class="mono">--baseline</span> adds a <b>&Delta; Changes since baseline</b> chapter &mdash; new / fixed / unchanged per category, plus the list of new production CVEs &mdash; and <span class="mono">--fail-on-new</span> gates CI on <i>new</i> findings only.</p></div>
+    </div>
+    <p class="auditnote reveal">The design rationale for each of these &mdash; and the gap analysis they came from &mdash; is written down in
+      <a href="https://github.com/9pings/fad-checker/blob/main/docs/SPEC-audit-pro.md">SPEC-audit-pro.md</a>.
+      What the tool deliberately does <i>not</i> claim is in
+      <a href="#benchmark">the benchmark</a>.</p>
   </section>
 </main>
 
@@ -345,7 +387,7 @@
         </tbody>
       </table>
     </div>
-    <p class="note reveal"><b>No tool finds everything, this one included.</b> fad-checker's 118 misses all come from Snyk — 30 under a proprietary identifier no public database carries, and 88 public CVEs that public advisory data declares per <i>release branch</i>, routinely omitting old branches that never got a fix. That is what a hand-curated commercial feed buys, and no aggregation of public sources reproduces it. Trivy and Grype are container/SBOM scanners: a raw source checkout is not the job they are built for.</p>
+    <p class="note reveal"><b>No tool finds everything, this one included.</b> All 118 of fad-checker's misses come from Snyk — and <b>no other scanner has any of them</b>: OSV-Scanner, Trivy and Grype+Syft each contributed <b>0</b> findings nobody else had. Trivy and Grype are container/SBOM scanners; a raw source checkout is not the job they are built for. The 118 get their own explanation below, because the reason is not the one you'd assume.</p>
 
     <h3 class="reveal" style="margin-top:26px;font-size:17px">2 · With no network at all</h3>
     <p class="sub reveal">Same tree, every scanner under <span class="mono">unshare -rn</span> — a namespace with no network interface, not just an offline flag. Reference: OSV-Scanner's own <b>online</b> output, 657 pairs.</p>
@@ -400,15 +442,26 @@
     </div>
     <p class="note reveal">Equal CVE counts do not make two tools equivalent: on these same projects fad also reported 1 120 outdated dependencies on mastodon, 618 and 2 EOL frameworks on phpMyAdmin, 65 on poetry — questions OSV-Scanner does not attempt. Full per-ecosystem detail, targets and method → <a href="https://github.com/9pings/fad-checker/blob/main/docs/BENCHMARK.md">BENCHMARK.md</a>.</p>
 
-    <div class="split reveal" style="margin-top:30px">
+    <h3 class="reveal" style="margin-top:38px;font-size:17px">4 · The Snyk delta, explained</h3>
+    <p class="sub reveal">The 118 are the one place fad-checker loses, so they get the full explanation rather than a footnote. Two things scope them, and then one thing explains them.</p>
+    <div class="audit reveal">
+      <div class="arow"><h3><span class="ck">01</span>It is one commercial database, not the field</h3><p>All 118 are Snyk's. <b>OSV-Scanner, Trivy and Grype+Syft each found 0</b> pairs nobody else had, so this is not &ldquo;fad-checker is behind the other scanners&rdquo; — it is <b>every public advisory source, aggregated, against one hand-curated commercial feed</b>.</p></div>
+      <div class="arow"><h3><span class="ck">02</span>It is a Maven/Java phenomenon</h3><p>The delta was measured on the Maven target. <b>Outside Maven the resolved graph is already in the lockfile</b>, every scanner reads the same input, and the per-ecosystem tables above measure <b>identical finding sets</b> on npm, RubyGems and Composer. There is no equivalent gap there to explain.</p></div>
+      <div class="arow"><h3><span class="ck">03</span>88 of the 118 are <i>public</i> CVEs</h3><p>Snyk is mostly <b>not</b> seeing vulnerabilities nobody else can see. 88 of the 118 are public CVEs, already in NVD or OSV, free to read. Only <b>30</b> carry a proprietary <span class="mono">SNYK-*</span> id with no public CVE alias at all.</p></div>
+      <div class="arow"><h3><span class="ck">04</span>What's missing publicly is the <i>mapping</i></h3><p>Which Maven artifact, at which versions, is affected. Public advisories declare ranges <b>per release branch</b>, and branches that never got a fix are routinely absent. <span class="mono">CVE-2023-6481</span> on <span class="mono">logback-classic@1.2.2</span>: OSV has the CVE but its entry carries <b>no Maven binding at all</b> — only a git commit range — so no ecosystem query returns it, while its own fixed-version list (<span class="mono">1.2.12</span>) says plainly the 1.2.x branch was affected.</p></div>
+      <div class="arow"><h3><span class="ck">05</span>That curation layer is the paywall</h3><p>Snyk's per-artifact affected-version assertions are its <b>product</b>, and they are not contributed back to OSV or NVD. That is precisely why no aggregation of public sources reproduces them, however careful. It is a <b>commercial moat, not a technical lead</b> — worth naming as such instead of pretending the gap doesn't exist.</p></div>
+      <div class="arow"><h3><span class="ck">06</span>Closing it from public data was tried, and failed</h3><p><span class="mono">--nvd-cpe-match</span> uses NVD's broader CPE ranges to <i>match</i> rather than only to filter. Measured: 76 new findings, <b>12% corroborated</b>. CPE names <b>frameworks</b> (<span class="mono">netty</span>, <span class="mono">spring_framework</span>) while Maven names <b>artifacts</b>, so a spring-web flaw lands on spring-core, spring-beans and spring-context alike. It ships as a triage aid with its 12% stated in its own help text.</p></div>
+    </div>
+
+    <div class="split reveal" style="margin-top:26px">
       <div>
-        <h3 style="font-size:17px;margin:0 0 10px">Why <span class="mono">--snyk</span> exists</h3>
-        <p class="sub" style="margin:0">The benchmark is the argument for it. Snyk contributes <b>117 findings no other scanner produces</b>, because its database is curated per artifact rather than assembled from public advisories. fad-checker takes <span class="mono">snyk test</span> output as an <b>input</b> and merges it — union beats either tool alone, and the merge is one flag.</p>
+        <h3 style="font-size:17px;margin:0 0 10px">Which is why <span class="mono">--snyk</span> exists</h3>
+        <p class="sub" style="margin:0">Rather than pick a side, fad-checker takes <span class="mono">snyk test</span> output as an <b>input</b> and merges it: <b>union beats either tool alone</b>, and the merge is one flag. On a tree with private modules, extract it with <span class="mono">-t</span> first &mdash; the normalised descriptors it writes have those coordinates stripped, so Snyk gets something it can actually resolve. Every one of the 118 was verified individually against NVD — the per-finding audit is in <a href="https://github.com/9pings/fad-checker/blob/main/docs/BENCHMARK.md" style="color:var(--amber);text-decoration:underline">BENCHMARK.md</a>.</p>
       </div>
       <div class="code">
         <div class="top"><i class="r"></i><i class="y"></i><i class="g"></i></div>
-<pre><span class="c"># merge a Snyk run into the report</span>
-<span class="p">fad</span> -s ./proj <span class="k">--snyk</span></pre>
+<pre><span class="c"># strip private modules, scan, merge Snyk</span>
+<span class="p">fad</span> -s ./proj <span class="k">-t</span> ../clean <span class="k">-e</span> "^client\." <span class="k">--snyk</span></pre>
       </div>
     </div>
 
@@ -439,8 +492,11 @@
 <span class="p">fad</span> -s . <span class="k">--ecosystem</span> maven,npm,pypi
 <span class="p">fad</span> -s . <span class="k">--offline</span>
 
-<span class="c"># write a cleaned POM tree (private deps stripped) for Snyk</span>
-<span class="p">fad</span> -s ./proj <span class="k">-t</span> ../pom-clean <span class="k">-e</span> "^client\." <span class="k">--snyk</span></pre>
+<span class="c"># extract only: normalised descriptors + private modules identified</span>
+<span class="p">fad</span> -s ./proj <span class="k">-t</span> ../clean <span class="k">-e</span> "^client\."
+
+<span class="c"># …and the same run, with a scan + Snyk merged in</span>
+<span class="p">fad</span> -s ./proj <span class="k">-t</span> ../clean <span class="k">-e</span> "^client\." <span class="k">--snyk</span></pre>
     </div>
   </section>
 </main>
