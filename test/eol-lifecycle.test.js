@@ -162,7 +162,7 @@ test("grouping never mutates the shared dep record", async () => {
 test("non-framework EOL findings are untouched by grouping (no anchor / components fields)", async () => {
 	const hib = makeDepRecord({ ecosystem: "maven", namespace: "org.hibernate", name: "hibernate-core", version: "5.6.15.Final", manifestPath: "/p/pom.xml" });
 	const HIBERNATE = [{ cycle: "5.6", eol: "2023-12-31", support: "2023-12-31", latest: "5.6.15.Final" }];
-	const r = await checkEolDeps(new Map([[hib.coordKey, hib]]), { cycles: { hibernate: HIBERNATE }, now: NOW });
+	const r = await checkEolDeps(new Map([[hib.coordKey, hib]]), { cycles: { "hibernate-orm": HIBERNATE }, now: NOW });
 	assert.equal(r.length, 1);
 	assert.equal(r[0].anchor, undefined);
 	assert.equal(r[0].components, undefined);

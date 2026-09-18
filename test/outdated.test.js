@@ -49,10 +49,17 @@ test("findEolProduct matches Spring Boot by exact coord and by prefix", () => {
 	assert.equal(sbcustom.product, "spring-boot", "prefix-only mapping must still match");
 });
 
-test("findEolProduct picks longest prefix match", () => {
+test("findEolProduct picks longest prefix match, and Spring Security is its own product", () => {
+	// This used to assert product "spring-framework" while labelling it "Spring Security",
+	// i.e. it judged Spring Security releases against Spring Framework's cycles. endoflife.date
+	// tracks spring-security separately, on its own calendar.
 	const sec = findEolProduct({ groupId: "org.springframework.security", artifactId: "made-up" });
-	assert.equal(sec.product, "spring-framework");
+	assert.equal(sec.product, "spring-security");
 	assert.equal(sec.label, "Spring Security");
+	const core = findEolProduct({ groupId: "org.springframework", artifactId: "spring-core" });
+	assert.equal(core.product, "spring-framework");
+	const cloud = findEolProduct({ groupId: "org.springframework.cloud", artifactId: "spring-cloud-context" });
+	assert.equal(cloud.product, "spring-cloud");
 });
 
 test("findEolProduct maps the npm 'angular' package to AngularJS 1.x", () => {

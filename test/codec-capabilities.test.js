@@ -80,11 +80,16 @@ test("EOL: detected end-to-end for maven/npm/composer/pypi/nuget (seeded cycles)
 });
 
 test("EOL: every product slug in eol-mapping.json is a known-valid endoflife.date slug", () => {
-	// Guards against dead slugs (this allowlist is verified against endoflife.date/api/<slug>.json).
+	// Guards against dead slugs. Verified against endoflife.date/api/all.json on 2026-09-18:
+	// these are CANONICAL ids that resolve 200 directly. The previous list accepted seven that
+	// do not exist — "hibernate", "jetty" and "maven" only answer through a 301, and "netty",
+	// "jackson", "junit" and "logback" are plain 404s, so any rule pointing at them could never
+	// produce a verdict while still implying the product was covered.
 	const VALID = new Set([
-		"spring-boot", "spring-framework", "hibernate", "tomcat", "jetty", "netty", "maven",
-		"junit", "log4j", "logback", "jackson", "angular", "angularjs", "react", "vue",
-		"jquery", "bootstrap", "django", "numpy", "symfony", "laravel", "drupal", "php", "dotnet",
+		"spring-boot", "spring-framework", "spring-security", "spring-cloud",
+		"hibernate-orm", "tomcat", "eclipse-jetty", "apache-maven", "log4j",
+		"angular", "angularjs", "react", "vue", "jquery", "bootstrap",
+		"django", "numpy", "symfony", "laravel", "drupal", "php", "dotnet",
 	]);
 	const collect = obj => Object.values(obj || {}).map(v => v.product);
 	const products = [
