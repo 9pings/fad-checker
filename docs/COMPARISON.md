@@ -108,8 +108,14 @@ gone stale, [open an issue](https://github.com/9pings/fad-checker/issues) and it
 **Where it fits:** a one-shot audit of a polyglot checkout you may not be able to build, a
 presentable HTML/Word deliverable, and confidential / air-gapped engagements.
 
-**Where it doesn't:** container/OS scanning, reachability analysis, auto-fix PRs — reach for
-**Trivy** or **Grype + Syft**.
+**Where it doesn't:** container/OS scanning and auto-fix PRs — reach for **Trivy** or
+**Grype + Syft**.
+
+**Reachability is a deliberate non-goal**, not a gap on the roadmap. A finding here is a vulnerable
+version on the dependency graph, stated as such in the report's *Methodology, data sources &
+limitations* chapter. Call-graph reachability answers a different question, needs the application
+context an auditor has and a scanner doesn't, and an unreachable-therefore-ignored verdict is
+exactly the kind of judgement an audit should not automate.
 
 You don't have to choose — `fad-checker` takes Snyk's results as input (`--snyk`) and merges them.
 
