@@ -5,8 +5,11 @@ target is pinned to a commit, the commands are below, and every number can be re
 the tools' own JSON output. Run it and tell me if it doesn't hold.
 
 Spoiler for the impatient, so nothing here reads as a sales pitch: **at full capability no tool
-finds everything, fad-checker included** — it leads at 87% of the union and misses 118 pairs
-Snyk found. Its differentiator is the second table: what survives when the network is gone.
+finds everything** — fad-checker leads at 87% of the union, and 118 pairs were reported by Snyk
+and not by it. Those 118 were published here as a recall gap; they are not one. Every pair has
+since been adjudicated against the public record and **none is a recall bug** —
+[the measurement](#what-fad-checker-misses-and-why). Its differentiator remains the second table:
+what survives when the network is gone.
 
 ## Two different questions
 
@@ -29,24 +32,25 @@ mapped to their CVE alias so every tool sits on one identifier space. Dubbo's **
 
 Union of everything any tool found: **908** pairs.
 
-| Scanner, best configuration | Found | Unique to it | % of union | Misses |
+| Scanner, best configuration | Found | Unique to it | % of union | Not reported¹ |
 | --- | --- | --- | --- | --- |
-| **fad-checker 2.4.6** | **790** | 125 | **87.0%** | 118 |
+| **fad-checker 2.4.6** | **790** | 125 | **87.0%** | 118 → **0 real**¹ |
 | OSV-Scanner 2.4.0 (online) | 657 | 0 | 72.4% | 251 |
 | Snyk 1.1302.1 (`--all-projects`, mvn build) | 603 | **117** | 66.4% | 305 |
 | Trivy 0.72.0 (populated `~/.m2`) | 546 | 0 | 60.1% | 362 |
 | Grype 0.116.0 + Syft 1.49.0 | 45 | 0 | 5.0% | 863 |
 
-**No tool finds everything, including this one.** fad leads on volume and misses 118 pairs that
-another tool found. Every one of those 118 comes from Snyk: 30 carry a proprietary `SNYK-*` id
-with no public CVE alias, so no tool matching public databases can have them — that is a genuine
-advantage of a commercial feed, not a fad bug. The other **88 are public CVEs** — how many are
-genuine misses is unverified, see the correction under
-[What fad-checker misses](#what-fad-checker-misses-and-why); adjudicate them with
-`scripts/adjudicate-gap.js` before treating any as a recall bug.
+¹ **"Not reported" is union arithmetic, not a verified recall gap.** It counts pairs some other
+tool produced and this one did not — which is only a miss if the public record actually binds that
+vulnerability to that coordinate and version. For fad-checker that was checked, pair by pair:
+**0 of them are recall bugs**, and two thirds are Snyk contradicting the public record
+([detail](#what-fad-checker-misses-and-why)). The other rows have *not* been adjudicated, so read
+their column the same way — as "did not report", not "missed".
 
-Read the other rows fairly too. Trivy and Grype are **container and SBOM scanners**; a raw Maven
-source checkout is not the job they are built for. Snyk and Trivy at full capability both depend
+Read the other rows fairly too: Trivy and Grype are **container and SBOM scanners**; a raw Maven
+source checkout is not the job they are built for.
+
+Snyk and Trivy at full capability both depend
 on a real Maven build having happened — Snyk invokes `mvn`, and Trivy needs either network access
 or a `~/.m2` that a previous build populated. fad-checker and OSV-Scanner read the tree without
 building. That is a different starting assumption, not a better one, and it is the reason the
@@ -324,8 +328,8 @@ public sources, however carefully, does not reproduce it. `--nvd-cpe-match` was 
 reading.
 
 **With no network: nothing**, on this project — 657 of 657 against OSV-Scanner's online output.
-That is recall against one tool's view in one scenario; the 118 above are the completeness
-answer.
+That is recall against one tool's view in one scenario; the adjudication above is the
+completeness answer.
 
 ## A negative result: NVD CPE ranges as a matching tier
 

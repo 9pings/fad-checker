@@ -25,7 +25,7 @@
 - **No build tools**; reads `pom.xml`, `build.gradle(.kts)`/`gradle.lockfile`/`libs.versions.toml`, `package-lock`/`yarn.lock`/`pnpm-lock`, `composer.lock`, `poetry`/`Pipfile`/`uv`/`pdm` locks, `packages.lock.json`/`*.csproj`, `go.mod`, `Gemfile.lock` directly. No `mvn`/`gradle`/`npm install`/`pip`/`dotnet restore`/`go build`/`bundle`, no `node_modules/`. → [how it stays build-free](docs/COMPARISON.md#how-its-autonomous-no-build-tools)
 - **CVE, merged & prioritised**; CVEProject + OSV.dev + NVD, CPE/version cross-checked to cut false positives, ranked **CISA KEV → EPSS → CVSS**.
 - **Per-module Maven version mediation**; recovers vulnerable transitive versions that a global `<dependencyManagement>` pin hides in another module, applying Maven's own nearest-wins semantics per module rather than resolving the whole reactor as one tree.
-- **Air-gapped**; **zero network under `--offline`** (regression-tested), offline Maven transitive resolution, and `--osv-db` for cache-independent offline OSV recall. Benchmarked against OSV-Scanner, Snyk, Trivy and Grype+Syft on **six public projects across six ecosystems**: identical finding sets on npm, RubyGems and Composer (parity is the correct outcome when the graph is in the lockfile), and on Maven — where it is not — fad recovers **657/657** of OSV-Scanner's *online* result with **no network interface at all**, versus 45 / 40 / 37 for the others. At full capability no tool finds everything, fad included: it leads at 87% of a 908-pair union and still misses 118 that Snyk finds — [why, exactly](#coverage-honestly-the-118-that-snyk-finds-and-fad-checker-doesnt). → [Benchmark](docs/BENCHMARK.md) · [Air-gapped](#air-gapped-audits)
+- **Air-gapped**; **zero network under `--offline`** (regression-tested), offline Maven transitive resolution, and `--osv-db` for cache-independent offline OSV recall. Benchmarked against OSV-Scanner, Snyk, Trivy and Grype+Syft on **six public projects across six ecosystems**: identical finding sets on npm, RubyGems and Composer (parity is the correct outcome when the graph is in the lockfile), and on Maven — where it is not — fad recovers **657/657** of OSV-Scanner's *online* result with **no network interface at all**, versus 45 / 40 / 37 for the others. At full capability it leads at 87% of a 908-pair union; the pairs Snyk reported and it did not were adjudicated one by one against OSV, and **none is a recall bug** — [the measurement](#coverage-honestly-the-pairs-snyk-reports-and-fad-checker-doesnt). → [Benchmark](docs/BENCHMARK.md) · [Air-gapped](#air-gapped-audits)
 - **Supply-chain risk**; known-**malicious** advisories (`MAL-`, always block the CI gate) + suspected **typosquats** (`--typosquat`).
 - **Lifecycle**; EOL (endoflife.date — with an opt-in "out of active support" level, `--eol-support`), PHP runtime EOL from the Composer constraint, obsolete/deprecated, outdated; across every ecosystem.
 - **Licenses** *(opt-in `--licenses`)*; SPDX-normalised, copyleft/proprietary flagged.
@@ -81,7 +81,7 @@ checkable.
 
 **Where it loses** — containers/OS packages, auto-fix PRs, and CVE coverage against Snyk's curated
 feed → [`docs/COMPARISON.md`](docs/COMPARISON.md) ·
-[the 118, explained](#coverage-honestly-the-118-that-snyk-finds-and-fad-checker-doesnt).
+[the gap, measured](#coverage-honestly-the-pairs-snyk-reports-and-fad-checker-doesnt).
 
 **Deliberately not a goal: reachability.** A finding is a vulnerable version on the dependency
 graph, and the report says exactly that (ch. 6.3) instead of guessing at call paths. Deciding
@@ -152,11 +152,12 @@ The HTML report opens in any browser, contains every detail (CVSS vectors, refer
 
 <p align="center"><img src="docs/assets/report.png" alt="fad-checker HTML report; executive summary with severity tiles and a detailed CVE table with CWE, descriptions and fix versions" width="900"></p>
 
-## Coverage, honestly: the 118 that Snyk finds and fad-checker doesn't
+## Coverage, honestly: the pairs Snyk reports and fad-checker doesn't
 
 The benchmark's headline is that no tool finds everything — fad-checker leads at **87% of a
-908-pair union** and still misses **118 pairs**. Those 118 deserve an explanation, because the
-reason is not the one you'd assume.
+908-pair union**, and **118 pairs were reported by Snyk and not by it**. That number was published
+as a recall gap. It isn't one: every such pair has since been adjudicated against the public
+record, and **zero are recall bugs**.
 
 **Two things scope them.** They are **all Snyk's**: OSV-Scanner, Trivy and Grype+Syft each
 contributed **0** findings no one else had, so this is not "fad is behind the field" — it is one
@@ -165,9 +166,9 @@ commercial database against the whole of public advisory data. And they are all 
 reads the same input, and the benchmark measures **identical finding sets** on npm, RubyGems and
 Composer. The delta is a Java-ecosystem phenomenon, not a general one.
 
-**What buys Snyk those 118 is mostly not seeing vulnerabilities nobody else sees.** **88 of the
-118 are public CVEs** — already in NVD or OSV, free to read. Only **30** carry a proprietary
-`SNYK-*` identifier with no public CVE alias at all.
+**What Snyk mostly has is not vulnerabilities nobody else sees.** The original analysis split the
+118 into 88 public CVEs and 30 proprietary `SNYK-*` ids, and concluded the 88 were real misses.
+That conclusion was wrong, and the re-measurement below is what replaces it.
 
 **Re-measured on 2026-09-18: of 131 claimed misses, zero are recall bugs.** The original per-pair
 analysis misread OSV's `affected[].versions` (the **affected** versions) as a list of fixed
@@ -184,8 +185,10 @@ defects in the tooling, since fixed. → [detail and caveats](docs/BENCHMARK.md#
 **Which is why `--snyk` exists.** fad-checker takes `snyk test` output as an **input** and merges
 it, so you get the union rather than picking a side; the merge is one flag. On a tree with private
 modules, extract it with `-t` first — the normalised descriptors it writes have those coordinates
-stripped, so Snyk gets something it can actually resolve. Full per-finding verification of all
-118, and the negative result on `--nvd-cpe-match`, in → [`docs/BENCHMARK.md`](docs/BENCHMARK.md).
+stripped, so Snyk gets something it can actually resolve. Merging it is a coverage choice, not a
+correction: on this benchmark two thirds of what Snyk adds on its own contradicts the public
+record. Full per-pair adjudication, and the negative result on `--nvd-cpe-match`, in →
+[`docs/BENCHMARK.md`](docs/BENCHMARK.md).
 
 ## Air-gapped audits
 

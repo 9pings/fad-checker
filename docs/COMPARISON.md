@@ -50,18 +50,23 @@ alias and the project's own artifacts excluded on every side.
 **At full capability** — every scanner online, best configuration, populated `~/.m2`. Union of
 all findings: 908 pairs.
 
-| Scanner | Found | Unique to it | Misses |
+| Scanner | Found | Unique to it | Not reported |
 | --- | --- | --- | --- |
-| **fad-checker** | **790 (87.0%)** | 125 | 118 |
+| **fad-checker** | **790 (87.0%)** | 125 | 118 → **0 real** |
 | OSV-Scanner 2.4.0 | 657 (72.4%) | 0 | 251 |
 | Snyk 1.1302.1 (mvn build) | 603 (66.4%) | **117** | 305 |
 | Trivy 0.72.0 | 546 (60.1%) | 0 | 362 |
 | Grype 0.116.0 + Syft 1.49.0 | 45 (5.0%) | 0 | 863 |
 
-**No tool finds everything, this one included.** fad's 118 misses all come from Snyk: 30 carry a
-proprietary `SNYK-*` id that exists in no public database, and 88 are public CVEs fad genuinely
-misses. Snyk and Trivy at full capability both assume a real Maven build has happened; fad and
-OSV-Scanner read the tree without one.
+**"Not reported" is union arithmetic, not a verified recall gap.** It counts pairs another tool
+produced and this one did not, which is a miss only if the public record actually binds that
+vulnerability to that coordinate and version. For fad-checker that was checked pair by pair
+against OSV: **0 are recall bugs**, and roughly two thirds are Snyk contradicting the public
+record — wrong artifact, or a version outside every declared affected range
+([method and caveats](BENCHMARK.md#what-fad-checker-misses-and-why), reproduce with
+`scripts/adjudicate-gap.js`). The other rows have **not** been adjudicated, so read their column
+the same way. Snyk and Trivy at full capability both assume a real Maven build has happened; fad
+and OSV-Scanner read the tree without one.
 
 **With no network at all** (every tool under `unshare -rn`, against OSV-Scanner's *online* output
 as the reference, 657 pairs): **fad-checker 657 (100%)**, Grype+Syft 45, Trivy 40 on a cold
