@@ -141,3 +141,19 @@ test("findEolProduct reports the matched rule + key (origin traceability)", () =
 	const { EOL_MAPPING } = require("../lib/outdated");
 	assert.equal(EOL_MAPPING.by_npm_name.jquery.via, undefined, "must not pollute the shared mapping");
 });
+
+test("commons-io:commons-io is NOT obsolete — the old rule pointed at a dead coordinate", () => {
+	// It advised migrating to `org.apache.commons:commons-io`, which holds exactly one version,
+	// 1.3.2, published 2007-07-02 and never touched since. The live coordinate is
+	// `commons-io:commons-io`, released at 2.22.0. The advice was a 19-year downgrade.
+	const { checkObsolete } = require("../lib/outdated");
+	assert.strictEqual(checkObsolete({ groupId: "commons-io", artifactId: "commons-io" }), null);
+});
+
+test("the junit rule does not claim 4.x when it fires on 3.x too", () => {
+	const { checkObsolete } = require("../lib/outdated");
+	const e = checkObsolete({ groupId: "junit", artifactId: "junit" });
+	assert.ok(e, "junit:junit is still flagged");
+	assert.ok(!/JUnit 4 is in maintenance/.test(e.reason), "reason must not assert the 4.x line");
+	assert.match(e.replacement, /junit-jupiter/);
+});

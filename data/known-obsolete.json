@@ -9,11 +9,6 @@
     "replacement": "org.slf4j:slf4j-api + jcl-over-slf4j",
     "reason": "Apache Commons Logging is largely superseded by SLF4J. Classloader leak issues."
   },
-  "commons-io:commons-io": {
-    "severity": "MEDIUM",
-    "replacement": "org.apache.commons:commons-io (2.x+)",
-    "reason": "The pre-2.x coordinate is deprecated; use the org.apache.commons groupId."
-  },
   "javax.servlet:servlet-api": {
     "severity": "MEDIUM",
     "replacement": "jakarta.servlet:jakarta.servlet-api",
@@ -122,7 +117,7 @@
   "junit:junit": {
     "severity": "LOW",
     "replacement": "org.junit.jupiter:junit-jupiter (JUnit 5)",
-    "reason": "JUnit 4 is in maintenance; JUnit 5 is the modern line."
+    "reason": "The junit:junit line (3.x and 4.x) is in maintenance; JUnit 5 (Jupiter) is the modern one."
   },
   "org.hamcrest:hamcrest-all": {
     "severity": "LOW",
