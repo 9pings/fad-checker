@@ -74,3 +74,17 @@ test("does not repeat the same count — a stalled step must not look busy", () 
 test("nothing to say when there is no count yet", () => {
 	assert.strictEqual(shouldBeat("", "", 99000, 0, 15000), false);
 });
+
+test("the live counter reads as (done / total)", () => {
+	// The step showed a bare spinner with no numbers: outdated only called tick() on every
+	// 10th completion and never announced the total, so on a cold cache the first count
+	// appeared only after the 10th dependency came back.
+	const { Progress } = require("../lib/ui");
+	const p = new Progress(1);
+	const st = p.start("x");
+	st.tick(0, 193);
+	assert.strictEqual(st.live, "(0 / 193)");
+	st.tick(47, 193);
+	assert.strictEqual(st.live, "(47 / 193)");
+	st.done("");
+});
