@@ -6,7 +6,7 @@
 [![node](https://img.shields.io/node/v/fad-checker.svg)](https://nodejs.org)
 [![CI](https://github.com/9pings/fad-checker/actions/workflows/ci.yml/badge.svg)](https://github.com/9pings/fad-checker/actions/workflows/ci.yml)
 
-> **F**abulous **A**utonomous **D**ependency **C**hecker<br>
+> **F**ormidable **A**uditor's **D**ependency **C**hecker<br>
 > AKA **F**uckin' **A**utonomous **D**ependency **C**hecker<br>
 
 `fad-checker` audits **Maven · Gradle · npm · Yarn · pnpm · Composer · PyPI · NuGet · Go · Ruby**, vendored JavaScript, committed native binaries and cryptographic material (certificates & private/public keys) in any source tree; multi-module, monorepo, polyglot; and produces a self-contained **HTML + Word report** (CVE prioritised by EPSS + CISA KEV, EOL, obsolete, outdated, licenses) plus **CycloneDX SBOM / CSAF VEX / SARIF / JSON** exports. **No build tools, no Docker, no network needed**; it reads lockfiles and manifests straight off disk.
@@ -60,7 +60,7 @@ checkable.
 
 ¹ Absent from every configured repository = private. A *known, reported* hole in the coverage instead of a dependency that quietly returned zero CVEs; `-e <regex>` then excludes them.
 ² POMs reduced to the dependency-relevant nodes, reactor parents rewired, `${…}` resolved, every non-Maven lockfile mirrored. Buildless, sanitised, archivable as evidence — and scannable by anything, `--snyk` included.
-³ Matches NVD's own CPE ranges contradict go to appendix 1.4: "we looked and ruled it out" is a finding, and the reviewer gets to disagree.
+³ A match that NVD's own CPE ranges contradict goes to appendix 1.4, not to the bin: "we looked and ruled it out" is itself a finding, and the reviewer gets to disagree with it.
 ⁴ Snyk tracks new issues on its platform (`snyk monitor`), not as a local diff of two runs.
 ⁵ PEM / OpenSSH / PuTTY / PGP / one-line SSH + JKS/JCEKS/PKCS#12, built-in parser, no network. Trivy's secret scanner finds a private-key *file*; it doesn't analyse the certificate.
 ⁶ Grype's JSON carries its own DB build date, Dependency-Check's HTML a Scan Information block — one source each, not the run.
@@ -174,8 +174,8 @@ gap doesn't exist.
 **Which is why `--snyk` exists.** fad-checker takes `snyk test` output as an **input** and merges
 it, so you get the union rather than picking a side; the merge is one flag. On a tree with private
 modules, extract it with `-t` first — the normalised descriptors it writes have those coordinates
-stripped, so Snyk gets something it can actually resolve. Full per-finding verification of all 118, and the
-negative result on `--nvd-cpe-match`, in → [`docs/BENCHMARK.md`](docs/BENCHMARK.md).
+stripped, so Snyk gets something it can actually resolve. Full per-finding verification of all
+118, and the negative result on `--nvd-cpe-match`, in → [`docs/BENCHMARK.md`](docs/BENCHMARK.md).
 
 ## Air-gapped audits
 
