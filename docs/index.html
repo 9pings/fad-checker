@@ -122,8 +122,9 @@
   .arow p{margin:0;color:var(--muted);font-size:14.5px;line-height:1.6}
   .arow p b{color:var(--text);font-weight:600}
   .arow p .mono{color:var(--amber);font-size:13.5px}
-  .auditnote{margin-top:22px;border-left:3px solid var(--line2);padding:2px 0 2px 16px;color:var(--muted);font-size:15px}
-  .auditnote a{color:var(--amber);text-decoration:underline}
+  .auditnotes{margin:16px 0 0;padding-left:26px;color:var(--dim);font-size:13px;line-height:1.6}
+  .auditnotes li{margin:4px 0}
+  .auditnotes .mono{font-size:12.5px}
 
   /* report showcase */
   .showcase{background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
@@ -277,27 +278,36 @@
   <!-- FOR AUDITORS -->
   <section id="audit">
     <div class="kicker reveal">For auditors</div>
-    <h2 class="reveal">Why use fad-checker for an audit?</h2>
-    <p class="sub reveal">Most scanners are built for a CI pipeline: fail the build, emit JSON, move on.
-      An audit has different requirements &mdash; a <b>deliverable</b>, a <b>defensible method</b>, a
-      <b>stated scope</b>, and a client whose code <b>cannot leave the room</b>. That is the gap this tool
-      is built for, and these are the things the CI-first scanners don't do.</p>
-    <div class="audit">
-      <div class="arow reveal"><h3><span class="ck">&#10003;</span>The deliverable <i>is</i> the output</h3><p>A self-contained <b>HTML + Word <span class="mono">.doc</span></b> report, chaptered like an audit (0&nbsp;Warnings &rarr; 6&nbsp;Scan context &amp; limitations), every finding attributed to <b>the manifest that declares it</b>, with per-ecosystem fix recipes. Not a JSON blob you then have to turn into a document.</p></div>
-      <div class="arow reveal"><h3><span class="ck">&#10003;</span>Private modules are named, not silently skipped</h3><p>Every Maven coordinate the scan could not find on Maven Central is listed in <b>chapter 0</b>, with the manifest(s) that declare it. An in-house artifact becomes a <b>known, reported hole</b> in the coverage &mdash; auditable against the client's internal feed &mdash; instead of a dependency that quietly returned zero CVEs. <span class="mono">-e &lt;regex&gt;</span> excludes them from the scan, and <span class="mono">-t &lt;dir&gt;</span> extracts the whole dependency-descriptor tree with them stripped &mdash; archivable, and scannable by anything you point at it.</p></div>
-      <div class="arow reveal"><h3><span class="ck">&#10003;</span>Scan completeness is itself a finding</h3><p>Missing lockfiles, Maven deps whose version only a BOM resolves, Yarn&nbsp;Berry lockfiles, an undeterminable PHP runtime &mdash; all surfaced in <b>chapter 0</b> instead of silently shrinking the finding count. You learn where the scan is thin before the client does.</p></div>
-      <div class="arow reveal"><h3><span class="ck">&#10003;</span>Defensible and reproducible</h3><p>Every report carries a <b>provenance manifest</b> &mdash; tool version, runtime, online/offline mode, the run configuration and the <b>freshness of every data source</b> &mdash; plus a <span class="mono">SHA256SUMS</span> integrity manifest. Six months later you can still state exactly what you ran, and against which data.</p></div>
-      <div class="arow reveal"><h3><span class="ck">&#10003;</span>The scope is stated &mdash; including what's outside it</h3><p>A <b>Methodology, data sources &amp; limitations</b> chapter spells out what fad-checker does <i>not</i> assess: reachability, secrets, IaC, container base images. An audit that doesn't bound its own scope isn't one.</p></div>
-      <div class="arow reveal"><h3><span class="ck">&#10003;</span>The client's code never leaves the enclave</h3><p><span class="mono">--offline</span> makes <b>zero network calls</b> &mdash; tripwire-tested and reproducible under <span class="mono">unshare -rn</span>, a namespace with no network interface. The three-phase <b>anonymized descriptor</b> sends only public package coordinates off the secure machine.</p></div>
-      <div class="arow reveal"><h3><span class="ck">&#10003;</span>Audit a checkout you cannot build</h3><p>No <span class="mono">mvn</span>, no <span class="mono">npm install</span>, no Docker, no network required. The legacy projects that most need auditing are exactly the ones whose build no longer runs &mdash; and it still resolves the <b>Maven transitive graph</b> from cached POMs.</p></div>
-      <div class="arow reveal"><h3><span class="ck">&#10003;</span>Beyond CVEs: what clients actually ask</h3><p><b>EOL</b> and out-of-active-support frameworks, <b>deprecated / abandoned / yanked</b> packages, outdated versions with release dates, <b>SPDX licenses</b> and copyleft exposure, committed certificates and <b>private keys</b>. An EOL framework with no CVE is still a finding.</p></div>
-      <div class="arow reveal"><h3><span class="ck">&#10003;</span>False positives are shown, not hidden</h3><p>CPE-filtered matches go to a <b>&ldquo;likely false positives&rdquo;</b> appendix instead of being dropped, and <span class="mono">--ignore</span> / <span class="mono">--vex</span> triage stays <b>flagged</b> in the JSON/SBOM/CSAF exports. Your triage decisions remain visible to whoever reviews the audit.</p></div>
-      <div class="arow reveal"><h3><span class="ck">&#10003;</span>Repeat engagements are first-class</h3><p><span class="mono">--baseline</span> adds a <b>&Delta; Changes since baseline</b> chapter &mdash; new / fixed / unchanged per category, plus the list of new production CVEs &mdash; and <span class="mono">--fail-on-new</span> gates CI on <i>new</i> findings only.</p></div>
+    <h2 class="reveal">Why use fad-checker for code audits?</h2>
+    <p class="sub reveal">What it does for an audit that the others don't. Same column set and sourcing
+      discipline as <a href="https://github.com/9pings/fad-checker/blob/main/docs/COMPARISON.md" style="color:var(--amber);text-decoration:underline">COMPARISON.md</a>
+      &mdash; an <span class="warn">amber</span> cell is <i>partial</i> and says how, notes below carry the detail, and every cell is meant to be checkable.</p>
+    <div class="tablewrap reveal">
+      <table>
+        <thead><tr><th>What a code audit needs</th><th class="me">fad-checker</th><th>OSV-Scanner</th><th>Trivy</th><th>Grype+Syft</th><th>OWASP DC</th><th>Snyk OSS</th></tr></thead>
+        <tbody>
+          <tr><th><b>Private/internal modules named</b> &mdash; plus the manifests that declare them <sup>1</sup></th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td></tr>
+          <tr><th><b>Dependency descriptors extracted &amp; normalised</b> to a parallel tree (<span class="mono">-t</span>) <sup>2</sup></th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td></tr>
+          <tr><th><b>Report states what it does <i>not</i> assess</b> &mdash; reachability, secrets, IaC, containers</th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td></tr>
+          <tr><th><b>Likely false positives kept and shown</b>, not silently dropped <sup>3</sup></th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td></tr>
+          <tr><th><b>Artifact integrity manifest</b> &mdash; <span class="mono">sha256sum -c</span></th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td></tr>
+          <tr><th><b>Differential audit</b> &mdash; &Delta; chapter vs a prior run, gate on <i>new</i> only <sup>4</sup></th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f warn">cloud</td></tr>
+          <tr><th><b>Certificates, private keys &amp; keystores</b> analysed offline <sup>5</sup></th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f warn">key rule</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td></tr>
+          <tr><th><b>Provenance manifest in the report</b> &mdash; run config + freshness of all 13 sources <sup>6</sup></th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f warn">DB date</td><td class="f warn">NVD date</td><td class="f no">✗</td></tr>
+          <tr><th><b>Triage stays visible</b> &mdash; <span class="mono">--ignore</span>/<span class="mono">--vex</span> flagged in the exports, not removed</th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f no">✗</td><td class="f warn">file</td><td class="f no">✗</td></tr>
+          <tr><th><b>Native binaries identified by checksum</b> &rarr; should-be-declared / unknown / tampered <sup>7</sup></th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f warn">some</td><td class="f warn">patterns</td><td class="f no">✗</td><td class="f no">✗</td></tr>
+          <tr><th><b>Scan completeness as report findings</b> &mdash; no lockfile, BOM-unresolved versions <sup>8</sup></th><td class="f me yes">✓</td><td class="f warn">log</td><td class="f warn">log</td><td class="f warn">log</td><td class="f warn">log</td><td class="f warn">log</td></tr>
+          <tr><th><b>Scan without exposing the tree's paths</b> <sup>9</sup></th><td class="f me yes">✓</td><td class="f no">✗</td><td class="f no">✗</td><td class="f warn">paths</td><td class="f no">✗</td><td class="f no">✗</td></tr>
+          <tr><th><b>Zero-network guarantee, regression-tested</b> &mdash; not just an offline flag <sup>10</sup></th><td class="f me yes">✓</td><td class="f warn">flag</td><td class="f warn">flag</td><td class="f warn">flag</td><td class="f warn">feed</td><td class="f no">✗</td></tr>
+          <tr><th><b>Maven transitive graph with no network interface at all</b> <sup>11</sup></th><td class="f me yes">✓ 657/657</td><td class="f no">✗</td><td class="f warn">~/.m2</td><td class="f warn">opt-in</td><td class="f warn">mirror</td><td class="f no">✗</td></tr>
+          <tr><th><b>Chaptered audit report + Word <span class="mono">.doc</span></b> <sup>12</sup></th><td class="f me yes">✓</td><td class="f warn">HTML list</td><td class="f warn">template</td><td class="f no">✗</td><td class="f warn">HTML list</td><td class="f warn">snyk-to-html</td></tr>
+        </tbody>
+      </table>
     </div>
-    <p class="auditnote reveal">The design rationale for each of these &mdash; and the gap analysis they came from &mdash; is written down in
-      <a href="https://github.com/9pings/fad-checker/blob/main/docs/SPEC-audit-pro.md">SPEC-audit-pro.md</a>.
-      What the tool deliberately does <i>not</i> claim is in
-      <a href="#benchmark">the benchmark</a>.</p>
+    <ol class="auditnotes reveal"><li>Absent from every configured repository = private. A <b>known, reported</b> hole in the coverage instead of a dependency that quietly returned zero CVEs; <span class="mono">-e &lt;regex&gt;</span> then excludes them.</li><li>POMs reduced to the dependency-relevant nodes, reactor parents rewired, <span class="mono">${…}</span> resolved, every non-Maven lockfile mirrored. Buildless, sanitised, archivable as evidence &mdash; and scannable by anything, <span class="mono">--snyk</span> included.</li><li>Matches NVD's own CPE ranges contradict go to appendix 1.4: &ldquo;we looked and ruled it out&rdquo; is a finding, and the reviewer gets to disagree.</li><li>Snyk tracks new issues on its platform (<span class="mono">snyk monitor</span>), not as a local diff of two runs.</li><li>PEM / OpenSSH / PuTTY / PGP / one-line SSH + JKS/JCEKS/PKCS#12, built-in parser, no network. Trivy's secret scanner finds a private-key <i>file</i>; it doesn't analyse the certificate.</li><li>Grype's JSON carries its own DB build date, Dependency-Check's HTML a Scan Information block &mdash; one source each, not the run.</li><li>Syft's binary catalogers match byte patterns to name a version; they don't answer &ldquo;is this the file it claims to be, and should it be declared instead&rdquo;.</li><li>Every other tool tells the <i>operator</i>; only fad tells the <i>audit</i>.</li><li>Public coordinates only &mdash; no paths, registry URLs, hostnames or hashes &mdash; and the detailed report is produced back inside the enclave. Syft's CycloneDX encoder stamps <span class="mono">syft:location</span> paths into the SBOM.</li><li>Tripwire fetcher that throws if touched (<span class="mono">test/offline-guarantee.test.js</span>) + byte-identical findings under <span class="mono">unshare -rn</span>.</li><li>The one ecosystem whose graph isn't in the tree. Under <span class="mono">unshare -rn</span>, against OSV-Scanner's <i>online</i> output: 657/657. OSV disables transitive resolution offline by design.</li><li>Chapters 0&rarr;6, exec summary, per-manifest attribution, fix recipes, one self-contained file + a Word twin. None of the others emits Word.</li></ol>
+    <p class="note reveal"><b>Where it loses</b> &mdash; containers/OS packages, reachability analysis,
+      auto-fix PRs, and CVE coverage against Snyk's curated feed:
+      <a href="#benchmark">the 118, explained</a>.</p>
   </section>
 </main>
 
