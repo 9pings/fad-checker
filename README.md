@@ -170,7 +170,7 @@ Composer. The delta is a Java-ecosystem phenomenon, not a general one.
 118 into 88 public CVEs and 30 proprietary `SNYK-*` ids, and concluded the 88 were real misses.
 That conclusion was wrong, and the re-measurement below is what replaces it.
 
-**Re-measured on 2026-09-18: of 131 claimed misses, zero are recall bugs.** The original per-pair
+**Re-measured on 2026-09-18: of 131 claimed misses, zero are recall bugs against OSV.** The original per-pair
 analysis misread OSV's `affected[].versions` (the **affected** versions) as a list of fixed
 versions, and read the CVE-converted record without its GHSA alias — where the Maven binding
 actually lives. Re-running the same commit and adjudicating every claimed miss against OSV with

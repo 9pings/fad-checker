@@ -244,7 +244,7 @@ OSV-Scanner 2.4.0 (osv-scalibr 0.4.5).
 
 **At full capability: 118 pairs**, all found by Snyk and by no other tool.
 
-> **Re-measured — 2026-09-18. Of 131 claimed misses, zero are recall bugs.**
+> **Re-measured — 2026-09-18. Of 131 claimed misses, zero are recall bugs against OSV.**
 >
 > The analysis below read OSV's `affected[].versions` as a list of *fixed* versions. It is the
 > list of **affected** versions ("each string is a single affected version", [osv-schema](https://github.com/ossf/osv-schema/blob/main/docs/schema.md)).
@@ -287,6 +287,23 @@ OSV-Scanner 2.4.0 (osv-scalibr 0.4.5).
 > `CVE-2021-29442` together while NVD treats them as distinct; fad reports only the former on
 > `nacos-common@1.3.1`. **The diff credits fad's CPE-filtered findings as "seen"**, which touches
 > exactly 3 pairs — all out of range anyway, so no verdict depends on it.
+>
+> **One authority, named — and where that cuts against this document.** The adjudication is
+> defined against **OSV**, because OSV is what fad-checker queries by default and the adjudicator
+> reuses its own range evaluation. Under NVD's CPE ranges instead, 36 of the 131 would sit inside
+> a vulnerable range — but 24 of those are the framework-vs-artifact granularity noise that
+> [`--nvd-cpe-match` was measured at 12% precision for](#a-negative-result-nvd-cpe-ranges-as-a-matching-tier)
+> (`netty:netty` landing on every netty sub-artifact, and so on), so NVD is not the better
+> authority here, it is the noisier one.
+>
+> Five are not noise, and they are awkward: `jackson-databind@2.5.2` for `CVE-2020-11112`,
+> `-11113`, `-11619`, `-14060` and `-14062`. GHSA declares only the 2.9.x branch; NVD's range
+> includes 2.5.2 — and the section further down argues, **about this exact artifact**, that the
+> narrower entry is "incomplete CPE curation, not a statement that 2.5.2 is safe." So this
+> document has reasoned in both directions: NVD's wider range when defending fad's findings,
+> OSV's narrower one when dismissing these five. Under the OSV-defined adjudication they are
+> `OUT_OF_RANGE` and the zero stands; under the opt-in `--nvd-cpe-match` tier fad would report
+> them. The honest statement is **"0 recall bugs against OSV"**, not "0 against all public data".
 >
 > The 30/88 split below is the original assertion, kept for the record. It is not a verified
 > result, and **"they are real misses, not Snyk noise" does not hold**. Re-adjudicate before

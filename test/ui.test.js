@@ -52,3 +52,25 @@ test("Progress.fail marks a step with ✗ and the message", () => {
 	});
 	assert.match(out, /\[1\/1\][^\n]*✗[^\n]*boom[^\n]*kaboom/);
 });
+
+// ---- non-TTY progress heartbeat ----
+// A registry-per-dependency step runs for minutes on a large reactor. In a TTY the spinner
+// rewrites one line; with output redirected (CI, `> run.log`) nothing was printed at all
+// until the step finished, so a working scan looked exactly like a hung one.
+const { shouldBeat } = require("../lib/ui");
+
+test("stays silent until the interval has passed", () => {
+	assert.strictEqual(shouldBeat("5/400", "", 1000, 0, 15000), false);
+});
+
+test("beats once the counter moved and the interval elapsed", () => {
+	assert.strictEqual(shouldBeat("120/400", "5/400", 20000, 0, 15000), true);
+});
+
+test("does not repeat the same count — a stalled step must not look busy", () => {
+	assert.strictEqual(shouldBeat("120/400", "120/400", 99000, 0, 15000), false);
+});
+
+test("nothing to say when there is no count yet", () => {
+	assert.strictEqual(shouldBeat("", "", 99000, 0, 15000), false);
+});

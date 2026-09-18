@@ -10,13 +10,20 @@ const test = require("node:test");
 const assert = require("node:assert");
 const { autoEnableOsvDb } = require("../lib/osv-db");
 
-test("a Java scan enables it without being asked — that is the first-run download", () => {
-	assert.strictEqual(autoEnableOsvDb({}, { runMaven: true }), true);
-	assert.strictEqual(autoEnableOsvDb({}, { runGradle: true }), true);
+test("a Java scan never pulls the 9 MB import on its own", () => {
+	// It buys offline completeness, not speed — the per-dep OSV queries still run, and they
+	// are not the bottleneck on a large reactor anyway. Nobody should pay for it unasked.
+	assert.strictEqual(autoEnableOsvDb({}, { runMaven: true, hasIndex: false }), false);
+	assert.strictEqual(autoEnableOsvDb({}, { runGradle: true, hasIndex: false }), false);
+});
+
+test("but an index already on disk is used, online or off — it is free recall", () => {
+	assert.strictEqual(autoEnableOsvDb({}, { runMaven: true, hasIndex: true }), true);
+	assert.strictEqual(autoEnableOsvDb({ offline: true }, { runMaven: true, hasIndex: true }), true);
 });
 
 test("--no-osv-db still wins", () => {
-	assert.strictEqual(autoEnableOsvDb({ osvDb: false }, { runMaven: true }), false);
+	assert.strictEqual(autoEnableOsvDb({ osvDb: false }, { runMaven: true, hasIndex: true }), false);
 });
 
 test("--osv-db forces it on even where it would not auto-enable", () => {
@@ -28,9 +35,9 @@ test("a non-Java scan does not pull a Maven-only database", () => {
 });
 
 test("--no-osv means no OSV data at all, local database included", () => {
-	assert.strictEqual(autoEnableOsvDb({ osv: false }, { runMaven: true }), false);
+	assert.strictEqual(autoEnableOsvDb({ osv: false }, { runMaven: true, hasIndex: true }), false);
 	// unless the user asked for the database by name, which is unambiguous
-	assert.strictEqual(autoEnableOsvDb({ osv: false, osvDb: true }, { runMaven: true }), true);
+	assert.strictEqual(autoEnableOsvDb({ osv: false, osvDb: true }, { runMaven: true, hasIndex: false }), true);
 });
 
 test("an offline scan never triggers the download", () => {

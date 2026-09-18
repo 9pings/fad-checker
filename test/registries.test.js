@@ -47,8 +47,16 @@ test("config registries CRUD round-trips via a temp HOME", () => {
 });
 
 const { buildRepoList } = require("../lib/maven-repo");
-test("maven buildRepoList still appends Central last and dedups", () => {
+test("maven buildRepoList still appends Central after the user repos, and dedups", () => {
 	const repos = buildRepoList([{ name: "nexus", url: "https://nexus/m2" }], [{ url: "https://nexus/m2" }]);
-	assert.strictEqual(repos[repos.length - 1].name, "central");
+	const centralAt = repos.findIndex(r => r.name === "central");
+	assert.ok(centralAt > 0, "Central sits behind the user repos");
+	assert.ok(repos.slice(centralAt + 1).every(r => r.mirror), "only mirrors follow Central");
 	assert.strictEqual(repos.filter(r => r.name === "nexus").length, 1);
+});
+
+test("mirrors can be turned off, which restores the pre-mirror list exactly", () => {
+	const repos = buildRepoList([{ name: "nexus", url: "https://nexus/m2" }], [], { mirrors: false });
+	assert.strictEqual(repos[repos.length - 1].name, "central");
+	assert.ok(repos.every(r => !r.mirror));
 });

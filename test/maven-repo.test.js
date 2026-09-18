@@ -28,7 +28,7 @@ test("authHeader returns Basic <base64>", () => {
 	assert.equal(authHeader(null), null);
 });
 
-test("buildRepoList puts user repos first, Central last, dedupes by URL, normalises trailing slash", () => {
+test("buildRepoList puts user repos first, then Central ahead of its mirrors, dedupes by URL, normalises trailing slash", () => {
 	const list = buildRepoList(
 		[
 			{ name: "nexus", url: "https://nexus.acme.com/repository/maven-public" },          // no trailing /
@@ -46,8 +46,12 @@ test("buildRepoList puts user repos first, Central last, dedupes by URL, normali
 	assert.equal(list.filter(r => r.name === "nexus").length, 1);
 	// atlassian is in the middle (extra repo, before Central)
 	assert.ok(list.some(r => r.url === "https://maven.atlassian.com/"));
-	// Maven Central is last
-	assert.equal(list[list.length - 1].url, MAVEN_CENTRAL.url);
+	// Central closes the configured repos and leads the mirror block that follows it. Every
+	// user-supplied repo must still come first: private artifacts resolve privately.
+	const centralAt = list.findIndex(r => r.url === MAVEN_CENTRAL.url);
+	assert.ok(centralAt >= 0, "Central present");
+	assert.ok(list.slice(0, centralAt).every(r => !r.central), "a mirror jumped ahead of Central");
+	assert.ok(list.slice(centralAt + 1).every(r => r.mirror), "only mirrors follow Central");
 });
 
 test("buildRepoList strips and stores embedded user:pass auth", () => {
