@@ -20,17 +20,15 @@
 
 ## Features
 
-- **10 ecosystems in one pass**; Maven, **Gradle**, npm/Yarn/pnpm, Composer (PHP), PyPI, NuGet, Go, Ruby; plus **vendored JS** (retire.js), committed **native binaries** (`.dll`/`.exe`/`.so`/`.dylib`, identified by checksum via deps.dev + CIRCL) and **embedded JARs** (fat-jars/war/ear, unzipped in-memory).
-- **Crypto material**; committed **certificates** (X.509, PEM/DER), **private &amp; public keys** (PEM / OpenSSH every algorithm / PuTTY / PGP / one-line SSH) and **keystores** (JKS/JCEKS/PKCS#12). Each key is labelled **private** (a committed secret → critical) or **public**; certs are checked for **expiry, weak key (RSA<2048), weak signature (MD5/SHA1) and self-signed**; all parsed offline with the built-in X.509 parser, no network. `--no-certs` to disable.
-- **No build tools**; reads `pom.xml`, `build.gradle(.kts)`/`gradle.lockfile`/`libs.versions.toml`, `package-lock`/`yarn.lock`/`pnpm-lock`, `composer.lock`, `poetry`/`Pipfile`/`uv`/`pdm` locks, `packages.lock.json`/`*.csproj`, `go.mod`, `Gemfile.lock` directly. No `mvn`/`gradle`/`npm install`/`pip`/`dotnet restore`/`go build`/`bundle`, no `node_modules/`. → [how it stays build-free](docs/COMPARISON.md#how-its-autonomous-no-build-tools)
+- **10 ecosystems in one pass**; Maven, Gradle, npm/Yarn/pnpm, Composer, PyPI, NuGet, Go, Ruby — plus **vendored JS**, committed **native binaries** (identified by checksum) and **embedded JARs** (fat-jars/war/ear, opened in-memory).
+- **No build tools**; manifests and lockfiles are read off disk. No `mvn`/`gradle`/`npm install`/`pip`/`dotnet restore`/`go build`, no `node_modules/`. The Maven graph is resolved the way Maven resolves it. → [how](docs/COMPARISON.md#how-its-autonomous-no-build-tools)
 - **CVE, merged & prioritised**; CVEProject + OSV.dev + NVD, CPE/version cross-checked to cut false positives, ranked **CISA KEV → EPSS → CVSS**.
-- **Per-module Maven version mediation**; recovers vulnerable transitive versions that a global `<dependencyManagement>` pin hides in another module, applying Maven's own nearest-wins semantics per module rather than resolving the whole reactor as one tree.
-- **Air-gapped**; **zero network under `--offline`** (regression-tested), offline Maven transitive resolution, and `--osv-db` for cache-independent offline OSV recall. Benchmarked against OSV-Scanner, Snyk, Trivy and Grype+Syft on **six public projects across six ecosystems**: identical finding sets on npm, RubyGems and Composer (parity is the correct outcome when the graph is in the lockfile), and on Maven — where it is not — fad recovers **657/657** of OSV-Scanner's *online* result with **no network interface at all**, versus 45 / 40 / 37 for the others. At full capability it leads at 87% of a 908-pair union; the pairs Snyk reported and it did not were adjudicated one by one against OSV, and **none is a recall bug** — [the measurement](#coverage-honestly-the-pairs-snyk-reports-and-fad-checker-doesnt). → [Benchmark](docs/BENCHMARK.md) · [Air-gapped](#air-gapped-audits)
-- **Supply-chain risk**; known-**malicious** advisories (`MAL-`, always block the CI gate) + suspected **typosquats** (`--typosquat`).
-- **Lifecycle**; EOL (endoflife.date — with an opt-in "out of active support" level, `--eol-support`), PHP runtime EOL from the Composer constraint, obsolete/deprecated, outdated; across every ecosystem.
-- **Licenses** *(opt-in `--licenses`)*; SPDX-normalised, copyleft/proprietary flagged.
-- **Audit-grade & reproducible**; every report carries a **provenance manifest** (data-source freshness + run config) and a **Methodology, data sources & limitations** chapter; artifacts ship a **`SHA256SUMS`** integrity manifest (`sha256sum -c`); **differential audits** diff against a prior run (`--baseline`, or `fad diff a.json b.json`) and CI can gate on *new* findings (`--fail-on-new`).
-- **Outputs & CI**; HTML + Word `.doc`, CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on` / `--fail-on-new`, triage with `--ignore`/`--vex`. Private registries for Maven, npm, PyPI, Ruby, Go, **NuGet** and **Composer**.
+- **Beyond CVEs**; EOL and out-of-active-support frameworks, deprecated/abandoned/yanked, outdated with release dates, SPDX **licenses**, and **private/internal packages** — every coordinate no configured registry knows, in any ecosystem.
+- **Crypto material**; committed **certificates** (expiry, weak key, weak signature, self-signed), **private vs public keys** across PEM/OpenSSH/PuTTY/PGP and JKS/PKCS#12 keystores. Parsed offline, no network.
+- **Air-gapped**; **zero network under `--offline`**, regression-tested and reproducible under `unshare -rn`. On Maven it recovers **657/657** of OSV-Scanner's *online* result with no network interface at all, against 45 / 40 / 37 for the others. → [Benchmark](docs/BENCHMARK.md) · [Air-gapped](#air-gapped-audits)
+- **Supply-chain risk**; known-**malicious** advisories (always block the CI gate) and suspected **typosquats** (`--typosquat`).
+- **Audit-grade**; every report carries a **provenance manifest** and a **Methodology & limitations** chapter; artifacts ship `SHA256SUMS`; **differential audits** diff against a prior run (`--baseline`) and CI can gate on *new* findings only.
+- **Outputs & CI**; HTML + Word `.doc`, CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on`, triage with `--ignore`/`--vex`. Private registries for every ecosystem.
 
 📖 **[Usage & all flags](docs/USAGE.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Comparison vs other tools](docs/COMPARISON.md)** · **[Data sources](docs/DATA-SOURCES.md)**
 
@@ -154,41 +152,33 @@ The HTML report opens in any browser, contains every detail (CVSS vectors, refer
 
 ## Coverage, honestly: the pairs Snyk reports and fad-checker doesn't
 
-The benchmark's headline is that no tool finds everything — fad-checker leads at **87% of a
-908-pair union**, and **118 pairs were reported by Snyk and not by it**. That number was published
-as a recall gap. It isn't one: every such pair has since been adjudicated against the public
-record, and **zero are recall bugs**.
+No tool finds everything. fad-checker leads at **87% of a 908-pair union**, and **131 pairs came
+back from Snyk and not from it**. Adjudicated one by one against OSV, **none is a recall bug**:
 
-**Two things scope them.** They are **all Snyk's**: OSV-Scanner, Trivy and Grype+Syft each
-contributed **0** findings no one else had, so this is not "fad is behind the field" — it is one
-commercial database against the whole of public advisory data. And they are all on the
-**Maven/Java** target. Outside Maven the resolved graph is already in the lockfile, every scanner
-reads the same input, and the benchmark measures **identical finding sets** on npm, RubyGems and
-Composer. The delta is a Java-ecosystem phenomenon, not a general one.
+| | Verdict |
+| ---: | --- |
+| 57 | wrong artifact — the advisory binds a different coordinate |
+| 31 | out of range — the version is outside every declared affected range |
+| 23 | not in OSV — 19 proprietary `SNYK-*` ids, 4 that only NVD carries |
+| 19 | no Maven binding — the advisory binds no Maven package at all |
+| 1 | already reported, under the CVE alias |
+| **0** | **confirmed miss** |
 
-**What Snyk mostly has is not vulnerabilities nobody else sees.** The original analysis split the
-118 into 88 public CVEs and 30 proprietary `SNYK-*` ids, and concluded the 88 were real misses.
-That conclusion was wrong, and the re-measurement below is what replaces it.
+**Two thirds contradict the public record**, so reporting them would mean shipping false
+positives. `CVE-2023-6481` is the clean example: claimed on `logback-classic@1.2.2`, it binds
+`logback-core` at `[1.2.12, 1.2.13)` — wrong artifact, and a version published before the flaw
+existed.
 
-**Re-measured on 2026-09-18: of 131 claimed misses, zero are recall bugs against OSV.** The original per-pair
-analysis misread OSV's `affected[].versions` (the **affected** versions) as a list of fixed
-versions, and read the CVE-converted record without its GHSA alias — where the Maven binding
-actually lives. Re-running the same commit and adjudicating every claimed miss against OSV with
-[`scripts/adjudicate-gap.js`](scripts/adjudicate-gap.js): **57 wrong artifact, 31 out of range,
-23 not in OSV, 19 no Maven binding, 1 already reported under the CVE alias, 0 confirmed**. So
-**67% are Snyk contradicting the public record** — reporting them would mean shipping false
-positives. The worked example says it all: `CVE-2023-6481` is claimed on `logback-classic@1.2.2`,
-but binds `logback-core` at `[1.2.12, 1.2.13)` — wrong artifact, and a version from before the
-flaw existed. Adversarially reviewed by a second model, which confirmed the zero and found three
-defects in the tooling, since fixed. → [detail and caveats](docs/BENCHMARK.md#what-fad-checker-misses-and-why)
+**Scope.** All 131 are Snyk's: OSV-Scanner, Trivy and Grype+Syft each contributed **0** findings
+no one else had. And all are on the Maven target — outside Maven the graph is in the lockfile,
+every scanner reads the same input, and the benchmark measures identical finding sets on npm,
+RubyGems and Composer.
 
 **Which is why `--snyk` exists.** fad-checker takes `snyk test` output as an **input** and merges
-it, so you get the union rather than picking a side; the merge is one flag. On a tree with private
-modules, extract it with `-t` first — the normalised descriptors it writes have those coordinates
-stripped, so Snyk gets something it can actually resolve. Merging it is a coverage choice, not a
-correction: on this benchmark two thirds of what Snyk adds on its own contradicts the public
-record. Full per-pair adjudication, and the negative result on `--nvd-cpe-match`, in →
-[`docs/BENCHMARK.md`](docs/BENCHMARK.md).
+it, so you get the union rather than picking a side. A coverage choice, not a correction.
+
+Method, caveats and the per-pair verdicts → [`docs/BENCHMARK.md`](docs/BENCHMARK.md); reproduce
+with [`scripts/adjudicate-gap.js`](scripts/adjudicate-gap.js).
 
 ## Air-gapped audits
 
