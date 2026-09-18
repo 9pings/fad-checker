@@ -291,7 +291,8 @@ program
 	.option("--ignore-test", "skip test-scoped dependencies in report")
 	.option("--cve-refresh", "force re-download of CVE database")
 	.option("--cve-offline", "use cached CVE index only (no download)")
-	.option("--osv-db", "import + match the full local OSV database (Maven) — offline-complete recall, independent of the per-dep OSV cache")
+	.option("--osv-db", "import + match the full local OSV database (Maven) — offline-complete recall, independent of the per-dep OSV cache. ON BY DEFAULT for Maven/Gradle: the first run downloads it (~9 MB), later runs reuse the cached index. Never downloaded under --offline.")
+	.option("--no-osv-db", "skip the local OSV database (Maven/Gradle scans use it by default)")
 	.option("--osv-db-refresh", "force re-download of the local OSV database")
 	.option("--snyk", "run snyk on cleaned POMs and merge into report (requires --target)")
 	.option("--typosquat", "flag npm/PyPI deps whose name is one edit from a popular package (heuristic typosquat/slopsquat detection)")
@@ -921,7 +922,8 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const willOsv = !!options.osv;
 	// Local OSV DB import (Maven): offline-complete OSV recall, independent of the per-dep
 	// OSV.dev cache. Opt-in (downloads ~9 MB once); then matches online or offline.
-	const willOsvDb = !!options.osvDb && (runMaven || runGradle);
+	const { autoEnableOsvDb, hasOsvDbIndex } = require("./lib/osv-db");
+	const willOsvDb = autoEnableOsvDb(options, { runMaven, runGradle, hasIndex: hasOsvDbIndex("maven") });
 	const willOutdated = !!options.allLibs;
 	const willNvd = !!options.nvd;
 	const willEpss = !!options.epss;
@@ -1136,6 +1138,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		const st = progress.start("OSV database (local, Maven)");
 		try {
 			const { ensureOsvDb, matchOsvDbDeps } = require("./lib/osv-db");
+			if (!offline && !hasOsvDbIndex("maven")) st.tick("first run — importing the OSV Maven database (~9 MB)");
 			const index = await ensureOsvDb({ offline, refresh: !!options.osvDbRefresh, verbose, ecosystem: "maven" });
 			if (!index) {
 				st.done(offline ? "no local OSV DB (run once online with --osv-db)" : "unavailable");

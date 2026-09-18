@@ -169,13 +169,16 @@ Composer. The delta is a Java-ecosystem phenomenon, not a general one.
 118 are public CVEs** — already in NVD or OSV, free to read. Only **30** carry a proprietary
 `SNYK-*` identifier with no public CVE alias at all.
 
-**How many of the 88 are real misses is currently unverified.** The original per-pair analysis
-misread OSV's `affected[].versions` (the **affected** versions) as a list of fixed versions, and
-read the CVE-converted record without its GHSA alias — where the Maven binding actually lives. Its
-worked example, `CVE-2023-6481` on `logback-classic@1.2.2`, turns out to be a Snyk false positive:
-the advisory binds `logback-core`, introduced at `1.2.12`. `scripts/adjudicate-gap.js` now
-classifies each claimed miss against the public record, and only a `CONFIRMED_MISS` is worth
-engineering against — chasing the rest is how a scanner acquires mass false positives.
+**Re-measured on 2026-09-18: of 131 claimed misses, zero are recall bugs.** The original per-pair
+analysis misread OSV's `affected[].versions` (the **affected** versions) as a list of fixed
+versions, and read the CVE-converted record without its GHSA alias — where the Maven binding
+actually lives. Re-running the same commit and adjudicating every claimed miss against the public
+record with [`scripts/adjudicate-gap.js`](scripts/adjudicate-gap.js): **53 wrong artifact, 31
+out of range, 27 proprietary `SNYK-*`, 19 no Maven binding, 1 already reported under the CVE
+alias, 0 confirmed**. So **64% are Snyk contradicting the public record** — reporting them would
+mean shipping false positives. The worked example says it all: `CVE-2023-6481` is claimed on
+`logback-classic@1.2.2`, but binds `logback-core` from `1.2.12` — wrong artifact, and a version
+from before the flaw existed. → [detail](docs/BENCHMARK.md#what-fad-checker-misses-and-why)
 
 **So the differentiator is a curation layer, kept behind the paywall.** Snyk's per-artifact
 affected-version assertions are its product, and they are not contributed back to OSV or NVD —

@@ -8,7 +8,7 @@
  */
 const test = require("node:test");
 const assert = require("node:assert");
-const { classifyPair, VERDICT, summarize, mergeRecords } = require("../lib/gap-adjudicate");
+const { classifyPair, VERDICT, summarize, mergeRecords, reconcileFound } = require("../lib/gap-adjudicate");
 
 // GHSA-gm62-rw4g-vrc4 (CVE-2023-6481), reduced to the fields that decide the verdict.
 const LOGBACK = {
@@ -102,4 +102,20 @@ test("mergeRecords unions the affected sets — the Maven binding lives in the G
 test("mergeRecords of nothing is null, which classifies as NO_PUBLIC_RECORD", () => {
 	assert.strictEqual(mergeRecords([]), null);
 	assert.strictEqual(classifyPair({ coord: "g:a", version: "1" }, mergeRecords([])).verdict, VERDICT.NO_PUBLIC_RECORD);
+});
+
+test("a pair the scanner already reports under an ALIAS is not a miss", () => {
+	// GHSA-xv5h-v7jh-p2qh and GHSA-36hp-jr8h-556f are aliases of each other and of
+	// CVE-2021-29441. Comparing raw ids makes the same vulnerability look missing.
+	const rows = [{ verdict: VERDICT.CONFIRMED_MISS, coord: "g:a", version: "1.3.1",
+		id: "GHSA-xv5h-v7jh-p2qh", aliases: ["GHSA-xv5h-v7jh-p2qh", "CVE-2021-29441", "GHSA-36hp-jr8h-556f"] }];
+	const found = new Set(["g:a@1.3.1|CVE-2021-29441"]);
+	const out = reconcileFound(rows, found);
+	assert.strictEqual(out[0].verdict, VERDICT.ALREADY_REPORTED);
+	assert.strictEqual(summarize(out).realGap, 0);
+});
+
+test("reconcileFound leaves a genuine miss alone", () => {
+	const rows = [{ verdict: VERDICT.CONFIRMED_MISS, coord: "g:a", version: "1.0", id: "CVE-1", aliases: ["CVE-1"] }];
+	assert.strictEqual(reconcileFound(rows, new Set(["g:b@1.0|CVE-1"]))[0].verdict, VERDICT.CONFIRMED_MISS);
 });

@@ -28,7 +28,7 @@
  */
 const fs = require("fs");
 const pLimit = require("p-limit");
-const { classifyPair, summarize, mergeRecords, VERDICT } = require("../lib/gap-adjudicate");
+const { classifyPair, summarize, mergeRecords, reconcileFound, foundKey, VERDICT } = require("../lib/gap-adjudicate");
 
 const OSV_API = "https://api.osv.dev/v1/vulns/";
 
@@ -38,6 +38,7 @@ function usage(msg) {
 
   <pairs.json>   [{ coord, version, ids: [...] }, ...]
   --snyk         read \`snyk test --json\` output instead
+  --found <f>    fad's findings.json — drops pairs it already reports under an alias
   --json <file>  also write the per-pair verdicts
 
 Verdicts: CONFIRMED_MISS (the real gap) · OUT_OF_RANGE / WRONG_ARTIFACT (the other tool
@@ -87,9 +88,11 @@ async function main() {
 	const argv = process.argv.slice(2);
 	if (!argv.length || argv.includes("-h") || argv.includes("--help")) usage();
 	const snyk = argv.includes("--snyk");
+	const foundAt = argv.indexOf("--found");
 	const jsonAt = argv.indexOf("--json");
 	const jsonOut = jsonAt >= 0 ? argv[jsonAt + 1] : null;
-	const file = argv.find((a, i) => !a.startsWith("--") && (jsonAt < 0 || i !== jsonAt + 1));
+	const consumed = new Set([jsonAt + 1, foundAt + 1].filter(i => i > 0));
+	const file = argv.find((a, i) => !a.startsWith("--") && !consumed.has(i));
 	if (!file) usage("no input file");
 
 	let doc;
@@ -108,7 +111,21 @@ async function main() {
 		return row;
 	})));
 
-	const s = summarize(rows);
+	// A vulnerability carries a CVE and several aliased GHSA ids; if the two sides picked
+	// different ones, a pair the scanner DID report looks missing. Reconcile before counting.
+	let finalRows = rows;
+	if (foundAt >= 0 && argv[foundAt + 1]) {
+		const doc = JSON.parse(fs.readFileSync(argv[foundAt + 1], "utf8"));
+		const set = new Set();
+		for (const f of doc.cve || []) {
+			const dep = f.dep || {};
+			if (!dep.coord || !dep.version) continue;
+			for (const id of [f.id, ...(f.aliases || [])].filter(Boolean)) set.add(foundKey(dep.coord, dep.version, id));
+		}
+		finalRows = reconcileFound(rows, set);
+	}
+	const rowsOut = finalRows;
+	const s = summarize(rowsOut);
 	const pct = n => `${((n / s.total) * 100).toFixed(1)}%`;
 	console.log(`\nadjudicated ${s.total} claimed miss(es) against OSV\n`);
 	for (const v of Object.values(VERDICT)) {
@@ -118,11 +135,11 @@ async function main() {
 	console.log(`\n  REAL GAP: ${s.realGap} of ${s.total} (${pct(s.realGap)}) — these are worth engineering against.`);
 	console.log(`  The rest is unreachable from public data, or the other tool disagreeing with it.\n`);
 
-	for (const r of rows.filter(r => r.verdict === VERDICT.CONFIRMED_MISS)) {
+	for (const r of rowsOut.filter(r => r.verdict === VERDICT.CONFIRMED_MISS)) {
 		console.log(`  CONFIRMED  ${r.id}  ${r.coord}@${r.version}`);
 	}
 	if (jsonOut) {
-		fs.writeFileSync(jsonOut, JSON.stringify({ summary: s, rows }, null, 2));
+		fs.writeFileSync(jsonOut, JSON.stringify({ summary: s, rows: rowsOut }, null, 2));
 		console.log(`\n  → ${jsonOut}`);
 	}
 	process.exitCode = 0;

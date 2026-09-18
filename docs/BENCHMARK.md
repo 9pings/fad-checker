@@ -240,22 +240,36 @@ OSV-Scanner 2.4.0 (osv-scalibr 0.4.5).
 
 **At full capability: 118 pairs**, all found by Snyk and by no other tool.
 
-> **Correction — 2026-09-18.** The per-class analysis that follows read OSV's
-> `affected[].versions` as a list of *fixed* versions. It is the list of **affected**
-> versions, and the worked example below was wrong in both directions: `CVE-2023-6481` binds
-> `ch.qos.logback:logback-core` (not `logback-classic`) with
-> `{introduced: 1.2.12, fixed: 1.2.13}` — so `1.2.2` predates the flaw. That pair is a Snyk
-> **false positive**, not a fad miss. The Maven binding lives on the GHSA alias
-> (`GHSA-gm62-rw4g-vrc4`), which the original analysis never fetched: OSV keeps the
-> CVE-converted record and the GHSA as separate documents, and the CVE one carries only a GIT
-> range.
+> **Re-measured — 2026-09-18. Of 131 claimed misses, zero are recall bugs.**
 >
-> So the claim "they are real misses, not Snyk noise" is **not established**, and the 88/30
-> split below is the original assertion rather than a verified result. Re-adjudicate before
-> treating any of these as a recall bug — `node scripts/adjudicate-gap.js --snyk snyk.json`
-> classifies every pair against the public record using the scanner's own range evaluation.
-> Building recall against unadjudicated pairs is how this tool would acquire the false
-> positives it is built to avoid.
+> The analysis below read OSV's `affected[].versions` as a list of *fixed* versions. It is the
+> list of **affected** versions. It also read the CVE-converted record without its GHSA alias,
+> where the Maven binding actually lives. Both errors inflate the gap.
+>
+> The run was repeated on the same pinned commit (fad 2.4.9, Snyk 1.1302.1, same method:
+> distinct Maven `(coordinate@version | vulnerability)` pairs, reactor artifacts excluded).
+> Snyk produced 654 distinct pairs, fad 873, and **131** Snyk pairs had no counterpart in fad.
+> Each was adjudicated against the public record by `scripts/adjudicate-gap.js`:
+>
+> | | | |
+> | ---: | --- | --- |
+> | 53 | 40.5% | `WRONG_ARTIFACT` — the advisory binds a different coordinate |
+> | 31 | 23.7% | `OUT_OF_RANGE` — the version is outside every declared affected range |
+> | 27 | 20.6% | `NO_PUBLIC_RECORD` — proprietary `SNYK-*` id, in no public database |
+> | 19 | 14.5% | `NO_MAVEN_BINDING` — the advisory binds no Maven package at all |
+> | 1 | 0.8% | `ALREADY_REPORTED` — fad has it under the CVE alias |
+> | **0** | **0.0%** | **`CONFIRMED_MISS`** |
+>
+> So **84 of the 131 (64%) are Snyk contradicting the public record**, and reporting them would
+> mean shipping false positives. Two examples that carry the whole argument. `GHSA-gm62-rw4g-vrc4`
+> is claimed on `logback-classic@1.2.2`: it binds `logback-**core**`, `{introduced 1.2.12}` — wrong
+> artifact, and a version from before the flaw existed. `GHSA-72hv-8253-57qq` is claimed on
+> `jackson-core@2.10.4` and `@2.5.2`: its ranges are `2.15.0–2.18.6` and `2.19.0–2.21.1`.
+>
+> The 30/88 split below is the original assertion, kept for the record. It is not a verified
+> result, and **"they are real misses, not Snyk noise" does not hold**. Re-adjudicate before
+> treating any claimed miss as a recall bug:
+> `node scripts/adjudicate-gap.js --snyk snyk.json --found findings.json`.
 
 - **30** carry a proprietary `SNYK-*` identifier with no public CVE alias. They exist in Snyk's
   commercial database and in no public one.
@@ -264,7 +278,8 @@ OSV-Scanner 2.4.0 (osv-scalibr 0.4.5).
 
 Neither the 13 nor the 67 exonerate fad, and both were traced to their cause.
 
-**The 67 "NVD is silent" cases were classified from the CVE record alone.** The worked example
+**The 67 "NVD is silent" cases were classified from the CVE record alone** — and the 2026-09-18
+re-measurement above supersedes this whole section. The worked example
 used to be `CVE-2023-6481` on `logback-classic@1.2.2`, described as a coverage gap because the
 CVE entry carries no Maven binding — only a GIT commit range. Fetching its GHSA alias shows the
 binding does exist: `ch.qos.logback:logback-core`, `{introduced: 1.2.12, fixed: 1.2.13}`. The
