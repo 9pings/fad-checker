@@ -172,22 +172,14 @@ Composer. The delta is a Java-ecosystem phenomenon, not a general one.
 **Re-measured on 2026-09-18: of 131 claimed misses, zero are recall bugs.** The original per-pair
 analysis misread OSV's `affected[].versions` (the **affected** versions) as a list of fixed
 versions, and read the CVE-converted record without its GHSA alias — where the Maven binding
-actually lives. Re-running the same commit and adjudicating every claimed miss against the public
-record with [`scripts/adjudicate-gap.js`](scripts/adjudicate-gap.js): **53 wrong artifact, 31
-out of range, 27 proprietary `SNYK-*`, 19 no Maven binding, 1 already reported under the CVE
-alias, 0 confirmed**. So **64% are Snyk contradicting the public record** — reporting them would
-mean shipping false positives. The worked example says it all: `CVE-2023-6481` is claimed on
-`logback-classic@1.2.2`, but binds `logback-core` from `1.2.12` — wrong artifact, and a version
-from before the flaw existed. → [detail](docs/BENCHMARK.md#what-fad-checker-misses-and-why)
-
-**So the differentiator is a curation layer, kept behind the paywall.** Snyk's per-artifact
-affected-version assertions are its product, and they are not contributed back to OSV or NVD —
-which is exactly why no aggregation of public sources reproduces them, however careful.
-`--nvd-cpe-match` was the attempt at closing it from public data and it
-[fails on precision](docs/BENCHMARK.md#a-negative-result-nvd-cpe-ranges-as-a-matching-tier)
-(12% corroborated), because CPE names **frameworks** while Maven names **artifacts**. That is a
-commercial moat, not a technical lead — and it is worth naming as such rather than pretending the
-gap doesn't exist.
+actually lives. Re-running the same commit and adjudicating every claimed miss against OSV with
+[`scripts/adjudicate-gap.js`](scripts/adjudicate-gap.js): **57 wrong artifact, 31 out of range,
+23 not in OSV, 19 no Maven binding, 1 already reported under the CVE alias, 0 confirmed**. So
+**67% are Snyk contradicting the public record** — reporting them would mean shipping false
+positives. The worked example says it all: `CVE-2023-6481` is claimed on `logback-classic@1.2.2`,
+but binds `logback-core` at `[1.2.12, 1.2.13)` — wrong artifact, and a version from before the
+flaw existed. Adversarially reviewed by a second model, which confirmed the zero and found three
+defects in the tooling, since fixed. → [detail and caveats](docs/BENCHMARK.md#what-fad-checker-misses-and-why)
 
 **Which is why `--snyk` exists.** fad-checker takes `snyk test` output as an **input** and merges
 it, so you get the union rather than picking a side; the merge is one flag. On a tree with private

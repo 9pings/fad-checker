@@ -54,9 +54,9 @@ test("an advisory with only a GIT range carries no ecosystem binding — unreach
 	assert.strictEqual(v.verdict, VERDICT.NO_MAVEN_BINDING);
 });
 
-test("no public record at all (a vendor-proprietary id) is its own class", () => {
+test("not in OSV (typically a vendor-proprietary id) is its own class", () => {
 	const v = classifyPair({ coord: "g:a", version: "1.0.0" }, null);
-	assert.strictEqual(v.verdict, VERDICT.NO_PUBLIC_RECORD);
+	assert.strictEqual(v.verdict, VERDICT.NOT_IN_OSV);
 });
 
 test("a GIT-range advisory whose `versions` list is mistaken for fix versions stays OUT_OF_RANGE", () => {
@@ -71,7 +71,7 @@ test("summarize counts each verdict and isolates the real gap", () => {
 	const rows = [
 		{ verdict: VERDICT.CONFIRMED_MISS }, { verdict: VERDICT.CONFIRMED_MISS },
 		{ verdict: VERDICT.OUT_OF_RANGE }, { verdict: VERDICT.WRONG_ARTIFACT },
-		{ verdict: VERDICT.NO_PUBLIC_RECORD },
+		{ verdict: VERDICT.NOT_IN_OSV },
 	];
 	const s = summarize(rows);
 	assert.strictEqual(s.total, 5);
@@ -99,9 +99,9 @@ test("mergeRecords unions the affected sets — the Maven binding lives in the G
 		VERDICT.NO_MAVEN_BINDING);
 });
 
-test("mergeRecords of nothing is null, which classifies as NO_PUBLIC_RECORD", () => {
+test("mergeRecords of nothing is null, which classifies as NOT_IN_OSV", () => {
 	assert.strictEqual(mergeRecords([]), null);
-	assert.strictEqual(classifyPair({ coord: "g:a", version: "1" }, mergeRecords([])).verdict, VERDICT.NO_PUBLIC_RECORD);
+	assert.strictEqual(classifyPair({ coord: "g:a", version: "1" }, mergeRecords([])).verdict, VERDICT.NOT_IN_OSV);
 });
 
 test("a pair the scanner already reports under an ALIAS is not a miss", () => {
@@ -118,4 +118,13 @@ test("a pair the scanner already reports under an ALIAS is not a miss", () => {
 test("reconcileFound leaves a genuine miss alone", () => {
 	const rows = [{ verdict: VERDICT.CONFIRMED_MISS, coord: "g:a", version: "1.0", id: "CVE-1", aliases: ["CVE-1"] }];
 	assert.strictEqual(reconcileFound(rows, new Set(["g:b@1.0|CVE-1"]))[0].verdict, VERDICT.CONFIRMED_MISS);
+});
+
+test("OSV's 404 names the alias it does know — following it is what keeps the label honest", () => {
+	const { aliasHint } = require("../scripts/adjudicate-gap");
+	assert.deepStrictEqual(
+		aliasHint({ code: 5, message: "Vulnerability not found, but the following aliases were: GHSA-4gqp-296r-j5mq" }),
+		["GHSA-4gqp-296r-j5mq"]);
+	assert.deepStrictEqual(aliasHint({ message: "Vulnerability not found" }), []);
+	assert.deepStrictEqual(aliasHint(null), []);
 });

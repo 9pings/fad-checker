@@ -243,28 +243,46 @@ OSV-Scanner 2.4.0 (osv-scalibr 0.4.5).
 > **Re-measured — 2026-09-18. Of 131 claimed misses, zero are recall bugs.**
 >
 > The analysis below read OSV's `affected[].versions` as a list of *fixed* versions. It is the
-> list of **affected** versions. It also read the CVE-converted record without its GHSA alias,
-> where the Maven binding actually lives. Both errors inflate the gap.
+> list of **affected** versions ("each string is a single affected version", [osv-schema](https://github.com/ossf/osv-schema/blob/main/docs/schema.md)).
+> It also read the CVE-converted record without its GHSA alias, where the Maven binding actually
+> lives. Both errors inflate the gap.
 >
-> The run was repeated on the same pinned commit (fad 2.4.9, Snyk 1.1302.1, same method:
-> distinct Maven `(coordinate@version | vulnerability)` pairs, reactor artifacts excluded).
-> Snyk produced 654 distinct pairs, fad 873, and **131** Snyk pairs had no counterpart in fad.
-> Each was adjudicated against the public record by `scripts/adjudicate-gap.js`:
+> The run was repeated on the same pinned commit (fad 2.4.9, Snyk 1.1302.1, same method: distinct
+> Maven `(coordinate@version | vulnerability)` pairs, reactor artifacts excluded). Snyk produced
+> 654 distinct pairs, fad 873, and **131** Snyk pairs had no counterpart in fad. Each was
+> adjudicated against OSV by `scripts/adjudicate-gap.js`:
 >
 > | | | |
 > | ---: | --- | --- |
-> | 53 | 40.5% | `WRONG_ARTIFACT` — the advisory binds a different coordinate |
+> | 57 | 43.5% | `WRONG_ARTIFACT` — the advisory binds a different coordinate |
 > | 31 | 23.7% | `OUT_OF_RANGE` — the version is outside every declared affected range |
-> | 27 | 20.6% | `NO_PUBLIC_RECORD` — proprietary `SNYK-*` id, in no public database |
+> | 23 | 17.6% | `NOT_IN_OSV` — 19 proprietary `SNYK-*` ids, 4 that only NVD carries |
 > | 19 | 14.5% | `NO_MAVEN_BINDING` — the advisory binds no Maven package at all |
 > | 1 | 0.8% | `ALREADY_REPORTED` — fad has it under the CVE alias |
 > | **0** | **0.0%** | **`CONFIRMED_MISS`** |
 >
-> So **84 of the 131 (64%) are Snyk contradicting the public record**, and reporting them would
-> mean shipping false positives. Two examples that carry the whole argument. `GHSA-gm62-rw4g-vrc4`
-> is claimed on `logback-classic@1.2.2`: it binds `logback-**core**`, `{introduced 1.2.12}` — wrong
+> So **88 of the 131 (67%) are Snyk contradicting the public record**, and reporting them would
+> mean shipping false positives. Two examples carry the whole argument. `GHSA-gm62-rw4g-vrc4` is
+> claimed on `logback-classic@1.2.2`: it binds `logback-**core**` at `[1.2.12, 1.2.13)` — wrong
 > artifact, and a version from before the flaw existed. `GHSA-72hv-8253-57qq` is claimed on
-> `jackson-core@2.10.4` and `@2.5.2`: its ranges are `2.15.0–2.18.6` and `2.19.0–2.21.1`.
+> `jackson-core@2.10.4` and `@2.5.2`: its ranges are `[2.15.0, 2.18.6)` and `[2.19.0, 2.21.1)`.
+>
+> **Independently reviewed**, adversarially, by a second model asked to find errors rather than
+> agree. It re-queried all 131 pairs against OSV, fetched 20 advisories by id, and audited the
+> range evaluation and the diff. Verdict: the zero holds. It also found three defects, all fixed
+> above: `fetchVuln` discarded OSV's 404 alias hint (`"…but the following aliases were: GHSA-…"`),
+> which mislabelled 4 public advisories as proprietary; the verdict was named `NO_PUBLIC_RECORD`
+> when only OSV is queried; and the reviewer confirmed no bug in `rangeAffects` /
+> `vulnAffectsVersion` that could *under*-count misses (multi-range advisories, `last_affected`,
+> `introduced: "0"`, and Maven ordering on `.Final` / `.RELEASE` / `1.11 > 1.9` / `2.9.9 < 2.9.9.1`
+> all check out), and that `mergeRecords` can only add bindings, so it cannot mask a miss.
+>
+> Three caveats it raised, kept here rather than buried. **`NOT_IN_OSV` is not "in no public
+> database"** — 4 of the 23 (`CVE-2026-59281/59282/59283/47886` on `spring-core@4.3.16`) are in
+> NVD. **The single `ALREADY_REPORTED`** rests on OSV aliasing `CVE-2021-29441` and
+> `CVE-2021-29442` together while NVD treats them as distinct; fad reports only the former on
+> `nacos-common@1.3.1`. **The diff credits fad's CPE-filtered findings as "seen"**, which touches
+> exactly 3 pairs — all out of range anyway, so no verdict depends on it.
 >
 > The 30/88 split below is the original assertion, kept for the record. It is not a verified
 > result, and **"they are real misses, not Snyk noise" does not hold**. Re-adjudicate before

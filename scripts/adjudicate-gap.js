@@ -42,7 +42,7 @@ function usage(msg) {
   --json <file>  also write the per-pair verdicts
 
 Verdicts: CONFIRMED_MISS (the real gap) · OUT_OF_RANGE / WRONG_ARTIFACT (the other tool
-disagrees with the public record) · NO_MAVEN_BINDING / NO_PUBLIC_RECORD (unreachable).`);
+disagrees with the public record) · NO_MAVEN_BINDING / NOT_IN_OSV (unreachable from OSV).`);
 	process.exit(msg ? 2 : 0);
 }
 
@@ -62,10 +62,29 @@ function fromSnyk(doc) {
 	return out;
 }
 
+/**
+ * OSV answers an unknown id with 404 — but when it knows the vulnerability under another
+ * id it says so in the body: {"code":5,"message":"Vulnerability not found, but the
+ * following aliases were: GHSA-…"}. Treating every non-OK response as "no record" throws
+ * that away and mislabels a perfectly public advisory as proprietary.
+ */
+function aliasHint(body) {
+	const m = /aliases were:\s*(.+)$/.exec(String(body && body.message || ""));
+	return m ? m[1].split(/[,\s]+/).map(x => x.trim()).filter(Boolean) : [];
+}
+
 async function fetchVuln(id, fetcher) {
 	try {
 		const res = await fetcher(OSV_API + encodeURIComponent(id));
-		return res && res.ok ? await res.json() : null;
+		if (res && res.ok) return await res.json();
+		if (res && res.status === 404) {
+			const hinted = aliasHint(await res.json().catch(() => null));
+			for (const alt of hinted) {
+				const r2 = await fetcher(OSV_API + encodeURIComponent(alt));
+				if (r2 && r2.ok) return await r2.json();
+			}
+		}
+		return null;
 	} catch { return null; }   // one id failing must not decide the verdict for the pair
 }
 
@@ -146,4 +165,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(e => { console.error(e); process.exit(1); });
-module.exports = { fromSnyk, resolve };
+module.exports = { fromSnyk, resolve, aliasHint };
