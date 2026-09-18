@@ -40,41 +40,41 @@ What it does for an audit that the others don't. Same column set and sourcing di
 [`docs/COMPARISON.md`](docs/COMPARISON.md) — `⚠️` is *partial* and says how, cells are meant to be
 checkable.
 
-| What an auditor actually needs to do | **fad** | OSV | Trivy | Grype+Syft | OWASP DC | Snyk |
-| --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| Audit a **100-module polyglot monorepo in one command** ¹ | ✅ 105 modules | ⚠️ reactor skipped | ⚠️ needs `~/.m2` | ⚠️ opt-in | ⚠️ build | ⚠️ `mvn` build |
-| **Identify the private/internal deps** across a big project ² | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Archive a buildless dependency inventory** for the file ³ | ✅ `-t` | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **State what you did *not* assess** ⁴ | ✅ ch. 6.3 | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Show the matches you ruled out** ⁵ | ✅ app. 1.4 | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Prove the report wasn't edited afterwards** ⁶ | ✅ `SHA256SUMS` | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Re-audit next year and report only what changed** ⁷ | ✅ `--baseline` | ❌ | ❌ | ❌ | ❌ | ⚠️ cloud |
-| **Keep your triage visible to the reviewer** ⁸ | ✅ | ❌ | ❌ | ❌ | ⚠️ file | ❌ |
-| **Find committed private keys and expired certs** ⁹ | ✅ | ❌ | ⚠️ key rule | ❌ | ❌ | ❌ |
-| **Answer "against what data?" six months later** ¹⁰ | ✅ | ❌ | ❌ | ⚠️ DB date | ⚠️ NVD date | ❌ |
-| **Spot a committed `.dll` that should be a declared dep** ¹¹ | ✅ | ❌ | ⚠️ some | ⚠️ patterns | ❌ | ❌ |
-| **Audit confidential code without leaking the tree's paths** ¹² | ✅ | ❌ | ❌ | ⚠️ paths | ❌ | ❌ |
-| **Prove no packet left the air-gapped box** ¹³ | ✅ | ⚠️ flag | ⚠️ flag | ⚠️ flag | ⚠️ feed | ❌ |
-| **Get Maven's transitive graph with no network at all** ¹⁴ | ✅ 657/657 | ❌ | ⚠️ `~/.m2` | ⚠️ opt-in | ⚠️ mirror | ❌ |
-| **Know what the scan missed before the client asks** ¹⁵ | ✅ ch. 0 | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log |
-| **Send a report, not a JSON dump** ¹⁶ | ✅ HTML + `.doc` | ⚠️ HTML list | ⚠️ template | ❌ | ⚠️ HTML list | ⚠️ `snyk-to-html` |
+| What an auditor actually needs to do                                                       | **fad** | OSV | Trivy | Grype+Syft | OWASP DC | Snyk |
+| ------------------------------------------------------------------------------------------ | :-: | :-: | :-: | :-: | :-: | :-: |
+| Audit a **100-module polyglot monorepo in one command**, with **no toolchain installed** ¹ | ✅ 105 modules | ⚠️ reactor skipped | ⚠️ needs `~/.m2` | ⚠️ opt-in | ⚠️ Java build | ⚠️ `mvn` build |
+| **Scan offline / air-gapped without dropping transitive deps** ²                           | ✅ 657/657 | ❌ | ⚠️ `~/.m2` | ⚠️ opt-in | ⚠️ mirror | ❌ |
+| **Identify the private/internal deps** across a big project ³                              | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Extract cleaned deps descriptors** into an external directory ⁴                          | ✅ `-t` | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Report EOL / deprecated frameworks & deps**, transitive ones included ⁵                  | ✅ | ⚠️ deprecated only | ⚠️ OS distros only | ❌ | ❌ | ⚠️ web UI only |
+| **Report committed keys & certificates** ⁶                                                 | ✅ | ❌ | ⚠️ key rule | ❌ | ❌ | ❌ |
+| **Spot committed binaries** (`.dll`, `.exe`, …) and check them against their checksums ⁷   | ✅ | ❌ | ⚠️ some | ⚠️ patterns | ❌ | ❌ |
+| **Clearly list what was *not* scanned** — before the client asks ⁸                         | ✅ ch. 0 + 6.3 | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log |
+| **Answer "against what data?" six months later** ⁹                                         | ✅ | ❌ | ❌ | ⚠️ DB date | ⚠️ NVD date | ❌ |
+| **Send a report, not a JSON dump** ¹⁰                                                      | ✅ HTML + `.doc` | ⚠️ HTML list | ⚠️ template | ❌ | ⚠️ HTML list | ⚠️ `snyk-to-html` |
+| **Make delta reports showing only what changed** ¹¹                                        | ✅ `--baseline` | ❌ | ❌ | ❌ | ❌ | ⚠️ cloud |
 
-¹ Measured on a 105-module Maven reactor read as 105 × `pom.xml` in one pass: **790 pairs vs OSV-Scanner's 657**, 133 of them fad-only, because versions are mediated **per module** (Maven's own nearest-wins) instead of flattening the reactor into one graph. OSV-Scanner skips reactor modules as local/unscannable; Trivy and Snyk both assume a real build already happened.
-² Chapter 0 lists every coordinate absent from the configured repositories, **with the manifest(s) that declare it** — a known, reported hole in the coverage instead of a dependency that quietly returned zero CVEs. `-e <regex>` then excludes them from the scan.
-³ `-t <dir>`: POMs reduced to the dependency-relevant nodes, reactor parents rewired, `${…}` resolved, every non-Maven lockfile mirrored. No build, private coordinates stripped, and scannable by anything you point at it — `--snyk` included.
-⁴ Chapter 6.3 names the bound: reachability, secrets, IaC, OS and container layers. An audit that doesn't state its own scope isn't one.
-⁵ A match that NVD's own CPE ranges contradict goes to appendix 1.4, not to the bin — "we looked and ruled it out" is itself a finding, and the reviewer gets to disagree with you.
-⁶ A `SHA256SUMS` manifest ships next to the artifacts; `sha256sum -c` verifies the file you handed over is the file they opened.
-⁷ `--baseline` adds a Δ chapter — new / fixed / unchanged per category plus the new production CVEs — and `--fail-on-new` gates on new findings only. Snyk tracks new issues on its platform (`snyk monitor`), not as a local diff of two runs.
-⁸ `--ignore` / `--vex` entries leave the chapters and the CI gate but stay **flagged** in the JSON/SBOM/CSAF exports. Everywhere else a suppression makes the finding vanish — which is exactly what a reviewer needs to see.
-⁹ X.509 expiry, weak key (RSA<2048), weak signature (MD5/SHA1), self-signed; private **vs** public keys across PEM / OpenSSH / PuTTY / PGP / one-line SSH, plus JKS/JCEKS/PKCS#12 keystores. Built-in parser, no network. Trivy's secret scanner finds a private-key *file*; it doesn't analyse the certificate.
-¹⁰ The provenance manifest: tool, runtime, online/offline mode, the run configuration and cache freshness for **all 13 data sources**, in the report and the JSON export. Grype's JSON carries its own DB build date and Dependency-Check's HTML a Scan Information block — one source each, not the run.
-¹¹ `.dll`/`.exe`/`.so`/`.dylib` (magic-byte confirmed) identified by **hash** via deps.dev + CIRCL, then flagged should-be-declared / name≠checksum / unknown / malicious. Syft's catalogers match byte patterns to name a version; they don't answer whether the file is what it claims to be.
-¹² The anonymized descriptor carries **public coordinates only** — no paths, registry URLs, hostnames or integrity hashes — and the detailed report is produced back inside the enclave. Syft's CycloneDX encoder stamps `syft:location` paths straight into the SBOM.
-¹³ Not "there is an offline flag" but proven: a tripwire fetcher that throws if touched (`test/offline-guarantee.test.js`), plus byte-identical findings under `unshare -rn` — a namespace with **no network interface**.
-¹⁴ The one ecosystem whose graph isn't in the tree, so it has to be resolved. Under `unshare -rn`, against OSV-Scanner's *online* output: **657 of 657**. OSV disables transitive resolution offline by design. → [Benchmark](docs/BENCHMARK.md)
-¹⁵ Missing lockfiles, Maven deps whose version only a BOM resolves, Yarn Berry lockfiles, an undeterminable PHP runtime: chapter 0 findings, not a log line. Every other tool tells the **operator**; only this one tells the **audit**.
-¹⁶ Chapters 0→6, executive summary, per-manifest attribution and fix recipes, in one self-contained HTML file plus a Word-compatible `.doc` twin. Theirs is a findings list, or a template over one; none of them emits Word.
+¹ No `mvn`/`go`/`npm`/`pip`/`dotnet` — manifests parsed off disk, nothing installed or executed. 105 × `pom.xml` in one pass: **790 pairs vs OSV-Scanner's 657**, 133 fad-only, versions mediated *per module* not flattened.
+
+² **657 of 657** of OSV-Scanner's *online* Maven result, under `unshare -rn` — no network interface. Tripwire-tested; only public coordinates ever leave the enclave.
+
+³ Chapter 0 names every coordinate absent from the configured repositories, with the manifest(s) declaring it. `-e <regex>` then excludes them.
+
+⁴ `-t <dir>`: normalised POMs plus every non-Maven lockfile mirrored, private coordinates stripped. Archivable, and scannable by anything — `--snyk` included.
+
+⁵ endoflife.date, split **direct vs transitive** so you know which dep to bump, plus deprecated / abandoned / yanked and outdated. Trivy covers OS distros only; Snyk's package health is web-only.
+
+⁶ Inventory *and* verdicts: expiry, RSA<2048, MD5/SHA1, self-signed; private **vs** public keys; JKS/PKCS#12. Offline parser. Trivy's secret rule finds the file, not the flaw.
+
+⁷ Identified by **hash** via deps.dev + CIRCL → should-be-declared / name≠checksum / unknown / malicious. Syft's patterns name a version, not an identity.
+
+⁸ Chapter 0 flags what *this* scan couldn't reach (missing lockfiles, BOM-only versions, Yarn Berry, undeterminable PHP runtime); chapter 6.3 states what the tool never assesses. Elsewhere the first is a log line the audit never sees, the second isn't written down.
+
+⁹ Provenance manifest: tool, runtime, mode, run configuration and cache freshness for **all 13 sources**. Grype and Dependency-Check carry one source's date, not the run.
+
+¹⁰ Chapters 0→6 with an executive summary and fix recipes, self-contained HTML plus a Word `.doc` twin. None of the others emits Word.
+
+¹¹ `--baseline` adds a Δ chapter (new / fixed / unchanged); `--fail-on-new` gates on new findings only. Snyk tracks this on its platform, not as a local diff.
 
 **Where it loses** — containers/OS packages, auto-fix PRs, and CVE coverage against Snyk's curated
 feed → [`docs/COMPARISON.md`](docs/COMPARISON.md) ·
