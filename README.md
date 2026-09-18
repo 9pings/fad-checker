@@ -52,7 +52,8 @@ checkable.
 | **Clearly list what was *not* scanned** — before the client asks ⁸                         | ✅ ch. 0 + 6.3 | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log |
 | **Answer "against what data?" six months later** ⁹                                         | ✅ | ❌ | ❌ | ⚠️ DB date | ⚠️ NVD date | ❌ |
 | **Send a report, not a JSON dump** ¹⁰                                                      | ✅ HTML + `.doc` | ⚠️ HTML list | ⚠️ template | ❌ | ⚠️ HTML list | ⚠️ `snyk-to-html` |
-| **Make delta reports showing only what changed** ¹¹                                        | ✅ `--baseline` | ❌ | ❌ | ❌ | ❌ | ⚠️ cloud |
+| **Charts, per-CVE drill-down and a pasteable Word copy** ¹¹                                | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Make delta reports showing only what changed** ¹²                                        | ✅ `--baseline` | ❌ | ❌ | ❌ | ❌ | ⚠️ cloud |
 
 ¹ No `mvn`/`go`/`npm`/`pip`/`dotnet` — manifests parsed off disk, nothing installed or executed. 105 × `pom.xml` in one pass: **790 pairs vs OSV-Scanner's 657**, 133 fad-only, versions mediated *per module* not flattened.
 
@@ -74,7 +75,9 @@ checkable.
 
 ¹⁰ Chapters 0→6 with an executive summary and fix recipes, self-contained HTML plus a Word `.doc` twin. None of the others emits Word.
 
-¹¹ `--baseline` adds a Δ chapter (new / fixed / unchanged); `--fail-on-new` gates on new findings only. Snyk tracks this on its platform, not as a local diff.
+¹¹ Four inline-SVG charts — CWE by worst severity, vulnerable transitives per root dep, direct vs transitive, fix-priority bands — rendered in the `.doc` too, with one-click copy as PNG (or a table as rich HTML) that pastes into Word formatted. Every CVE keeps its CVSS vector, CWE, references, CPE config and via-path behind a drill-down, with zero external assets.
+
+¹² `--baseline` adds a Δ chapter (new / fixed / unchanged); `--fail-on-new` gates on new findings only. Snyk tracks this on its platform, not as a local diff.
 
 **Where it loses** — containers/OS packages, auto-fix PRs, and CVE coverage against Snyk's curated
 feed → [`docs/COMPARISON.md`](docs/COMPARISON.md) ·
