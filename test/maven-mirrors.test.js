@@ -131,3 +131,23 @@ test("a condemned mirror is reported, so the run can say what it lost", () => {
 	health.markDown({ name: "gcs-eu", url: "https://eu.example/m2/", central: true, mirror: true }, "HTTP 429");
 	assert.deepStrictEqual(health.downList(), [{ name: "gcs-eu", url: "https://eu.example/m2/", reason: "HTTP 429" }]);
 });
+
+test("the release-date HEAD skips mirrors but keeps private repos", async () => {
+	// maven-metadata.xml is small and constantly re-requested, so the mirrors serve it hot.
+	// An individual .pom is a unique deep path, cold in their buckets: measured 9.2s via the
+	// rotation against 1.7s via Central, zero misses either way. Private repos must stay —
+	// a private artifact's POM exists nowhere else.
+	const { pomLastModifiedRepos } = require("../lib/outdated");
+	const repos = [
+		{ name: "nexus", url: "https://nexus.acme/repo/" },
+		{ name: "central", url: "https://repo1.maven.org/maven2/", central: true },
+		{ name: "gcs", url: "https://mirror.example/maven2/", central: true, mirror: true },
+	];
+	assert.deepStrictEqual(pomLastModifiedRepos(repos).map(r => r.name), ["nexus", "central"]);
+});
+
+test("if somehow only mirrors are configured, use them rather than give up", () => {
+	const { pomLastModifiedRepos } = require("../lib/outdated");
+	const only = [{ name: "gcs", url: "https://mirror.example/maven2/", central: true, mirror: true }];
+	assert.deepStrictEqual(pomLastModifiedRepos(only).map(r => r.name), ["gcs"]);
+});
