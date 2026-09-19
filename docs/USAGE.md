@@ -306,7 +306,7 @@ is enforced two ways:
   (Measured on a 25-module Spring/JSF project: identical findings, ~1.8 s.)
 
 > **Compiled binary, no `node`/`retire` needed:** the bun-compiled single binary
-> (`dist/fad-checker-linux`, `.exe`, `-macos`) statically bundles the retire.js CLI and
+> (`dist/fad-checker`, `.exe`, `-macos`) statically bundles the retire.js CLI and
 > re-execs itself to run it — so vendored-JS scanning (chapters 1D / 2) works from the
 > lone binary on an air-gapped box with no Node.js and no `retire` on `PATH`. The only
 > input it needs is the signature DB warmed in phase 2 (carried in the cache archive).

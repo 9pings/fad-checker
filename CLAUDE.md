@@ -40,7 +40,7 @@ cat docs/USAGE.md
 Binary builds (requires `bun`):
 
 ```bash
-npm run build:linux   # → dist/fad-checker-linux
+npm run build:linux   # → dist/fad-checker
 npm run build:win     # → dist/fad-checker.exe
 npm run build         # both
 ```
