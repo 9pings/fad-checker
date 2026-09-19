@@ -75,6 +75,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `--fail-on` / `--fail-on-new`, `--baseline`. A read-only run (no `-t`) is unchanged.
 
 ### Fixed
+- **A URL-versioned npm dependency killed the scan.** `package-lock` v1 records a dep
+  installed from a URL as `"version": "https://registry.npmjs.org/x/-/x-0.12.5.tgz"`, and the
+  OSV cache filename interpolated that raw — so the scan died mid-step on
+  `ENOENT … osv-cache/npm____javascript.util__https:/registry.npmjs.org/…`. Two fixes: a cache
+  filename is now always one path segment (also in the Maven pom caches, which had the same
+  gap, with a character set that leaves warm caches byte-identical), and a registry tarball URL
+  is resolved to the semver in its filename, so the package is actually scanned instead of
+  merely not crashing. A git ref, `github:`/`file:`/`link:` spec or a nightly with no version
+  in its name has no concrete version and stays unresolved, never a fabricated one.
 - **The source-health guard made the Maven outdated pass crawl.** Its retry schedule wrapped
   every fetch, including the ones `lib/maven-repo.js` and `lib/registries.js` issue with their
   own `AbortSignal` and their own failover to the next mirror or base. Each dead mirror then
