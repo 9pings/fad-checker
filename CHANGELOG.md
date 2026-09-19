@@ -29,6 +29,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   version, its docs, its issue tracker — without asking whoever ran the scan.
 
 ### Changed
+- **The report no longer scrolls sideways, and the CVE table lost three columns.** A table's
+  minimum width is set by its longest unbreakable token — a Maven coordinate is one — and
+  chapter 1's nesting removes ~30px per level, so the document ran 495px wider than the
+  viewport. Long tokens now break (only in the columns that hold them: a CVE id or a severity
+  badge is never chopped mid-word), any residue scrolls inside the table instead of the page,
+  and the inset flattens past the second level. Measured at 0px overflow from 768px to 1600px.
+  Priority, Severity and Published are merged into one three-line cell — band + KEV, severity +
+  CVSS, then EPSS + date — which returns their width to Description and Dependency. Both Word
+  paths were updated with it: the `.doc` stylesheet and the clipboard's inline-style pass.
 - **Overview chart 3 is now "Most vulnerable components".** It ranks the scanned project's
   OWN modules — Maven artifactId, package.json / composer.json name, go module, pyproject
   name, else the path relative to `--src` — by their count of **critical + high** production
