@@ -140,6 +140,24 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `--fail-on` / `--fail-on-new`, `--baseline`. A read-only run (no `-t`) is unchanged.
 
 ### Fixed
+- **The compiled binary asked for Node.js to scan vendored JavaScript.** The launcher looked
+  for `node_modules/.bin/retire` before checking whether it was itself the compiled binary,
+  and it resolved that path from `__dirname` — which in a bun-compiled binary still points at
+  the directory it was BUILT in. Wherever that path also exists at run time (the machine that
+  built it, a mounted or shared checkout) the binary ran a `#!/usr/bin/env node` script and
+  died with `env: 'node': No such file or directory` with Node absent, losing the whole
+  vendored-JS chapter — the one capability the self-exec exists to provide. It now decides on
+  what the binary IS, not on what happens to sit on disk beside it. A box that never held the
+  checkout was unaffected, which is why a container never showed it.
+- **`--import-cache` could unpack nothing at all and still look like it had run.** `tar`
+  restores the archived uid/gid when it runs as root; real root can chown to anything, but
+  *mapped* root cannot — a rootless container, a userns-remapped daemon, anything under
+  `unshare -r`. There the chown failed, tar aborted having written **nothing**, and the
+  air-gapped run that followed found no cache and reported a clean project. Extraction now
+  passes `--no-same-owner`, which is already the default for a non-root user.
+- **A failed vendored-JS scan showed up as the raw string `retire-failed`.** The warning was
+  raised and reached chapter 0 correctly; it just had no heading of its own, so the chapter
+  printed the internal type id — and in a French report, printed it in English.
 - **The copied executive summary stayed English in a French report.** The page was
   translated but the clipboard flavours are built as sentences in JavaScript ("The library X
   version Y is vulnerable to Z"), which the sweep had not reached. They now carry their own

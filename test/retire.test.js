@@ -207,6 +207,21 @@ test("chooseRetireLauncher: node uses local bin, compiled binary self-invokes, e
 		{ cmd: "retire", env: null });
 });
 
+test("chooseRetireLauncher: the compiled binary self-invokes EVEN when a local bin looks present", () => {
+	// The case the other test leaves out, and the only one that breaks: `localBin` comes
+	// from `__dirname`, which in the compiled binary still points at the build directory, so
+	// on any machine where that path also exists at run time the binary saw a local
+	// node_modules. With localBin checked first it then ran a `#!/usr/bin/env node` script
+	// and died with "env: 'node': No such file or directory" wherever node is absent, taking
+	// the vendored-JS chapter with it. Reproduced with the binary run beside its own
+	// checkout, node off PATH: failed scan before, 14 findings after. A container, having
+	// never held the checkout, does NOT show it — which is exactly why the order must not
+	// depend on what happens to be on disk.
+	assert.deepStrictEqual(
+		R.chooseRetireLauncher({ localBin: "/$bunfs/root/node_modules/.bin/retire", isBun: true, execPath: "/opt/fad-checker" }),
+		{ cmd: "/opt/fad-checker", env: { __FAD_RETIRE__: "1" } });
+});
+
 // Windows: retire turns each ignorefile line into a REGEX and tests it against the file path
 // AND path.resolve(file). Both use backslashes on Windows, so a forward-slash pattern like
 // `D:/proj/node_modules/` never matches `D:\proj\node_modules\x.js` — every exclusion,

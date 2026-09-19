@@ -193,3 +193,37 @@ test("import into a machine with no cache at all still works", () => {
 		assert.deepEqual(baks(cold), []);
 	} finally { clean(online, cold); }
 });
+
+test("import works when the enclave unpacks the archive as root", () => {
+	// tar restores the archived uid/gid when it runs as root. REAL root can chown to
+	// anything, so a plain Docker enclave is unaffected; MAPPED root cannot — a rootless
+	// container, a userns-remapped daemon, anything under `unshare -r`. There the chown
+	// fails, tar aborts having written NOTHING, and the air-gapped run that follows finds
+	// no cache and reports a clean project. --no-same-owner is already the default for a
+	// non-root user, so the paths that worked are untouched.
+	//
+	// A user namespace is what reproduces it: the caller is mapped to root and the archived
+	// uid is unmappable, which is exactly the failing chown. Skipped where unprivileged user
+	// namespaces are unavailable (some hardened kernels, some CI).
+	let userns = true;
+	try { execFileSync("unshare", ["-r", "true"], { stdio: "ignore" }); } catch { userns = false; }
+	if (!userns) return;   // nothing to assert here on a kernel without unprivileged userns
+
+	const online = home("root-src"), enclave = home("root-dst");
+	const archive = path.join(online, "fad-cache.tar.gz");
+	try {
+		w(fad(online, "osv-cache", "dep-A.json"), { id: "A" });
+		w(fad(online, "nvd-cache", "CVE-2021-44228.json"), { id: "CVE-2021-44228" });
+		run(["--export-cache", archive], online);
+
+		// The enclave starts with NO cache, and imports as (mapped) root.
+		fs.rmSync(path.join(enclave, ".fad-checker"), { recursive: true, force: true });
+		execFileSync("unshare", ["-r", "node", CLI, "--import-cache", archive], {
+			env: { ...process.env, HOME: enclave, USERPROFILE: enclave, FORCE_COLOR: "0" },
+			encoding: "utf8",
+		});
+
+		assert.equal(read(fad(enclave, "osv-cache", "dep-A.json")).id, "A");
+		assert.equal(read(fad(enclave, "nvd-cache", "CVE-2021-44228.json")).id, "CVE-2021-44228");
+	} finally { clean(online, enclave); }
+});
