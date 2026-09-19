@@ -29,6 +29,16 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   version, its docs, its issue tracker — without asking whoever ran the scan.
 
 ### Changed
+- **A finding now says which MODULE ships it, not which file declares it.** The "defined in"
+  footer showed up to three descriptor paths; it now shows up to two module names —
+  `dubbo-dependencies-zookeeper` rather than
+  `dubbo-dependencies/dubbo-dependencies-zookeeper/pom.xml` — with the path kept as the
+  tooltip. Names are read per ecosystem: Maven artifactId (with the `<parent>` block stripped
+  first), package.json / composer.json name, go module, pyproject name, .NET AssemblyName /
+  PackageId / file name, Gradle `rootProject.name` or the directory, and a Ruby `.gemspec`
+  beside a `Gemfile.lock`. `requirements*.txt` and `Pipfile` genuinely name nothing and keep
+  falling back to the path rather than having a name invented from their directory. That cell
+  was also what made the Dependency column wide, so its width went to Description.
 - **The report no longer scrolls sideways, and the CVE table lost three columns.** A table's
   minimum width is set by its longest unbreakable token — a Maven coordinate is one — and
   chapter 1's nesting removes ~30px per level, so the document ran 495px wider than the

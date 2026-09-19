@@ -44,8 +44,7 @@ test("a lockfile borrows the name from its sibling manifest", () => {
 });
 
 test("no name anywhere → null, and the caller falls back to the path", () => {
-	assert.equal(nameOf("/p/rb/Gemfile.lock"), null);
-	assert.equal(nameOf("/p/cs/App.csproj"), null);
+	assert.equal(nameOf("/p/rb/Gemfile.lock"), null, "no .gemspec beside it");
 	assert.equal(nameOf("/p/bad/package.json"), null, "malformed JSON must not throw");
 	assert.equal(nameOf("/p/missing/pom.xml"), null, "unreadable must not throw");
 });
@@ -63,4 +62,84 @@ test("resolveModuleNames labels every descriptor, falling back to the path relat
 test("resolveModuleNames is robust to junk input", () => {
 	assert.equal(resolveModuleNames(null, { srcRoot: "/p", readFile }).size, 0);
 	assert.equal(resolveModuleNames([{}, { path: "" }], { srcRoot: "/p", readFile }).size, 0);
+});
+
+/* ---------------- every ecosystem, not just the easy five ---------------- */
+
+const eco = {
+	// .NET: the project name IS the file name; AssemblyName/PackageId override it when set.
+	"/n/plain/App.csproj": `<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>`,
+	"/n/named/Legacy.vbproj": `<Project><PropertyGroup><AssemblyName>Acme.Billing</AssemblyName></PropertyGroup></Project>`,
+	"/n/pkg/Lib.fsproj": `<Project><PropertyGroup><PackageId>Acme.Lib.Core</PackageId></PropertyGroup></Project>`,
+	"/n/plain/packages.config": `<packages></packages>`,
+	"/n/plain/packages.lock.json": `{"version":1}`,
+	// Gradle: settings.gradle names the root; a subproject is named after its directory.
+	"/g/root/build.gradle": `plugins { id 'java' }`,
+	"/g/root/settings.gradle": `rootProject.name = 'acme-platform'\ninclude 'svc'`,
+	"/g/root/svc/build.gradle.kts": `plugins { kotlin("jvm") }`,
+	"/g/root/svc/gradle.lockfile": `org.x:y:1.0=compileClasspath`,
+	"/g/kts/settings.gradle.kts": `rootProject.name = "acme-kts"`,
+	"/g/kts/build.gradle.kts": `plugins { java }`,
+	// Ruby: Gemfile.lock has no name; a gemspec beside it does.
+	"/r/gem/Gemfile.lock": `GEM\n  specs:\n`,
+	"/r/gem/acme.gemspec": `Gem::Specification.new do |s|\n  s.name = "acme-billing"\n  s.version = "1.0"\nend`,
+	"/r/bare/Gemfile.lock": `GEM\n  specs:\n`,
+	// Python: requirements/Pipfile carry no project name at all.
+	"/p/req/requirements.txt": `lodash==1\n`,
+	"/p/req/Pipfile": `[packages]\n`,
+};
+const dirs = {};
+for (const f of Object.keys(eco)) {
+	const d = f.slice(0, f.lastIndexOf("/"));
+	(dirs[d] = dirs[d] || []).push(f.slice(f.lastIndexOf("/") + 1));
+}
+const io2 = {
+	readFile: p => { if (!(p in eco)) throw new Error("ENOENT"); return eco[p]; },
+	readDir: d => { if (!(d in dirs)) throw new Error("ENOENT"); return dirs[d]; },
+};
+const n2 = p => moduleNameFor(p, io2);
+
+test("NuGet: the file name is the project name, AssemblyName and PackageId win when present", () => {
+	assert.equal(n2("/n/plain/App.csproj"), "App");
+	assert.equal(n2("/n/named/Legacy.vbproj"), "Acme.Billing");
+	assert.equal(n2("/n/pkg/Lib.fsproj"), "Acme.Lib.Core");
+});
+
+test("NuGet: packages.config and packages.lock.json borrow the project file beside them", () => {
+	assert.equal(n2("/n/plain/packages.config"), "App");
+	assert.equal(n2("/n/plain/packages.lock.json"), "App");
+});
+
+test("Gradle: settings.gradle names the root, a subproject is named after its directory", () => {
+	assert.equal(n2("/g/root/build.gradle"), "acme-platform");
+	assert.equal(n2("/g/kts/build.gradle.kts"), "acme-kts", "settings.gradle.kts is read too");
+	assert.equal(n2("/g/root/svc/build.gradle.kts"), "svc", "no settings file here: Gradle's own default is the directory name");
+	assert.equal(n2("/g/root/svc/gradle.lockfile"), "svc", "the lockfile borrows its build script's name");
+});
+
+test("Ruby: a gemspec beside Gemfile.lock names the module; without one there is no name", () => {
+	assert.equal(n2("/r/gem/Gemfile.lock"), "acme-billing");
+	assert.equal(n2("/r/bare/Gemfile.lock"), null);
+});
+
+test("Python: requirements.txt and Pipfile genuinely carry no project name", () => {
+	// Inventing one from the directory would be a guess, not a deduction: these files are
+	// routinely in a repo root or a deps/ folder that names nothing.
+	assert.equal(n2("/p/req/requirements.txt"), null);
+	assert.equal(n2("/p/req/Pipfile"), null);
+});
+
+test("every descriptor kind the codecs parse is either named or knowingly left to the path", () => {
+	const named = ["pom.xml","package.json","composer.json","go.mod","pyproject.toml",
+		"App.csproj","Legacy.vbproj","Lib.fsproj","packages.config","packages.lock.json",
+		"build.gradle","build.gradle.kts","gradle.lockfile","Gemfile.lock"];
+	const byPath = ["requirements.txt","Pipfile"];
+	for (const f of Object.keys(eco)) {
+		const base = f.slice(f.lastIndexOf("/") + 1);
+		if (base.startsWith("settings.gradle") || base.endsWith(".gemspec")) continue;
+		if (f.startsWith("/r/bare/")) continue;   // deliberately has no gemspec: covered above
+		const got = n2(f);
+		if (named.includes(base)) assert.ok(got, `${base} must resolve a name, got ${got}`);
+		if (byPath.includes(base)) assert.equal(got, null, `${base} must stay null`);
+	}
 });

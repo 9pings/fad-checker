@@ -126,6 +126,7 @@ Each data source can be disabled independently:
 | `--no-certs` | Skip the certificate / key-material scan (chapter 2.4) — committed certs, private/public keys and keystores |
 | `--cert-expiry-days <n>` | Window for the certificate **expiring-soon** warning (default `90`) |
 | `--no-eol` | Skip the end-of-life check (endoflife.date) — the flag the run suggests when that source is unreachable |
+| *(exit code 2)* | **A data source was unreachable and the cache didn't cover it.** Not a findings failure: nothing was written, because the report would have been incomplete. The message names the domain, the codes, the failing URL and the flag that skips that source. Only online; `--offline` never aborts. |
 | `--eol-support` | Also report frameworks/runtimes whose **active (bug-fix) support has ended** while security fixes are still provided (endoflife.date `support` field) — rendered as an "Out of active support" band under chapter 3.1, status `unsupported` in the JSON. Off by default: the default EOL set is unchanged. |
 | `--ignore-test` | Drop test-scoped Maven deps and dev npm deps from the scan entirely (chapter 2 will be empty) |
 
@@ -455,6 +456,17 @@ The `--target` guardrails refuse:
 ```bash
 fad-checker -s . --verbose   # progress per source (OSV batches, NVD pages, retire scan, …)
 ```
+
+## Help & version
+
+```bash
+fad-checker                  # no arguments: a mini help with the running version (exit 1 — nothing was scanned)
+fad-checker -h, --help       # every option
+fad-checker -v, --version    # the running version (-V still works; it was the version flag before)
+```
+
+> `--verbose` is **long-form only**: `-v` used to mean verbose and now means version, so an old
+> `fad-checker -s . -v` prints the version and exits 0 **without scanning**. Grep CI for it.
 
 ## Shell completion
 

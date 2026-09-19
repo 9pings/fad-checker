@@ -29,6 +29,8 @@
 - **Supply-chain risk**; known-**malicious** advisories (always block the CI gate) and suspected **typosquats** (`--typosquat`).
 - **Audit-grade**; every report carries a **provenance manifest** and a **Methodology & limitations** chapter; artifacts ship `SHA256SUMS`; **differential audits** diff against a prior run (`--baseline`) and CI can gate on *new* findings only.
 - **Outputs & CI**; HTML + Word `.doc`, CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on`, triage with `--ignore`/`--vex`. Private registries for every ecosystem.
+- **A report that is complete, or no report at all**; if a data source goes dark mid-scan and the warm cache doesn't cover the gap, the run stops before writing anything and names the domain, the error codes, the failing URL and the flag that skips that source — exit **2**, distinct from the `1` that `--fail-on` uses, so CI can tell *vulnerable* from *not trustworthy*. A source whose cache covered every lookup stays silent.
+- **Tables you can actually hand over**; every table has a split **Copy** button — the left half copies it whole, the chevron offers the first 5 rows, criticals, critical + high, or only what CISA lists as exploited, each with its row count. Pastes into Word with formatting intact.
 
 📖 **[Usage & all flags](docs/USAGE.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Comparison vs other tools](docs/COMPARISON.md)** · **[Data sources](docs/DATA-SOURCES.md)**
 
@@ -251,7 +253,7 @@ itself → [`SECURITY.md`](SECURITY.md) (please report privately).
 
 **On AI assistance:** this codebase is written with heavy use of Claude Code; [`CLAUDE.md`](CLAUDE.md)
 in the repo root is exactly what it looks like. The bar it's held to is the one you can check
-yourself: **642 tests** (`npm test`), the zero-network guarantee enforced by a tripwire test and
+yourself: **847 tests** (`npm test`), the zero-network guarantee enforced by a tripwire test and
 reproducible under `unshare -rn`, and coverage numbers measured against a Snyk baseline rather
 than asserted. `fad-checker` itself uses **no LLM at runtime**; findings come from public
 vulnerability databases and deterministic parsers, and no report text is generated. Full
