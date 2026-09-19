@@ -119,6 +119,12 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `--fail-on` / `--fail-on-new`, `--baseline`. A read-only run (no `-t`) is unchanged.
 
 ### Fixed
+- **A copied vulnerability pasted as `CRITICAL9.8`.** The merged priority cell separated its
+  severity badge from its CVSS score with a CSS margin, and drew the `EPSS:` / `Published:`
+  colons with a `::after`. Both look right on screen and neither exists in `textContent` —
+  which is exactly what the clipboard's plain-text flavour and the TSV export read. The
+  separators are in the markup now, so the same text reaches the screen, the `.doc`, the
+  clipboard and the TSV. The KEV chip had the same gap against the band badge.
 - **The report called every descriptor a POM.** "Declared in (1 POM)" said POM whether the
   file was a `pom.xml`, a `package.json` or a `composer.lock`, and the advice for a CVE with
   no published fix was "Add `<exclusion>` in root POM" — given to npm, PyPI, NuGet, Go and
