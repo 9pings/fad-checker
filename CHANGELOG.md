@@ -6,6 +6,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`--lang en|fr`: the HTML/Word report in French.** The report's own chrome — headings,
+  table headers, chapter names, chart titles, buttons, empty states, the executive summary —
+  plus the 189 CWE titles it ships. Text that comes from a data source is deliberately NOT
+  translated: a CVE description, an advisory summary or a registry deprecation reason is
+  evidence, and paraphrasing evidence in an audit report is wrong. MITRE publishes CWE in
+  English only, so the French titles are fad's own and MITRE's original travels with every
+  one of them (tooltip in HTML, parentheses in the `.doc`) — otherwise a reader could not
+  find on cwe.mitre.org what the report just told them. English is unchanged, by
+  construction: the English string is the translation key.
 - **A data source that goes dark now stops the run instead of quietly shrinking the report.**
   Online, a lookup that gets no usable answer is retried 5 times waiting 5+n seconds (6 → 10),
   each attempt logged; the schedule is shared per source, so a dead host costs one schedule and
@@ -29,6 +38,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   version, its docs, its issue tracker — without asking whoever ran the scan.
 
 ### Changed
+- **Default outputs are now HTML + `findings.json`, not HTML + `.doc`.** The JSON means the
+  next run has something to `--baseline` against without anyone having to remember a flag.
+  `--report-doc` still writes the Word file for those who want it.
 - **The pinned chapter bar is one row of equal, centred cells**, and chapter 3 is now
   **Maintenance / EOL**. Sub-chapters used to sit inline behind a `›`, so a full report listed
   sixteen links and the sticky bar wrapped onto two rows — a third of the viewport, on every

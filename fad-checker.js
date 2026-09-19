@@ -321,6 +321,7 @@ program
 	.option("--no-jars", "skip scanning embedded .jar/.war/.ear binaries for Maven coordinates")
 	.option("--no-certs", "skip scanning committed certificates, private/public keys (PEM/SSH/PuTTY/PGP) and keystores")
 	.option("--cert-expiry-days <n>", "warn on certificates expiring within N days", "90")
+	.option("--lang <code>", "report language: en (default) or fr. Report chrome and CWE titles only — CVE descriptions and advisory text are evidence and stay as published", "en")
 	.option("--eol-support", "also report frameworks/runtimes whose active (bug-fix) support has ended but still receive security fixes (status: unsupported)")
 	.option("--no-js", "alias: skip JS/npm/yarn manifests even if present (Maven-only)")
 	.option("--repo <eco=url...>", "extra registry as <ecosystem>=<url> (e.g. npm=https://npm.acme/) tried before the public one. Repeatable. Supports https://user:pass@host/.")
@@ -1582,14 +1583,16 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// One --report-<type> flag per output, each taking an OPTIONAL path: a string is
 	// an explicit path, `true` means "use the default name under --report-output",
 	// undefined means "not requested". If NO --report-* flag is given at all, fall
-	// back to the historical default set (HTML + .doc). --no-report suppresses ALL
+	// back to the default set: HTML + findings JSON. The JSON is there so the NEXT run has
+	// something to --baseline against without anyone having to remember a flag; the .doc is
+	// still one --report-doc away but is no longer written for people who never open it.
 	// file outputs (the scan, terminal summary and --fail-on gate still ran).
 	const DEFAULT_NAMES = { html: "cve-report.html", doc: "cve-report.doc", sbom: "sbom.cdx.json", csaf: "csaf-vex.json", json: "findings.json", sarif: "fad.sarif" };
 	const sel = { html: options.reportHtml, doc: options.reportDoc, sbom: options.reportSbom, csaf: options.reportCsaf, json: options.reportJson, sarif: options.reportSarif };
 	const anySpecified = Object.values(sel).some(v => v !== undefined);
 	const resolveOut = key => {
 		const v = sel[key];
-		if (v === undefined) return (!anySpecified && (key === "html" || key === "doc")) ? path.join(reportDir, DEFAULT_NAMES[key]) : null;
+		if (v === undefined) return (!anySpecified && (key === "html" || key === "json")) ? path.join(reportDir, DEFAULT_NAMES[key]) : null;
 		return (v === true) ? path.join(reportDir, DEFAULT_NAMES[key]) : v;
 	};
 	const out = options.report === false
@@ -1666,7 +1669,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		const { htmlPath, docPath } = await writeReports({
 			cveMatches: prodMatches, devCveMatches: devMatches, embeddedMatches, retireMatches, vendoredJsInventory, certFindings,
 			eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs,
-			resolvedDeps: resolved, projectInfo, warnings: reportWarnings, parsedManifests, diff,
+			resolvedDeps: resolved, projectInfo, warnings: reportWarnings, parsedManifests, diff, locale: options.lang,
 			htmlPath: out.html, docPath: out.doc,
 		});
 		if (htmlPath) wrote.push(["HTML report", htmlPath]);

@@ -13,7 +13,7 @@ fad-checker -s <src> [-t <target>] [-e <regex>] [other options]
 
 ## Output
 
-By default the HTML + Word reports land in `./fad-checker-report/`. Override with `--report-output <dir>`.
+By default the HTML report and a `findings.json` land in `./fad-checker-report/` (the JSON so the next run can `--baseline` against it; add `--report-doc` for the Word file). Override with `--report-output <dir>`.
 
 ## Ecosystem selection
 
@@ -125,6 +125,7 @@ Each data source can be disabled independently:
 | `--no-binaries` | Skip scanning committed native binaries (`.dll`/`.exe`/`.so`/`.dylib`) — no checksum identity/integrity (chapter 1C) |
 | `--no-certs` | Skip the certificate / key-material scan (chapter 2.4) — committed certs, private/public keys and keystores |
 | `--cert-expiry-days <n>` | Window for the certificate **expiring-soon** warning (default `90`) |
+| `--lang <en\|fr>` | Language of the HTML / Word report (default `en`). Translates the report's own chrome and the CWE titles. **Not** the evidence: CVE descriptions, advisory text and registry reasons stay as published. French CWE titles are fad's own (MITRE publishes English only) and carry MITRE's original with them |
 | `--no-eol` | Skip the end-of-life check (endoflife.date) — the flag the run suggests when that source is unreachable |
 | *(exit code 2)* | **A data source was unreachable and the cache didn't cover it.** Not a findings failure: nothing was written, because the report would have been incomplete. The message names the domain, the codes, the failing URL and the flag that skips that source. Only online; `--offline` never aborts. |
 | `--eol-support` | Also report frameworks/runtimes whose **active (bug-fix) support has ended** while security fixes are still provided (endoflife.date `support` field) — rendered as an "Out of active support" band under chapter 3.1, status `unsupported` in the JSON. Off by default: the default EOL set is unchanged. |
