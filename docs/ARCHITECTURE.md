@@ -53,9 +53,14 @@ lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + n
 lib/scan-completeness.js     Warnings for deps we couldn't fully resolve.
 lib/i18n.js                  Report localisation (en/fr). The ENGLISH STRING IS THE KEY, so an `en` report is byte-identical
                              to the pre-i18n one and a missing translation degrades to English instead of showing a raw key.
-                             Scope is the report's own chrome; data-source text (CVE descriptions, advisory summaries,
-                             registry reasons) is never translated. CWE titles are the exception: MITRE publishes English
-                             only, so data/cwe-names-fr.json is fad's own and MITRE's original travels with each one.
+                             Scope is the report's own chrome — ALL of it: chapter titles and counts, table headers,
+                             scope chips, every intro paragraph, every status pill, the warning headings, the licence
+                             categories, the methodology limitations, the fix recipes and the empty states. A value may
+                             be a [singular, plural] pair picked by vars.n (English never inflects "1 obsolete"; French
+                             does). Data-source text (CVE descriptions, advisory summaries, registry reasons) is never
+                             translated, and neither is a CVSS severity where it is a finding's value. CWE titles are the
+                             exception: MITRE publishes English only, so data/cwe-names-fr.json is fad's own and MITRE's
+                             original travels with each one.
 lib/cli-groups.js            Folds the long tail of boolean flags into -d (off) / -a (on) / -r (outputs). The individual
                              flags are hidden from --help, not removed, so no existing script breaks; --help-all lists
                              them. An unknown token is a hard error (exit 2), never a silent no-op.

@@ -6,15 +6,27 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- **`--lang en|fr`: the HTML/Word report in French.** The report's own chrome — headings,
-  table headers, chapter names, chart titles, buttons, empty states, the executive summary —
-  plus the 189 CWE titles it ships. Text that comes from a data source is deliberately NOT
-  translated: a CVE description, an advisory summary or a registry deprecation reason is
-  evidence, and paraphrasing evidence in an audit report is wrong. MITRE publishes CWE in
-  English only, so the French titles are fad's own and MITRE's original travels with every
-  one of them (tooltip in HTML, parentheses in the `.doc`) — otherwise a reader could not
-  find on cwe.mitre.org what the report just told them. English is unchanged, by
-  construction: the English string is the translation key.
+- **`--lang en|fr`: the HTML/Word report in French — the whole report.** Not just the
+  headings: chapter titles and the counts inside them, every table header, the scope chips
+  and the "defined in / version managed by / pulled in via" footers, the CVE detail panel
+  down to its reference categories, every chapter's intro paragraph, every status pill
+  (`intact`, `devrait être géré`, `nom≠empreinte`, `🔑 CLÉ PRIVÉE`, …), the scan-warning
+  headings, the licence categories, the eight methodology limitations, the per-ecosystem fix
+  recipes, the empty states, the executive summary on screen AND the one the 📋 button
+  pastes into Word — plus the 189 CWE titles it ships. The `<html>` element now declares its
+  language, so Word and screen readers hyphenate and spell-check in the right one.
+  Text that comes from a data source is deliberately NOT translated: a CVE description, an
+  advisory summary or a registry deprecation reason is evidence, and paraphrasing evidence in
+  an audit report is wrong. By the same rule a CVSS severity stays in NVD's own vocabulary
+  wherever it is a finding's value — the badge, the priority band — while the labels around
+  it are French. MITRE publishes CWE in English only, so the French titles are fad's own and
+  MITRE's original travels with every one of them (tooltip in HTML, parentheses in the
+  `.doc`) — otherwise a reader could not find on cwe.mitre.org what the report just told
+  them. A translation may carry both plural forms, picked by the count, because French
+  inflects where English does not ("1 obsolète", not "1 obsolètes"). English is unchanged,
+  byte for byte, by construction: the English string is the translation key — and the suite
+  now checks the catalogue and the source agree in both directions, so a new string cannot
+  ship untranslated and a retired one cannot linger as dead weight for a translator to read.
 - **A data source that goes dark now stops the run instead of quietly shrinking the report.**
   Online, a lookup that gets no usable answer is retried 5 times waiting 5+n seconds (6 → 10),
   each attempt logged; the schedule is shared per source, so a dead host costs one schedule and
