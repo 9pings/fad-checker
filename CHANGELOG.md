@@ -6,12 +6,24 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **A bare `fad-checker` answers instead of erroring.** Typing the name alone is a question —
+  what is this, which version do I have, how do I run it — and "required option '-s, --src'
+  not specified" answered none of it. It now prints a mini help: the banner with the running
+  version, the ecosystems covered, and three real invocations (full report, `--offline`,
+  `--fail-on` gate). Exit stays non-zero: nothing was scanned, so it must not read as a clean
+  run to a job that mis-invoked it. `--help` gained the same version header, for the same
+  reason a report carries one — someone reporting a bug should not have to hunt for it.
 - **The report links back to the project.** The `fad-checker <version>` line in the HTML /
   `.doc` report header is now a link to the repository. A report is a hand-over artifact:
   someone who receives only the file has to be able to find the tool that produced it — its
   version, its docs, its issue tracker — without asking whoever ran the scan.
 
 ### Changed
+- **BREAKING — `-v` is now `--version`, not `--verbose`.** Verbose keeps its long form only.
+  A script running `fad-checker -s . -v` for verbose output will now **print the version and
+  exit 0 without scanning**, which reads as a pass: grep your CI for `-v` and use `--verbose`.
+  `-V` still works (it was the version flag), aliased before parse because commander permits
+  one short flag per option. `docs/USAGE.md` and the bash completion were updated with it.
 - **`--import-cache` now MERGES instead of replacing the cache.** It moved the whole
   `~/.fad-checker/` aside as `.fad-checker.bak-<timestamp>` (or deleted it with `--force`)
   and unpacked the archive in its place, so an enclave that was already warm lost every

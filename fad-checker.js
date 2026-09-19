@@ -145,7 +145,7 @@ if (process.argv.includes("--add-repo") || process.argv.includes("--remove-repo"
 if (process.argv.includes("--export-cache") || process.argv.includes("--import-cache")) {
 	(async () => {
 		const { exportCache, importCache, FAD_CACHE_DIR } = require("./lib/cache-archive");
-		const verbose = process.argv.includes("-v") || process.argv.includes("--verbose");
+		const verbose = process.argv.includes("--verbose");
 		const exportIdx = process.argv.indexOf("--export-cache");
 		const importIdx = process.argv.indexOf("--import-cache");
 		try {
@@ -238,10 +238,15 @@ const USAGE = `
 (5) fad-checker -s ./proj -t ../pom-clean -e "^..." --snyk             # extract + scan + run snyk and merge findings
 `;
 
+// Every help surface names the running build: a user reading `--help` (or a bare
+// invocation) is often checking WHICH version they have before reporting something.
+const TITLE_LINE = `${ui.TITLE_A} v${pkg.version} · ${ui.TITLE_B}`;
+
 program
 	.name(pkg.name)
-	.version(pkg.version)
+	.version(pkg.version, "-v, --version", "output the version number")
 	.showHelpAfterError()
+	.addHelpText("beforeAll", () => chalk.cyan(TITLE_LINE) + "\n")
 	.usage(USAGE)
 	.option("-t, --target <target>", "EXTRACTION mode: write the cleaned POM tree + mirrored manifests to <target> (rm'd first) and stop — no vulnerability scan unless --snyk / --report-<type> / --fail-on / --baseline is also given. If omitted, the run is read-only and produces the full report.")
 	// Not a requiredOption: --import-anonymized scans a descriptor with no source tree.
@@ -251,7 +256,7 @@ program
 	.option("-e, --exclude <exclude>", "regex of groupId/name to exclude, e.g. '^(client|private)\\.'")
 	.option("--exclude-path <glob...>", "ignore sub-paths during the walk (gitignore-style glob, relative to --src). Repeatable. e.g. 'packages/legacy/**' '**/fixtures/**'")
 	.option("--no-default-excludes", "don't prune the built-in ignored dirs (node_modules, vendor, target, .git, …) — walk everything")
-	.option("-v, --verbose", "verbose")
+	.option("--verbose", "verbose")   // -v is the version flag; verbose is long-form only
 	// Defaults: report + transitive + allLibs all ON. Use --no-* to disable.
 	.option("--no-report", "write NO output files at all — the scan, terminal summary and --fail-on gate still run (gate-only / CI mode)")
 	.option("--no-transitive", "skip transitive dependency resolution")
@@ -323,10 +328,37 @@ program
 	.option("--auth <user:pass>", "Basic auth for --add-repo")
 	.option("--token <token>", "Bearer token for --add-repo")
 	.option("--completion <shell>", "print shell completion script (bash|zsh)");
+// Back-compat: -V was the version flag before -v was freed from --verbose. commander
+// allows a single short flag per option, so alias it in argv rather than declare it.
+if (process.argv.includes("-V")) process.argv = process.argv.map(a => a === "-V" ? "--version" : a);
 // Back-compat: license detection is now OFF by default (enable with --licenses).
 // A legacy `--no-licenses` is therefore a no-op — drop it so old invocations don't
 // trip commander's unknown-option error.
 if (process.argv.includes("--no-licenses")) process.argv = process.argv.filter(a => a !== "--no-licenses");
+// -------- bare invocation → a mini help --------
+// Typing just the tool's name is a question ("what is this, which version, how do I
+// run it"), not a malformed command; commander's "required option --src" error answers
+// none of it. Runs before parse so that error never fires. Exit stays non-zero: nothing
+// was scanned, so this must not read as a clean run to a CI job that mis-invoked it.
+// A lone --verbose is included: verbose modifies a scan, and there is no scan here, so it
+// would otherwise die on "required option --src" without answering what the user asked.
+const BARE_ARGV = process.argv.length <= 2
+	|| (process.argv.length === 3 && process.argv[2] === "--verbose");
+if (BARE_ARGV) {
+	ui.banner(pkg.version);
+	console.log(`
+  Audit a source tree for ${chalk.bold("vulnerable")}, ${chalk.bold("end-of-life")}, ${chalk.bold("obsolete")} and ${chalk.bold("outdated")} dependencies.
+  Maven · Gradle · npm · Yarn · pnpm · Composer · PyPI · NuGet · Go · Ruby — no build tool needed.
+
+  ${chalk.cyan("fad-checker -s <dir>")}                   full report: CVE + EOL + obsolete + outdated + licenses
+  ${chalk.cyan("fad-checker -s <dir> --offline")}         air-gapped: warmed cache only, zero network
+  ${chalk.cyan("fad-checker -s <dir> --fail-on high")}    CI gate: exit 1 on a high+ production CVE
+
+  ${chalk.dim("-h, --help")} for every option · ${chalk.dim("-v, --version")} · ${chalk.dim("docs/USAGE.md")} for the full guide
+`);
+	process.exit(1);
+}
+
 program.parse(process.argv);
 
 const options = program.opts();

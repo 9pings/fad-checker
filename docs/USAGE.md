@@ -452,7 +452,7 @@ The `--target` guardrails refuse:
 ## Verbosity
 
 ```bash
-fad-checker -s . -v          # progress per source (OSV batches, NVD pages, retire scan, …)
+fad-checker -s . --verbose   # progress per source (OSV batches, NVD pages, retire scan, …)
 ```
 
 ## Shell completion
