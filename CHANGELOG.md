@@ -29,6 +29,16 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   version, its docs, its issue tracker — without asking whoever ran the scan.
 
 ### Changed
+- **Overview chart 3 is now "Most vulnerable components".** It ranks the scanned project's
+  OWN modules — Maven artifactId, package.json / composer.json name, go module, pyproject
+  name, else the path relative to `--src` — by their count of **critical + high** production
+  CVEs, so the reader learns which module to open first. It replaces "Direct vs transitive",
+  which said where risk sits in the dependency graph but never which part of *your* tree
+  carries it. A finding declared in several modules counts in each, because each one ships
+  it. On a scan with a single descriptor there is nothing to rank, so that slot keeps the
+  direct-vs-transitive donut unchanged. Module names come from the descriptors the codecs
+  already parsed; a pom's `<parent>` block is stripped before reading its artifactId, or
+  every module of a Spring Boot reactor would be labelled `spring-boot-starter-parent`.
 - **BREAKING — `-v` is now `--version`, not `--verbose`.** Verbose keeps its long form only.
   A script running `fad-checker -s . -v` for verbose output will now **print the version and
   exit 0 without scanning**, which reads as a pass: grep your CI for `-v` and use `--verbose`.

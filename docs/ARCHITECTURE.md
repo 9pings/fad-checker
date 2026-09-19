@@ -184,7 +184,10 @@ The Maven keyspace and npm keyspace never collide — `:lodash` (Maven groupId-l
 <Overview charts>              ← 4 inline-SVG donuts on one row under the totals (lib/charts.js):
                                   CWE of direct vulns (legend = CWE titles) · sub-dep CVEs per root dep
                                   (CVE count, legend = readable dep name; rootless/npm shown as a note) ·
-                                  direct vs transitive (per-severity counts in the legend) · fix-priority
+                                  MOST VULNERABLE COMPONENTS — the scanned project's OWN modules
+                                  (pom artifactId / package.json name / …, else the relative path)
+                                  ranked by critical+high; falls back to direct vs transitive when
+                                  the scan has a single descriptor · fix-priority
                                   bands. Each donut has a "📋 Copy chart" button (SVG→canvas→PNG →
                                   clipboard) for pasting into Word.
 <Toolbar>                      ← expand-all / collapse-all / expand CVE details

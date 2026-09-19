@@ -7,6 +7,7 @@ const {
 	directVsTransitive,
 	fixPriority,
 	renderCharts,
+	mostVulnerableComponents,
 } = require("../lib/charts");
 
 const m = (g, a, scope, sev, cwes, extra = {}) => ({
@@ -125,4 +126,104 @@ test("renderCharts: emits 4 SVG charts in one row, each with a copy button", () 
 test("renderCharts: returns empty string when there is nothing to chart", () => {
 	const html = renderCharts({ prodMatches: [], embeddedMatches: [], prodTotal: 0, devTotal: 0, vendoredJsTotal: 0, embeddedTotal: 0, eolTotal: 0, obsoleteTotal: 0, outdatedTotal: 0, nativeBinaryCount: 0 }, {});
 	assert.equal(html, "");
+});
+
+/* ---------------- Most vulnerable components ---------------- */
+
+
+const names = new Map([
+	["/p/api/pom.xml", "acme-api"],
+	["/p/web/pom.xml", "acme-web"],
+	["/p/legacy/pom.xml", "legacy/pom.xml"],   // no declared name → path, as resolveModuleNames does
+]);
+const hit = (sev, paths) => ({ cve: { severity: sev }, dep: { manifestPaths: paths, coordKey: "g:a" } });
+
+test("components are ranked by critical+high only, and only the project's own modules appear", () => {
+	const rows = mostVulnerableComponents([
+		hit("CRITICAL", ["/p/api/pom.xml"]),
+		hit("HIGH", ["/p/api/pom.xml"]),
+		hit("HIGH", ["/p/web/pom.xml"]),
+		hit("MEDIUM", ["/p/web/pom.xml"]),   // medium is not "major" — excluded
+		hit("LOW", ["/p/web/pom.xml"]),
+	], names);
+	assert.deepEqual(rows.map(r => [r.label, r.value]), [["acme-api", 2], ["acme-web", 1]]);
+	assert.equal(rows[0].color, "#7c0008", "worst severity in that module drives the colour (critical)");
+	assert.equal(rows[1].color, "#c92a2a", "high");
+});
+
+test("a module with no declared name is labelled by its relative path", () => {
+	const rows = mostVulnerableComponents([hit("CRITICAL", ["/p/legacy/pom.xml"])], names);
+	assert.deepEqual(rows.map(r => r.label), ["legacy/pom.xml"]);
+});
+
+test("a finding declared in several modules counts in each — they are all affected", () => {
+	const rows = mostVulnerableComponents([hit("CRITICAL", ["/p/api/pom.xml", "/p/web/pom.xml"])], names);
+	assert.deepEqual(rows.map(r => [r.label, r.value]).sort(), [["acme-api", 1], ["acme-web", 1]]);
+});
+
+test("a path with no entry in the name map still charts, under the path itself", () => {
+	const rows = mostVulnerableComponents([hit("CRITICAL", ["/p/unknown/pom.xml"])], new Map());
+	assert.deepEqual(rows.map(r => r.label), ["/p/unknown/pom.xml"]);
+});
+
+test("findings with no manifest path at all are skipped rather than charted as a phantom module", () => {
+	assert.deepEqual(mostVulnerableComponents([hit("CRITICAL", [])], names), []);
+	assert.deepEqual(mostVulnerableComponents([{ cve: { severity: "CRITICAL" }, dep: {} }], names), []);
+	assert.deepEqual(mostVulnerableComponents([], names), []);
+	assert.deepEqual(mostVulnerableComponents(null, names), []);
+});
+
+test("no critical or high anywhere → no chart data (the card falls back to a note)", () => {
+	assert.deepEqual(mostVulnerableComponents([hit("MEDIUM", ["/p/api/pom.xml"]), hit("LOW", ["/p/web/pom.xml"])], names), []);
+});
+
+test("the list is capped and the remainder folded into a single '+N more'", () => {
+	const many = [];
+	for (let i = 0; i < 12; i++) for (let k = 0; k <= i; k++) many.push(hit("HIGH", [`/p/m${i}/pom.xml`]));
+	const rows = mostVulnerableComponents(many, new Map(), { topN: 7 });
+	assert.equal(rows.length, 8);
+	assert.equal(rows[7].label, "+5 more");
+	assert.equal(rows[0].value, 12, "highest count first");
+	const charted = rows.reduce((a, r) => a + r.value, 0);
+	assert.equal(charted, many.length, "nothing is silently dropped");
+});
+
+test("ties break alphabetically so a re-scan renders the same chart", () => {
+	const rows = mostVulnerableComponents([hit("HIGH", ["/p/web/pom.xml"]), hit("HIGH", ["/p/api/pom.xml"])], names);
+	assert.deepEqual(rows.map(r => r.label), ["acme-api", "acme-web"]);
+});
+
+/* ---------------- which card is shown ---------------- */
+
+
+test("several descriptors → the components chart replaces direct-vs-transitive", () => {
+	const html = renderCharts({
+		prodMatches: [hit("CRITICAL", ["/p/api/pom.xml"]), hit("HIGH", ["/p/web/pom.xml"])],
+		moduleNames: names,
+		descriptorCount: 3,
+	}, { interactive: false });
+	assert.match(html, /Most vulnerable components/);
+	assert.doesNotMatch(html, /Direct vs transitive/);
+	assert.match(html, /acme-api/);
+});
+
+test("a single descriptor keeps the existing direct-vs-transitive chart", () => {
+	// Ranking one module against itself says nothing; the scope split still does.
+	const html = renderCharts({
+		prodMatches: [hit("CRITICAL", ["/p/api/pom.xml"])],
+		moduleNames: names,
+		descriptorCount: 1,
+	}, { interactive: false });
+	assert.match(html, /Direct vs transitive/);
+	assert.doesNotMatch(html, /Most vulnerable components/);
+});
+
+test("several descriptors but no critical/high → the components card renders its empty note", () => {
+	const html = renderCharts({
+		prodMatches: [hit("MEDIUM", ["/p/api/pom.xml"])],
+		moduleNames: names,
+		descriptorCount: 4,
+	}, { interactive: false });
+	assert.match(html, /Most vulnerable components/);
+	assert.match(html, /No critical or high/i);
 });

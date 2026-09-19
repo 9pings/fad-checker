@@ -26,7 +26,7 @@ No build tool (`mvn`, `npm install`, `yarn`) is required on PATH — `pom.xml` /
 
 ```bash
 npm install
-npm test                  # 815 unit tests via node --test
+npm test                  # 832 unit tests via node --test
 
 # basic cleanup workflow
 node fad-checker.js -s ./proj                                        # read-only, full report
@@ -88,7 +88,7 @@ lib/maven-version.js         Maven version parsing + range comparison (no extern
 lib/cve-download.js          Bulk download of CVEProject/cvelistV5 + Maven-relevant index build.
 lib/cve-match.js             Resolved-dep collection + 3-tier CVE matching with dedup.
 lib/cve-report.js            Self-contained HTML and Word-compatible (.doc) report rendering.
-lib/charts.js                Pure dependency-free SVG **donut** charts for the report's "Overview" row (4 donuts under the compact totals): (1) CWE of direct vulns — sliced by CWE, coloured by worst severity, legend carries the human CWE title; (2) sub-dep **CVEs** per ROOT (direct) dep — sliced by dep (CVE count, a sub-dep with 3 CVEs = 3), coloured by worst severity, legend = readable dep name + count (rootless transitives, e.g. npm with no resolved `via`, shown as a note, not a bogus "unknown root"); (3) direct vs transitive prod vulns (two slices, each side's per-severity counts in the legend — where the risk lives); (4) fix-priority bands. Each rasterises SVG→canvas→PNG (browser) for a Word-pasteable "Copy chart" button; all styling inline (PNG-safe).
+lib/charts.js                Pure dependency-free SVG **donut** charts for the report's "Overview" row (4 donuts under the compact totals): (1) CWE of direct vulns — sliced by CWE, coloured by worst severity, legend carries the human CWE title; (2) sub-dep **CVEs** per ROOT (direct) dep — sliced by dep (CVE count, a sub-dep with 3 CVEs = 3), coloured by worst severity, legend = readable dep name + count (rootless transitives, e.g. npm with no resolved `via`, shown as a note, not a bogus "unknown root"); (3) **most vulnerable components** — the scanned project's OWN modules (Maven artifactId, package.json/composer.json name, go module, pyproject name; else the path relative to the scan root — `lib/module-names.js`) ranked by **critical+high** production vulns, so the reader knows which module to fix first. A finding declared in several modules counts in each, since each ships it. On a scan with a SINGLE descriptor the slot keeps the old **direct vs transitive** donut, because ranking one module against itself says nothing; (4) fix-priority bands. Each rasterises SVG→canvas→PNG (browser) for a Word-pasteable "Copy chart" button; all styling inline (PNG-safe).
 lib/cpe.js                   CPE 2.3 parsing + NVD configurations evaluator (post-match refinement).
 lib/epss.js                  EPSS (FIRST.org) percentile/score enrichment of matched CVEs (24h cache).
 lib/kev.js                   CISA KEV catalogue membership enrichment (24h cache).
@@ -117,6 +117,7 @@ lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configur
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
 lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser. Runs with --verbose; extractVendoredInventory() lists ALL identified libs (vuln or not) → report chapter 2.3; scanWithRetireFull() returns {matches, inventory, error}. retire walks the tree ITSELF, so it gets the same prune policy as the codecs via a generated `--ignorefile` (`buildRetireIgnorePatterns`): default SKIP dirs by basename **at any depth** + `--exclude-path` globs anchored to `--src` (honors `--no-default-excludes`). Uses an ignorefile of `@`-segment patterns because retire's plain `--ignore` path.resolve()s entries against retire's OWN cwd — which silently missed a nested `<src>/…/node_modules` whenever fad ran from elsewhere than `--src`. A real scan FAILURE (retire crashed / empty-unparseable output) sets `error` (via diag) → surfaced as a chapter-0 `retire-failed` warning instead of a silent empty 2.3. Cache body carries `_schema:2`; an entry without it (pre-verbose build) is a cache MISS so the inventory isn't silently emptied offline. **Launcher** (`findRetireLauncher`/`chooseRetireLauncher`): node dev runs `node_modules/.bin/retire`; the **bun-compiled single binary** has no node_modules and an air-gapped box has no `retire` on PATH, so it **re-execs ITSELF** with `__FAD_RETIRE__=1` — `fad-checker.js`'s top guard then hands off to the statically-bundled `retire/lib/cli.js` (self-runs on require). So vendored-JS scanning works fully offline from the one binary; the only external input is the phase-2-warmed signature DB passed via `--jsrepo`.
 lib/scan-completeness.js     Warnings for deps fad-checker couldn't fully resolve.
+lib/module-names.js          Display name of one of the SCANNED PROJECT's own descriptors (pom artifactId with the <parent> block stripped first, package.json/composer.json name, go.mod module, pyproject [project]/[tool.poetry] name; a lockfile borrows its sibling manifest's). Null → the caller labels it by the path relative to --src. Pure given readFile; a label is cosmetic, so an unreadable descriptor never throws. Feeds the "Most vulnerable components" chart.
 lib/source-health.js         Is this report complete? SOURCES registry (host → label + disable flag), classifyResponse (404/410 = an ANSWER, 403/429/5xx/transport = an outage), the 5-attempt 5+n retry schedule, the per-run ledger and the abort message. guardedFetch wraps globalThis.fetch ONCE so all 18 fetching modules are covered without threading counters. Pure except the injected fetch/sleep.
 lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 + Berry, pnpm-lock.yaml (v5/6/9) parsers.
 lib/codecs/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
@@ -164,7 +165,7 @@ For the deep dive — pipeline stages, the resolved-deps Map shape, report struc
 ## Testing
 
 ```bash
-node --test test/*.test.js            # full suite (815 tests)
+node --test test/*.test.js            # full suite (832 tests)
 node --test test/core.test.js         # one file
 ```
 

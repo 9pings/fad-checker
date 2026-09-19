@@ -73,7 +73,7 @@ checkable.
 
 ¹⁰ Chapters 0→6 with an executive summary and fix recipes, self-contained HTML plus a Word `.doc` twin. None of the others emits Word.
 
-¹¹ Four inline-SVG charts — CWE by worst severity, vulnerable transitives per root dep, direct vs transitive, fix-priority bands — rendered in the `.doc` too, with one-click copy as PNG (or a table as rich HTML) that pastes into Word formatted. Every CVE keeps its CVSS vector, CWE, references, CPE config and via-path behind a drill-down, with zero external assets.
+¹¹ Four inline-SVG charts — CWE by worst severity, vulnerable transitives per root dep, your most vulnerable modules (direct vs transitive on a single-module project), fix-priority bands — rendered in the `.doc` too, with one-click copy as PNG (or a table as rich HTML) that pastes into Word formatted. Every CVE keeps its CVSS vector, CWE, references, CPE config and via-path behind a drill-down, with zero external assets.
 
 ¹² `--baseline` adds a Δ chapter (new / fixed / unchanged); `--fail-on-new` gates on new findings only. Snyk tracks this on its platform, not as a local diff.
 
