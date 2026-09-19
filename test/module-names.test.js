@@ -3,6 +3,15 @@ const assert = require("node:assert/strict");
 const path = require("path");
 const { moduleNameFor, resolveModuleNames } = require("../lib/module-names");
 
+// The library builds its lookups with path.join / path.dirname, which yield "\\" on Windows
+// while these in-memory trees are keyed with "/". Normalising on the way IN keeps the
+// fixtures readable as POSIX paths and lets them answer the same question on every
+// platform — the separator is the OS's business, not the fixture's. Without this the whole
+// sibling-manifest family (package-lock → package.json, Gemfile.lock → .gemspec,
+// build.gradle → settings.gradle, packages.config → .csproj) silently missed on Windows and
+// every one of those descriptors came back unnamed.
+const key = p => String(p).replace(/\\/g, "/");
+
 // Injected reader: these are the project's OWN descriptors, never a dependency.
 const files = {
 	"/p/pom.xml": `<project><parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId><version>2.7.18</version></parent><groupId>com.acme</groupId><artifactId>acme-gateway</artifactId></project>`,
@@ -19,8 +28,19 @@ const files = {
 	"/p/broken/pom.xml": `<project><parent><artifactId>only-a-parent</artifactId></parent></project>`,
 	"/p/bad/package.json": `{ not json `,
 };
-const readFile = p => { if (!(p in files)) throw new Error("ENOENT"); return files[p]; };
+const readFile = p => { const k = key(p); if (!(k in files)) throw new Error("ENOENT"); return files[k]; };
 const nameOf = p => moduleNameFor(p, { readFile });
+
+test("the injected tree answers the same whether it is asked with / or \\", () => {
+	// This is precisely what broke on windows-latest: the library reaches a sibling with
+	// path.join, which yields a backslash path there, and a tree keyed with "/" answered
+	// ENOENT — so package-lock.json, Gemfile.lock, build.gradle and packages.config all came
+	// back unnamed, and the report labelled those modules by their path instead. The library
+	// is right (a real Windows walk hands it backslashes all the way down); it was the
+	// fixture that assumed POSIX. Asserted here so the fixture cannot drift back.
+	assert.equal(readFile("\\p\\web\\package.json"), files["/p/web/package.json"]);
+	assert.equal(io2.readDir("\\r\\gem").join(","), dirs["/r/gem"].join(","));
+});
 
 test("Maven: the PROJECT artifactId, never the <parent> one", () => {
 	// The parent block also carries an artifactId; taking the first match in the file
@@ -55,7 +75,8 @@ test("resolveModuleNames labels every descriptor, falling back to the path relat
 		{ srcRoot: "/p", readFile });
 	assert.equal(m.get("/p/pom.xml"), "acme-gateway");
 	assert.equal(m.get("/p/web/package-lock.json"), "@acme/web");
-	assert.equal(m.get("/p/rb/Gemfile.lock"), "rb/Gemfile.lock", "no name → relative path");
+	// The fallback is a real relative path, so it carries the platform's own separator.
+	assert.equal(m.get("/p/rb/Gemfile.lock"), path.join("rb", "Gemfile.lock"), "no name → relative path");
 	assert.equal(m.size, 3);
 });
 
@@ -94,8 +115,8 @@ for (const f of Object.keys(eco)) {
 	(dirs[d] = dirs[d] || []).push(f.slice(f.lastIndexOf("/") + 1));
 }
 const io2 = {
-	readFile: p => { if (!(p in eco)) throw new Error("ENOENT"); return eco[p]; },
-	readDir: d => { if (!(d in dirs)) throw new Error("ENOENT"); return dirs[d]; },
+	readFile: p => { const k = key(p); if (!(k in eco)) throw new Error("ENOENT"); return eco[k]; },
+	readDir: d => { const k = key(d); if (!(k in dirs)) throw new Error("ENOENT"); return dirs[k]; },
 };
 const n2 = p => moduleNameFor(p, io2);
 
