@@ -140,6 +140,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `--fail-on` / `--fail-on-new`, `--baseline`. A read-only run (no `-t`) is unchanged.
 
 ### Fixed
+- **The one French block in an otherwise English terminal.** The "a data source went dark"
+  abort — and the retry lines leading up to it — printed in French whatever `--lang` said,
+  so the operator who most needs to read it, the one whose run just refused to write a
+  report, got it in a language the rest of the output never used. Now English, like every
+  other line the tool prints. `--lang` deliberately does not reach it: that flag picks the
+  language of the **report**, which goes to a client, while this is a diagnostic for
+  whoever launched the scan.
 - **The compiled binary asked for Node.js to scan vendored JavaScript.** The launcher looked
   for `node_modules/.bin/retire` before checking whether it was itself the compiled binary,
   and it resolved that path from `__dirname` — which in a bun-compiled binary still points at

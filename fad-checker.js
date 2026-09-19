@@ -437,7 +437,7 @@ if (!options.offline) {
 	globalThis.fetch = guardedFetch({
 		health: sourceHealth,
 		fetch: baseFetch,
-		onRetry: r => ui.interject(`  ${chalk.yellow("⚠")} ${r.label} ${chalk.dim(`— ${r.code}, tentative ${r.attempt}/${r.of}, nouvelle dans ${Math.round(r.delayMs / 1000)}s`)}`),
+		onRetry: r => ui.interject(`  ${chalk.yellow("⚠")} ${r.label} ${chalk.dim(`— ${r.code}, attempt ${r.attempt}/${r.of}, retrying in ${Math.round(r.delayMs / 1000)}s`)}`),
 	});
 }
 /**

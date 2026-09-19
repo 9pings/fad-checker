@@ -105,7 +105,11 @@ test("formatAbort names the source, the domain, the codes, the failing URL and t
 	assert.match(msg, /https:\/\/endoflife\.date\/api\/symfony\.json/, "the failing URL");
 	assert.match(msg, /--no-eol/, "the flag that disables this source");
 	assert.match(msg, /--offline/, "the one-shot escape");
-	assert.match(msg, /5 tentative/, "says the retries happened");
+	assert.match(msg, /5 attempts/, "says the retries happened");
+	// This block is the operator's diagnostic, printed in the terminal's own language. It
+	// was the single French block in an otherwise English CLI.
+	assert.doesNotMatch(msg, /injoignable|tentative|aucune réponse|Relancer|zéro réseau|ignorer/,
+		"the abort block is English, like the rest of the terminal");
 });
 
 test("formatAbort lists every degraded source, so one re-run can disable them all", () => {
