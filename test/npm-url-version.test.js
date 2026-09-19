@@ -85,10 +85,12 @@ test("the Maven pom cache filename is also one segment, and warm caches stay val
 		"org.apache.commons__commons-lang3__3.14.0.pom");
 	assert.equal(path.basename(pomCachePath("com.acme_x", "a_b", "1.0.0_1", dir)),
 		"com.acme_x__a_b__1.0.0_1.pom", "underscores are legal in coordinates and must survive");
-	// And nothing can walk out of the cache directory.
+	// And nothing can walk out of the cache directory. The comparison normalises the dir:
+	// cachePath builds with path.join, so on Windows it spells the SAME directory "\\c"
+	// rather than "/c", and asserting the raw spelling tests the separator, not the escape.
 	for (const v of ["../../etc/passwd", "1.0/2.0", "a\\b"]) {
 		const k = path.basename(pomCachePath("g", "a", v, dir));
-		assert.equal(path.dirname(pomCachePath("g", "a", v, dir)), dir);
+		assert.equal(path.dirname(pomCachePath("g", "a", v, dir)), path.normalize(dir));
 		assert.doesNotMatch(k, /[/\\]/);
 	}
 });
