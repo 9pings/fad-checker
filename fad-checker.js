@@ -17,7 +17,7 @@ const chalk = require("chalk");
 const pLimit = require("p-limit");
 const { program } = require("commander");
 const ui = require("./lib/ui");
-const { createSourceHealth, guardedFetch, formatAbort } = require("./lib/source-health");
+const { createSourceHealth, guardedFetch, formatAbort, setActiveLedger } = require("./lib/source-health");
 
 const core = require("./lib/core");
 
@@ -390,6 +390,9 @@ const verbose = !!options.verbose;
 // warm cache issues no request at all, which IS the "100% from cache, stay silent" rule.
 const sourceHealth = createSourceHealth();
 if (!options.offline) {
+	// The mirror/registry rotations report their own exhaustion (their requests bypass the
+	// guard: they carry their own AbortSignal and failover).
+	setActiveLedger(sourceHealth);
 	const baseFetch = globalThis.fetch;
 	globalThis.fetch = guardedFetch({
 		health: sourceHealth,

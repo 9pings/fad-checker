@@ -75,6 +75,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `--fail-on` / `--fail-on-new`, `--baseline`. A read-only run (no `-t`) is unchanged.
 
 ### Fixed
+- **The source-health guard made the Maven outdated pass crawl.** Its retry schedule wrapped
+  every fetch, including the ones `lib/maven-repo.js` and `lib/registries.js` issue with their
+  own `AbortSignal` and their own failover to the next mirror or base. Each dead mirror then
+  cost 6+7+8+9+10 = **40 seconds of sleeping** before the rotation was even allowed to try the
+  next host — and every one of those retries reused the already-aborted signal, so all five
+  failed instantly and pointlessly. A request that carries a signal is now passed straight
+  through: the caller owns that budget. The coverage guarantee is kept where the information
+  actually is, in the rotations themselves, which report a hole only when no host answered at
+  all; a 404 from every base stays what it always was, the way an internal package is detected.
 - **CSAF VEX declared the wrong publisher namespace.** `document.publisher.namespace` pointed at
   a stale `github.com/nathb2b/fad-checker`; it is now the canonical
   `github.com/9pings/fad-checker`, matching `package.json` and the SARIF `informationUri`.

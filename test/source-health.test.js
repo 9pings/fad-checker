@@ -233,3 +233,94 @@ test("a source that recovers lets the waiting callers through", async () => {
 	assert.ok(rs.every(r => r.ok), "both callers got a real answer after the recovery");
 	assert.deepEqual(h.degraded(), [], "a recovered blip is not a coverage hole");
 });
+
+test("a caller that owns a deadline is never retried behind its back", async () => {
+	// lib/maven-repo.js wraps each mirror attempt in withDeadline(5s) and fails over to the
+	// next mirror; lib/registries.js and the npm registry do the same with
+	// AbortSignal.timeout. Retrying inside that budget is both futile — the signal is
+	// already aborted, so every retry fails instantly — and ruinous: 40s of sleeping per
+	// dead mirror instead of an immediate failover. Measured at 40.0s before this rule.
+	const h = createSourceHealth();
+	let calls = 0, slept = 0;
+	const f = guardedFetch({
+		health: h,
+		fetch: async (url, init) => { calls++; if (init?.signal?.aborted) throw new Error("aborted"); throw new Error("timeout after 5000 ms"); },
+		sleep: async () => { slept++; },
+	});
+	const ac = new AbortController(); ac.abort();
+	await assert.rejects(() => f("https://repo1.maven.org/maven2/x/maven-metadata.xml", { signal: ac.signal }), /aborted/);
+	assert.equal(calls, 1, "one attempt, then straight back to the caller's own failover");
+	assert.equal(slept, 0, "no backoff inside someone else's budget");
+	assert.deepEqual(h.degraded(), [], "one mirror failing is not a source outage — the next mirror may answer");
+});
+
+test("a live signal is respected too: still one attempt, no schedule", async () => {
+	const h = createSourceHealth();
+	let calls = 0, slept = 0;
+	const f = guardedFetch({
+		health: h,
+		fetch: async () => { calls++; return { ok: false, status: 429 }; },
+		sleep: async () => { slept++; },
+	});
+	const r = await f("https://registry.npmjs.org/lodash", { signal: AbortSignal.timeout(5000) });
+	assert.equal(r.status, 429);
+	assert.equal(calls, 1);
+	assert.equal(slept, 0);
+});
+
+test("single-endpoint sources, which have no failover of their own, still get the schedule", async () => {
+	const h = createSourceHealth();
+	let calls = 0;
+	const f = guardedFetch({ health: h, fetch: async () => { calls++; return { ok: false, status: 429 }; }, sleep: async () => {} });
+	await f("https://api.first.org/data/v1/epss");
+	assert.equal(calls, 6, "EPSS passes no signal, so the retry schedule applies");
+	assert.deepEqual(h.degraded().map(d => d.id), ["epss"]);
+});
+
+/* ---------------- fan-out exhaustion (Maven mirrors, registry bases) ---------------- */
+
+const { classifyMissReason, noteFanoutExhausted, setActiveLedger } = require("../lib/source-health");
+
+test("classifyMissReason: a 404/410 from a mirror is an answer; throttling and transport are not", () => {
+	assert.equal(classifyMissReason("HTTP 404"), "answered");
+	assert.equal(classifyMissReason("HTTP 410"), "answered");
+	assert.equal(classifyMissReason("HTTP 401"), "answered", "an auth-walled private repo still answered");
+	assert.equal(classifyMissReason("HTTP 429"), "unavailable");
+	assert.equal(classifyMissReason("HTTP 503"), "unavailable");
+	assert.equal(classifyMissReason("network: timeout after 5000 ms"), "unavailable");
+	assert.equal(classifyMissReason(""), "unavailable");
+});
+
+test("a lookup where EVERY host was unavailable is a coverage hole", () => {
+	const h = createSourceHealth();
+	setActiveLedger(h);
+	noteFanoutExhausted("https://repo1.maven.org/maven2/g/a/maven-metadata.xml",
+		["network: timeout after 5000 ms", "HTTP 503", "HTTP 429"]);
+	assert.deepEqual(h.degraded().map(d => d.id), ["maven"]);
+	assert.equal(h.degraded()[0].url, "https://repo1.maven.org/maven2/g/a/maven-metadata.xml");
+	setActiveLedger(null);
+});
+
+test("a lookup that 404s everywhere is a private package, NOT an outage", () => {
+	// This is the whole point: an internal coordinate absent from every configured repo is
+	// the finding fad exists to produce. Aborting the run on it would break every monorepo.
+	const h = createSourceHealth();
+	setActiveLedger(h);
+	noteFanoutExhausted("https://registry.npmjs.org/@acme/internal", ["HTTP 404", "HTTP 404"]);
+	assert.deepEqual(h.degraded(), []);
+	setActiveLedger(null);
+});
+
+test("one host answering 404 while another times out is still an answer", () => {
+	const h = createSourceHealth();
+	setActiveLedger(h);
+	noteFanoutExhausted("https://repo1.maven.org/maven2/x", ["network: ECONNREFUSED", "HTTP 404"]);
+	assert.deepEqual(h.degraded(), [], "the rotation reached a host that knew the answer");
+	setActiveLedger(null);
+});
+
+test("with no ledger registered (offline, or a unit test) the hook is inert", () => {
+	setActiveLedger(null);
+	assert.doesNotThrow(() => noteFanoutExhausted("https://api.osv.dev/x", ["HTTP 503"]));
+	assert.doesNotThrow(() => noteFanoutExhausted("not-a-url", []));
+});
