@@ -29,6 +29,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   version, its docs, its issue tracker — without asking whoever ran the scan.
 
 ### Changed
+- **The merged priority cell reads as four labelled lines**, and the CVE table's widths were
+  rebalanced around it: band + KEV, severity + CVSS score, then `EPSS: 100%` and
+  `Published: 2021-12-10`. The last two are labelled because neither a bare percentage nor a
+  bare date has a column header of its own any more. Four short lines need less width than
+  three long ones, so Priority/severity gives 15% back, Fix Version and Source 10% each,
+  Dependency takes a little more, and every point freed goes to Description — the only column
+  whose content is prose.
 - **A finding now says which MODULE ships it, not which file declares it.** The "defined in"
   footer showed up to three descriptor paths; it now shows up to two module names —
   `dubbo-dependencies-zookeeper` rather than
