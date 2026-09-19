@@ -29,6 +29,12 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   version, its docs, its issue tracker — without asking whoever ran the scan.
 
 ### Changed
+- **The pinned chapter bar is one row of dropdowns**, and chapter 3 is now
+  **Maintenance / EOL**. Sub-chapters used to sit inline behind a `›`, so a full report listed
+  sixteen links and the sticky bar wrapped onto two rows — a third of the viewport, on every
+  scroll. Each chapter that has sub-chapters now reveals them on hover or keyboard focus,
+  using CSS only: a nav that needs JavaScript to open is a nav that silently stops working in
+  a report someone opens from a mail attachment.
 - **The merged priority cell reads as four labelled lines**, and the CVE table's widths were
   rebalanced around it: band + KEV, severity + CVSS score, then `EPSS: 100%` and
   `Published: 2021-12-10`. The last two are labelled because neither a bare percentage nor a
