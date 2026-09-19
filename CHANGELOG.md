@@ -38,6 +38,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   version, its docs, its issue tracker — without asking whoever ran the scan.
 
 ### Changed
+- **BREAKING-ish — `--help` is one screen: the long tail folds into `-d` / `-a` / `-r`.** It
+  had reached 176 lines and eighty options, thirty-six of which were a `--no-<something>` or
+  an opt-in switch. Now `-d eol,nvd` turns things off, `-a licenses,snyk` turns on what is off
+  by default, `-r html,json` picks the outputs and `-o` is the output directory. The folded
+  flags **still work** — they are hidden from the help, not removed, so no existing script
+  breaks — and `--help-all` prints them. The cache, registry and configuration commands are
+  hidden the same way: they manage the tool, not a scan. An unknown token is a hard error, not
+  a silent no-op, because a dropped `-d nvd` would produce a report claiming coverage the run
+  never had.
 - **Default outputs are now HTML + `findings.json`, not HTML + `.doc`.** The JSON means the
   next run has something to `--baseline` against without anyone having to remember a flag.
   `--report-doc` still writes the Word file for those who want it.

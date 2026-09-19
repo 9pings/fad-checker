@@ -249,14 +249,18 @@ program
 	.showHelpAfterError()
 	.addHelpText("beforeAll", () => chalk.cyan(TITLE_LINE) + "\n")
 	.usage(USAGE)
-	.option("-t, --target <target>", "EXTRACTION mode: write the cleaned POM tree + mirrored manifests to <target> (rm'd first) and stop — no vulnerability scan unless --snyk / --report-<type> / --fail-on / --baseline is also given. If omitted, the run is read-only and produces the full report.")
+	.option("-t, --target <target>", "EXTRACTION mode: write the cleaned POM tree to <dir> and stop (no scan unless --snyk / --report-* / --fail-on / --baseline)")
 	// Not a requiredOption: --import-anonymized scans a descriptor with no source tree.
 	.option("-s, --src <src>", "root directory containing pom.xml files")
-	.option("--source <src>", "alias of --src (also the JSON config key 'source')")
+	.option("--source <src>", "alias of --src")
 	.option("--config <file>", "load default options from a JSON config file (else ./.fad-env.json)")
+	.option("-d, --disable <list>", "turn features OFF (comma-separated) — see the token list below")
+	.option("-a, --activate <list>", "turn ON what is off by default (comma-separated) — see below")
+	.option("-r, --report <list>", "outputs to write, comma-separated: html,doc,sbom,csaf,json,sarif (default: html,json)")
+	.option("--help-all", "every option, incl. the flags -d/-a/-r replace and the cache / registry / config commands")
 	.option("-e, --exclude <exclude>", "regex of groupId/name to exclude, e.g. '^(client|private)\\.'")
-	.option("--exclude-path <glob...>", "ignore sub-paths during the walk (gitignore-style glob, relative to --src). Repeatable. e.g. 'packages/legacy/**' '**/fixtures/**'")
-	.option("--no-default-excludes", "don't prune the built-in ignored dirs (node_modules, vendor, target, .git, …) — walk everything")
+	.option("--exclude-path <glob...>", "ignore sub-paths during the walk (gitignore-style glob, relative to --src). Repeatable")
+	.option("--no-default-excludes", "walk everything, including node_modules/vendor/target/…")
 	.option("--verbose", "verbose")   // -v is the version flag; verbose is long-form only
 	// Defaults: report + transitive + allLibs all ON. Use --no-* to disable.
 	.option("--no-report", "write NO output files at all — the scan, terminal summary and --fail-on gate still run (gate-only / CI mode)")
@@ -278,11 +282,11 @@ program
 	.option("--report-json [file]", "write a flat machine-readable findings JSON (default: <report-output>/findings.json)")
 	.option("--report-sarif [file]", "write a SARIF 2.1.0 log for GitHub/GitLab code scanning (default: <report-output>/fad.sarif)")
 	.option("--fail-on <level>", "exit non-zero if a production finding meets <level>: low|medium|high|critical|kev|none", "none")
-	.option("--baseline <file>", "differential audit: diff this scan against a prior findings JSON (from --report-json) — shows new / fixed findings in the report + JSON export")
-	.option("--fail-on-new", "exit non-zero if the scan introduces any NEW production CVE finding vs --baseline (combine with or instead of --fail-on)")
+	.option("--baseline <file>", "diff this scan against a prior findings.json (adds a Δ chapter)")
+	.option("--fail-on-new", "also fail on any NEW production CVE vs --baseline")
 	.option("--no-checksums", "don't write a SHA256SUMS integrity manifest alongside the report files")
-	.option("--ignore <file>", "suppress findings listed in <file> (CVE ids / coords / globs, one per line)")
-	.option("--vex <file>", "ingest a CSAF VEX: suppress CVEs marked not_affected/fixed")
+	.option("--ignore <file>", "triage file: CVE ids / coord globs to suppress")
+	.option("--vex <file>", "ingest a CSAF VEX and suppress what it marks not-affected/fixed")
 	.option("--licenses", "run license detection + copyleft policy check (off by default)")
 	.option("--offline", "no network: use cached CVE/OSV/NVD/EPSS/KEV/POM data only")
 	.option("--set-nvd-key <key>", "save NVD API key to ~/.fad-checker/config.json (10× faster NVD enrichment)")
@@ -291,10 +295,10 @@ program
 	.option("--import-cache <file>", "merge a previously exported archive into ~/.fad-checker/ (keeps the local cache + config.json; newest entry wins)")
 	.option("--replace", "with --import-cache: replace ~/.fad-checker/ wholesale instead of merging (previous dir kept as .bak unless --force)")
 	.option("--include-config", "with --export-cache: also bundle config.json (contains the NVD API key)")
-	.option("--export-anonymized <file>", "offline: write an anonymized dependency descriptor (public coordinates only, no paths/URLs) for air-gapped audits, then exit")
-	.option("--import-anonymized <file>", "online: scan an anonymized descriptor (no --src) to warm the caches; pair with --export-cache for offline reporting")
+	.option("--export-anonymized <file>", "offline: write a path-free dependency descriptor and exit")
+	.option("--import-anonymized <file>", "online, no --src: scan a descriptor to warm the caches")
 	.option("--force", "with --import-cache --replace: replace ~/.fad-checker/ without keeping a backup")
-	.option("--report-output <dir>", "report output directory", "./fad-checker-report")
+	.option("-o, --report-output <dir>", "report output directory", "./fad-checker-report")
 	.option("--ignore-test", "skip test-scoped dependencies in report")
 	.option("--cve-refresh", "force re-download of CVE database")
 	.option("--cve-offline", "use cached CVE index only (no download)")
@@ -306,8 +310,8 @@ program
 	.option("--no-retire", "skip retire.js vendored-JS scan")
 	.option("--no-vendored-js-inventory", "don't list ALL identified vendored JS libs (chapter 1D) — keep only the vulnerable ones (chapter 2)")
 	.option("--retire-refresh", "ignore retire cache and re-scan")
-	.option("--transitive-depth <n>", "max transitive depth", "6")
-	.option("--ecosystem <list>", "codecs to run: auto|all|<comma list> e.g. maven,npm,nuget,composer,pypi,go,ruby (default: auto = detected)", "auto")
+	.option("--transitive-depth <n>", "max transitive resolution depth", "6")
+	.option("--ecosystem <list>", "auto (default) | all | comma list of codec ids", "auto")
 	.option("--no-maven", "skip the Maven codec")
 	.option("--no-gradle", "skip the Gradle codec")
 	.option("--no-npm", "skip the npm codec")
@@ -321,16 +325,39 @@ program
 	.option("--no-jars", "skip scanning embedded .jar/.war/.ear binaries for Maven coordinates")
 	.option("--no-certs", "skip scanning committed certificates, private/public keys (PEM/SSH/PuTTY/PGP) and keystores")
 	.option("--cert-expiry-days <n>", "warn on certificates expiring within N days", "90")
-	.option("--lang <code>", "report language: en (default) or fr. Report chrome and CWE titles only — CVE descriptions and advisory text are evidence and stay as published", "en")
+	.option("--lang <code>", "report language: en (default) or fr. Chrome + CWE titles only, never the advisory text", "en")
 	.option("--eol-support", "also report frameworks/runtimes whose active (bug-fix) support has ended but still receive security fixes (status: unsupported)")
 	.option("--no-js", "alias: skip JS/npm/yarn manifests even if present (Maven-only)")
-	.option("--repo <eco=url...>", "extra registry as <ecosystem>=<url> (e.g. npm=https://npm.acme/) tried before the public one. Repeatable. Supports https://user:pass@host/.")
+	.option("--repo <eco=url...>", "extra registry as <ecosystem>=<url>, tried before the public one. Repeatable")
 	.option("--add-repo <eco>", "persist a registry: --add-repo <ecosystem> <name> <url> [--auth user:pass] [--token TOK]")
 	.option("--remove-repo <eco>", "remove a persisted registry: --remove-repo <ecosystem> <name>")
 	.option("--list-repos", "list configured registries (grouped by ecosystem) and exit")
 	.option("--auth <user:pass>", "Basic auth for --add-repo")
 	.option("--token <token>", "Bearer token for --add-repo")
 	.option("--completion <shell>", "print shell completion script (bash|zsh)");
+
+// The -d / -a vocabularies, laid out once under the options instead of wrapped inside two
+// option descriptions where they cost fifteen lines.
+program.addHelpText("after", `
+  -d  eol nvd osv epss kev retire transitive all-libs checksums osv-db report
+      vendored-js-inventory default-excludes
+      maven gradle npm yarn nuget composer pypi go ruby js jars binaries certs
+  -a  licenses eol-support typosquat snyk osv-db nvd-cpe-match cve-refresh
+      cve-offline osv-db-refresh retire-refresh
+
+  e.g.  fad-checker -s . -d nvd,epss,certs -a licenses,typosquat -o ./audit
+  --help-all lists the individual flags these replace.  Full guide: docs/USAGE.md`);
+// -d / -a fold thirty-six boolean flags into two lists. The flags still WORK — hiding them
+// costs nothing and breaks no existing script, whereas removing them would break every one
+// in the wild to achieve the same one-screen help. --help-all shows them.
+if (!process.argv.includes("--help-all")) {
+	const { foldedFlags } = require("./lib/cli-groups");
+	const { ADMIN_FLAGS, REPORTS } = require("./lib/cli-groups");
+	const folded = new Set([...foldedFlags(), ...ADMIN_FLAGS, ...REPORTS.map(r => `--report-${r}`)]);
+	for (const opt of program.options) if (folded.has(opt.long)) opt.hidden = true;
+} else {
+	process.argv = process.argv.map(a => a === "--help-all" ? "--help" : a);
+}
 // Back-compat: -V was the version flag before -v was freed from --verbose. commander
 // allows a single short flag per option, so alias it in argv rather than declare it.
 if (process.argv.includes("-V")) process.argv = process.argv.map(a => a === "-V" ? "--version" : a);
@@ -381,6 +408,18 @@ Object.assign(options, applyLayers(program, _layers, require("./lib/config").loa
 // --source CLI alias → src (applyLayers already maps the file/env JSON 'source' key).
 if (!options.src && options.source) options.src = options.source;
 
+// -d / -a are applied BEFORE the layered config so a config file can still override them
+// the same way it overrides any other option.
+{
+	const { applyGroups } = require("./lib/cli-groups");
+	const { applyReports } = require("./lib/cli-groups");
+	const { errors } = applyGroups(options, { disable: options.disable, activate: options.activate });
+	errors.push(...applyReports(options, options.report && options.report !== true ? options.report : "").errors);
+	if (errors.length) {
+		for (const e of errors) console.error(chalk.red(`❌  ${e}`));
+		process.exit(2);
+	}
+}
 const deps2Exclude = options.exclude ? new RegExp(options.exclude) : null;
 const verbose = !!options.verbose;
 

@@ -25,7 +25,8 @@ test("no arguments prints a mini help carrying the current version, and exits no
 
 test("short flags: -h is help, -v is version, -V still works, verbose is long-form only", () => {
 	assert.match(run(["-h"]).out, new RegExp(`fad-checker v${pkg.version.replace(/\./g, "\\.")}`), "-h prints the full help");
-	assert.ok(run(["-h"]).out.length > 4000, "-h is the full help, same as --help");
+	assert.equal(run(["-h"]).out, run(["--help"]).out, "-h is --help");
+	assert.ok(run(["-h"]).out.length > 1200, "-h still lists the scan options");
 	assert.equal(run(["-h"]).code, 0);
 
 	assert.equal(run(["-v"]).out.trim(), pkg.version, "-v is the version");
@@ -51,8 +52,10 @@ test("--help carries the current version too", () => {
 	const { out, code } = run(["--help"]);
 	assert.equal(code, 0);
 	assert.match(out, new RegExp(`fad-checker v${pkg.version.replace(/\./g, "\\.")}\\b`), "version header on the full help");
-	assert.match(out, /--report-json/, "still the full option list");
-	assert.ok(out.length > 4000, "full help is the long one");
+	assert.match(out, /-r, --report/, "the scan options are there");   // --report-json is folded into -r and shown by --help-all
+	// --help is one screen now; --help-all is where everything lives.
+	assert.ok(out.length > 1200, "--help lists the scan options");
+	assert.ok(run(["--help-all"]).out.length > out.length, "--help-all is longer");
 });
 
 test("the mini help and the full help agree on the version, and it is package.json's", () => {
