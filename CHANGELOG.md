@@ -107,6 +107,14 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `--fail-on` / `--fail-on-new`, `--baseline`. A read-only run (no `-t`) is unchanged.
 
 ### Fixed
+- **The report called every descriptor a POM.** "Declared in (1 POM)" said POM whether the
+  file was a `pom.xml`, a `package.json` or a `composer.lock`, and the advice for a CVE with
+  no published fix was "Add `<exclusion>` in root POM" — given to npm, PyPI, NuGet, Go and
+  Ruby readers, about a file their project does not have. The count now names the file kind
+  when the paths share one (`3 pom.xml`, `2 package.json`) and says `N descriptors` when they
+  do not, and each ecosystem's recipe carries its own no-fix line: an npm override, a yarn
+  resolution, "upgrade or replace the gem". Wording that is genuinely Maven-only, such as the
+  `parent POM` chip, is unchanged — those concepts only ever apply to Maven dependencies.
 - **A URL-versioned npm dependency killed the scan.** `package-lock` v1 records a dep
   installed from a URL as `"version": "https://registry.npmjs.org/x/-/x-0.12.5.tgz"`, and the
   OSV cache filename interpolated that raw — so the scan died mid-step on
