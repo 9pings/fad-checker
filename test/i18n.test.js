@@ -88,3 +88,20 @@ test("writeReports forwards the locale — it was accepted and silently dropped"
 	assert.ok(payload, "writeReports payload not found");
 	assert.match(payload[1], /\blocale\b/, "writeReports must pass the locale on to the renderers");
 });
+
+test("the clipboard affordances are translated too — buttons AND the strings built in the browser", () => {
+	// The copy script is a module constant, so it cannot call t(): its labels stayed English
+	// while the rest of the report was French. It now reads a table the page supplies.
+	const fr = generateHtmlReport(payload("fr"));
+	assert.match(fr, /📋 Copier le tableau/);
+	assert.match(fr, /Copier seulement une partie/);
+	assert.match(fr, /window\.__FAD_T=\{/, "the page carries the browser-side strings");
+	assert.match(fr, /"First 5 rows":"Les 5 premières lignes"/);
+	assert.match(fr, /"Copied!":"Copié !"/);
+
+	const en = generateHtmlReport(payload("en"));
+	// The helper in the script always names __FAD_T; what English must not carry is the
+	// assignment, i.e. a table of translations.
+	assert.doesNotMatch(en, /window\.__FAD_T=\{/, "English emits no translation table");
+	assert.match(en, /📋 Copy table/);
+});
