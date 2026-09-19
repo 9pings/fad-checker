@@ -6,6 +6,16 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **A data source that goes dark now stops the run instead of quietly shrinking the report.**
+  Online, a lookup that gets no usable answer is retried 5 times waiting 5+n seconds (6 → 10),
+  each attempt logged; the schedule is shared per source, so a dead host costs one schedule and
+  not one per dependency. If it never comes back the run stops **before writing anything** and
+  prints the domain, the HTTP/transport codes, the first failing URL and the flag that disables
+  that source, exiting **2** — distinct from the `1` that `--fail-on` uses, so CI can tell
+  "vulnerabilities found" from "this scan is not trustworthy". A source whose warm cache covered
+  every lookup stays completely silent: no request was issued, so there is no hole. A definitive
+  404/410 is an answer, not an outage — it is how private packages are detected. `--offline`
+  never aborts. New `--no-eol` so endoflife.date, which had no opt-out, has one to suggest.
 - **A bare `fad-checker` answers instead of erroring.** Typing the name alone is a question —
   what is this, which version do I have, how do I run it — and "required option '-s, --src'
   not specified" answered none of it. It now prints a mini help: the banner with the running

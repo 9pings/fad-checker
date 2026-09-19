@@ -17,6 +17,7 @@ const chalk = require("chalk");
 const pLimit = require("p-limit");
 const { program } = require("commander");
 const ui = require("./lib/ui");
+const { createSourceHealth, guardedFetch, formatAbort } = require("./lib/source-health");
 
 const core = require("./lib/core");
 
@@ -265,6 +266,7 @@ program
 	.option("--no-nvd", "skip NIST NVD enrichment of matched CVEs")
 	.option("--nvd-cpe-match", "ALSO match deps against NVD CPE version ranges (opt-in, LOW PRECISION: ~12% of the findings it adds were corroborated by another scanner — triage aid, not a default)")
 	.option("--no-epss", "skip EPSS (FIRST.org exploit-prediction) enrichment")
+	.option("--no-eol", "skip the end-of-life check (endoflife.date)")
 	.option("--no-kev", "skip CISA KEV (known-exploited) enrichment")
 	// Output family: each --report-<type> takes an OPTIONAL path (omit → default name
 	// under --report-output). With NO --report-* flag at all, HTML + .doc are written
@@ -380,6 +382,33 @@ if (!options.src && options.source) options.src = options.source;
 
 const deps2Exclude = options.exclude ? new RegExp(options.exclude) : null;
 const verbose = !!options.verbose;
+
+// ---- Source health: a remote source that goes dark must not produce a quiet hole ----
+// Online only, and installed before the first request of the run (collection and the Maven
+// existence check both fetch before the report flow starts). Every module goes through
+// globalThis.fetch, so wrapping it once covers all of them — and a lookup served from the
+// warm cache issues no request at all, which IS the "100% from cache, stay silent" rule.
+const sourceHealth = createSourceHealth();
+if (!options.offline) {
+	const baseFetch = globalThis.fetch;
+	globalThis.fetch = guardedFetch({
+		health: sourceHealth,
+		fetch: baseFetch,
+		onRetry: r => ui.interject(`  ${chalk.yellow("⚠")} ${r.label} ${chalk.dim(`— ${r.code}, tentative ${r.attempt}/${r.of}, nouvelle dans ${Math.round(r.delayMs / 1000)}s`)}`),
+	});
+}
+/**
+ * Stop the run the moment a source is declared unreachable — before the remaining steps and
+ * before anything is written. Exit 2, distinct from the 1 that --fail-on uses for findings:
+ * a CI job has to be able to tell "vulnerabilities found" from "this scan is not trustworthy".
+ */
+function abortIfDegraded() {
+	const bad = sourceHealth.degraded();
+	if (!bad.length) return;
+	console.log();
+	console.log(chalk.red("❌  " + formatAbort(bad)));
+	process.exit(2);
+}
 
 // Validate --fail-on early: an unrecognised value (typo like "hgih", wrong case)
 // must HARD-FAIL, never silently disable the CI gate.
@@ -897,6 +926,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const { getNvdApiKey } = require("./lib/config");
 	const offline = !!options.offline;
 
+
 	// Collection counts already shown in the "Collection" section by main();
 	// for --import-anonymized they were shown in the "Anonymized descriptor" section.
 	const npmWarnings = collectWarnings || [];
@@ -961,6 +991,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const willNvd = !!options.nvd;
 	const willEpss = !!options.epss;
 	const willKev = !!options.kev;
+	const willEol = options.eol !== false;
 	const willLicenses = !!options.licenses;
 	const willRetire = !!options.retire;
 	// Committed crypto material (certs / keys / keystores) — local file scan, no network.
@@ -970,8 +1001,8 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const willBinaryId = [...resolved.values()].some(d => d.provenance === "binary");
 	// License detection piggybacks on the registry passes (same fetched metadata),
 	// so it adds no progress step of its own.
-	const totalSteps = [willBom, willTransitive, willOverlay, willCve, /*EOL*/ true, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willOsvDb, willNvd, willEpss, willKev, willRetire, willCerts, willBinaryId].filter(Boolean).length;
-	const progress = new ui.Progress(totalSteps);
+	const totalSteps = [willBom, willTransitive, willOverlay, willCve, willEol, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willOsvDb, willNvd, willEpss, willKev, willRetire, willCerts, willBinaryId].filter(Boolean).length;
+	const progress = new ui.Progress(totalSteps, { onStepEnd: abortIfDegraded });
 
 	if (willBom) {
 		const st = progress.start("BOM / parent version resolution (Maven Central)");
@@ -1066,7 +1097,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		return `${list.length - u} EOL${u ? `, ${u} out of support` : ""}`;
 	};
 	let eolResults = [];
-	{
+	if (willEol) {
 		const st = progress.start("EOL frameworks (endoflife.date)");
 		try {
 			eolResults = await outdated.checkEolDeps(resolved, { verbose, offline, eolSupport: !!options.eolSupport });
@@ -1076,7 +1107,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 
 	// 2b. PHP runtime — the Composer platform constraint against endoflife.date/php.
 	// A FINDING, never a dependency: it does not enter `resolved` (no CVE/OSV/SBOM/purl).
-	if (composerPlatforms.length) {
+	if (willEol && composerPlatforms.length) {
 		const { evaluatePhpRuntime } = require("./lib/codecs/composer/platform");
 		const st = progress.start("PHP runtime (endoflife.date/php)");
 		try {
@@ -1626,6 +1657,9 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const wrote = [];
 	if (out.html || out.doc) {
 		await ensureDir(out.html); await ensureDir(out.doc);
+		// Last gate: the collection + Maven existence phases run before the step progress
+		// exists, so their outages are only seen here. Nothing has been written yet.
+		abortIfDegraded();
 		const { htmlPath, docPath } = await writeReports({
 			cveMatches: prodMatches, devCveMatches: devMatches, embeddedMatches, retireMatches, vendoredJsInventory, certFindings,
 			eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs,

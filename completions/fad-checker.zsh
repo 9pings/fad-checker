@@ -27,6 +27,7 @@ _fad_check() {
 		'--no-binaries[skip committed native-binary scanning]'
 		'--no-certs[skip certificate / key-material scanning]'
 		'--cert-expiry-days[warn on certs expiring within N days (default 90)]:days:'
+		'--no-eol[skip the end-of-life check (endoflife.date)]'
 		'--eol-support[also report frameworks/runtimes out of active support that still get security fixes]'
 		'--no-go[skip the Go codec]'
 		'--no-ruby[skip the Ruby codec]'

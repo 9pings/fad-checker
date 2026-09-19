@@ -125,6 +125,7 @@ Each data source can be disabled independently:
 | `--no-binaries` | Skip scanning committed native binaries (`.dll`/`.exe`/`.so`/`.dylib`) — no checksum identity/integrity (chapter 1C) |
 | `--no-certs` | Skip the certificate / key-material scan (chapter 2.4) — committed certs, private/public keys and keystores |
 | `--cert-expiry-days <n>` | Window for the certificate **expiring-soon** warning (default `90`) |
+| `--no-eol` | Skip the end-of-life check (endoflife.date) — the flag the run suggests when that source is unreachable |
 | `--eol-support` | Also report frameworks/runtimes whose **active (bug-fix) support has ended** while security fixes are still provided (endoflife.date `support` field) — rendered as an "Out of active support" band under chapter 3.1, status `unsupported` in the JSON. Off by default: the default EOL set is unchanged. |
 | `--ignore-test` | Drop test-scoped Maven deps and dev npm deps from the scan entirely (chapter 2 will be empty) |
 
