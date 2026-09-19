@@ -128,6 +128,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `--fail-on` / `--fail-on-new`, `--baseline`. A read-only run (no `-t`) is unchanged.
 
 ### Fixed
+- **The copied executive summary stayed English in a French report.** The page was
+  translated but the clipboard flavours are built as sentences in JavaScript ("The library X
+  version Y is vulnerable to Z"), which the sweep had not reached. They now carry their own
+  translations with placeholder interpolation rather than string concatenation, because word
+  order differs between languages — `Top {n} most critical` has to be able to become
+  `Les {n} plus critiques`. The rich Word flavour substitutes the bolded values into the
+  translated sentence, so the bolding survives the reordering.
 - **A copied vulnerability pasted as `CRITICAL9.8`.** The merged priority cell separated its
   severity badge from its CVSS score with a CSS margin, and drew the `EPSS:` / `Published:`
   colons with a `::after`. Both look right on screen and neither exists in `textContent` —

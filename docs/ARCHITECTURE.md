@@ -51,6 +51,22 @@ lib/report-integrity.js      SHA256SUMS integrity manifest over the written arti
 lib/snyk.js                  `snyk test --all-projects --json` runner + merge.
 lib/retire.js                retire.js (vendored-JS scanner) wrapper + cache + normaliser. buildRetireIgnorePatterns() generates a retire --ignorefile mirroring the codecs' prune policy (default SKIP dirs at any depth + --exclude-path, anchored to --src).
 lib/scan-completeness.js     Warnings for deps we couldn't fully resolve.
+lib/i18n.js                  Report localisation (en/fr). The ENGLISH STRING IS THE KEY, so an `en` report is byte-identical
+                             to the pre-i18n one and a missing translation degrades to English instead of showing a raw key.
+                             Scope is the report's own chrome; data-source text (CVE descriptions, advisory summaries,
+                             registry reasons) is never translated. CWE titles are the exception: MITRE publishes English
+                             only, so data/cwe-names-fr.json is fad's own and MITRE's original travels with each one.
+lib/cli-groups.js            Folds the long tail of boolean flags into -d (off) / -a (on) / -r (outputs). The individual
+                             flags are hidden from --help, not removed, so no existing script breaks; --help-all lists
+                             them. An unknown token is a hard error (exit 2), never a silent no-op.
+lib/module-names.js          Display name of a scanned descriptor, per ecosystem (Maven artifactId with <parent> stripped,
+                             package.json/composer.json name, go module, pyproject name, .NET AssemblyName/PackageId/
+                             filename, Gradle rootProject.name or directory, Ruby .gemspec). Feeds the "Most vulnerable
+                             components" chart and every cell's "defined in" label.
+lib/source-health.js         A remote source that goes dark aborts the run (online only) BEFORE anything is written,
+                             naming the domain, the codes, the failing URL and the flag that skips it. Exit 2, distinct
+                             from the 1 --fail-on uses for findings. A lookup served from cache issues no request, so a
+                             source whose cache covers everything stays silent.
 lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), yarn.lock v1 + Berry, pnpm-lock.yaml (v5/6/9) parsers.
 lib/codecs/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
 lib/codecs/npm/registry.js          npm registry packument query → per-version deprecation + dist-tags.latest.

@@ -28,6 +28,7 @@
 - **Air-gapped**; **zero network under `--offline`**, regression-tested and reproducible under `unshare -rn`. On Maven it recovers **657/657** of OSV-Scanner's *online* result with no network interface at all, against 45 / 40 / 37 for the others. → [Benchmark](docs/BENCHMARK.md) · [Air-gapped](#air-gapped-audits)
 - **Supply-chain risk**; known-**malicious** advisories (always block the CI gate) and suspected **typosquats** (`--typosquat`).
 - **Audit-grade**; every report carries a **provenance manifest** and a **Methodology & limitations** chapter; artifacts ship `SHA256SUMS`; **differential audits** diff against a prior run (`--baseline`) and CI can gate on *new* findings only.
+- **A `--help` that fits a screen**; the long tail of switches folds into four flags — `-d eol,nvd` turns things off, `-a licenses,snyk` turns on what is off by default, `-r html,json` picks the outputs, `-o` says where. The individual flags still work and `--help-all` lists them.
 - **Reports in English or French** (`--lang fr`); the report's own wording and the CWE titles, never the evidence — CVE descriptions and advisory text stay as published, and every translated CWE carries MITRE's original with it.
 - **Outputs & CI**; HTML + findings JSON by default (Word `.doc` on `--report-doc`), CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on`, triage with `--ignore`/`--vex`. Private registries for every ecosystem.
 - **A report that is complete, or no report at all**; if a data source goes dark mid-scan and the warm cache doesn't cover the gap, the run stops before writing anything and names the domain, the error codes, the failing URL and the flag that skips that source — exit **2**, distinct from the `1` that `--fail-on` uses, so CI can tell *vulnerable* from *not trustworthy*. A source whose cache covered every lookup stays silent.
@@ -101,10 +102,10 @@ A free [NVD API key](https://nvd.nist.gov/developers/request-an-api-key) (instan
 ```bash
 fad-checker -s ./proj -e "^com\.acme\."                        # exclude private libs (coord regex)
 fad-checker -s ./proj -t ../clean -e "^com\.acme\."            # extract only: normalised descriptors, private modules flagged
-fad-checker -s ./proj -t ../clean -e "^com\.acme\." --snyk     # same extraction + scan + merge Snyk
+fad-checker -s ./proj -t ../clean -e "^com\.acme\." -a snyk   # same extraction + scan + merge Snyk
 fad-checker -s ./proj --offline                                # fully offline (zero network, needs a warmed cache)
-fad-checker -s ./proj --osv-db --typosquat                     # offline-complete OSV + typosquat
-fad-checker -s ./proj --licenses --fail-on high                # license chapter + CI gate
+fad-checker -s ./proj -a osv-db,typosquat                      # offline-complete OSV + typosquat
+fad-checker -s ./proj -a licenses --fail-on high               # license chapter + CI gate
 fad-checker -s ./proj --report-json --baseline last.json --fail-on-new   # differential audit: fail CI on NEW findings
 fad-checker diff last.json this.json                           # standalone diff of two findings JSONs
 ```

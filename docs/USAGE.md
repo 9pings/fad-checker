@@ -30,15 +30,19 @@ fad-checker -s . --ecosystem all              # every supported codec
 fad-checker -s . --ecosystem both             # legacy alias for maven,npm
 
 # Opt out of specific codecs (combine freely)
-fad-checker -s . --no-npm                     # skip npm
-fad-checker -s . --no-js                      # alias: skip npm + yarn (Maven-only)
-fad-checker -s . --no-gradle                  # skip Gradle
-fad-checker -s . --no-pypi --no-nuget         # skip Python + C#
-fad-checker -s . --no-go --no-ruby            # skip Go + Ruby
-fad-checker -s . --no-jars                    # skip embedded .jar/.war/.ear scanning
-fad-checker -s . --no-binaries                # skip committed native-binary scanning
-fad-checker -s . --no-certs                   # skip certificate / key-material scanning
-fad-checker -s . --eol-support                # also flag "security-only" frameworks (e.g. Symfony 5.4 LTS since 2024-11-30)
+fad-checker -s . -d npm                       # skip npm
+fad-checker -s . -d js                        # alias: skip npm + yarn (Maven-only)
+fad-checker -s . -d gradle                    # skip Gradle
+fad-checker -s . -d pypi,nuget                # skip Python + C#
+fad-checker -s . -d go,ruby                   # skip Go + Ruby
+fad-checker -s . -d jars                      # skip embedded .jar/.war/.ear scanning
+fad-checker -s . -d binaries                  # skip committed native-binary scanning
+fad-checker -s . -d certs                     # skip certificate / key-material scanning
+fad-checker -s . -d nvd,epss,certs -a licenses,typosquat -o ./audit   # the general shape
+
+> The individual `--no-npm`, `--licenses`, … flags still work; they are hidden from `--help`
+> to keep it to one screen. `--help-all` lists them.
+fad-checker -s . -a eol-support               # also flag "security-only" frameworks (e.g. Symfony 5.4 LTS since 2024-11-30)
 fad-checker -s . --cert-expiry-days 30        # warn on certs expiring within 30 days (default 90)
 ```
 

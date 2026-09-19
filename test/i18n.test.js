@@ -105,3 +105,38 @@ test("the clipboard affordances are translated too — buttons AND the strings b
 	assert.doesNotMatch(en, /window\.__FAD_T=\{/, "English emits no translation table");
 	assert.match(en, /📋 Copy table/);
 });
+
+test("the COPIED executive summary is translated, not just the one on screen", () => {
+	// The clipboard flavours are built as sentences in JS ("The library X version Y is
+	// vulnerable to Z"), so they stayed English while the page around them was French.
+	const eolDep = makeDepRecord({ ecosystem: "maven", namespace: "org.springframework", name: "spring-core", version: "4.3.16", manifestPath: "/p/pom.xml" });
+	const p = locale => ({
+		cveMatches: [{ dep, cve: { id: "CVE-2021-44228", severity: "CRITICAL", score: 10, description: "d", cwes: ["CWE-502"] }, confidence: "exact" }],
+		eolResults: [{ dep: eolDep, product: "Spring Framework", productSlug: "spring-framework", cycle: "4.3", status: "eol", eol: "2020-12-31", latest: "7.0.9" }],
+		obsoleteResults: [], outdatedResults: [],
+		projectInfo: { name: "demo", src: "/p", generatedAt: "2026-09-19" }, locale,
+	});
+	const plain = html => /class="exec-copy-plain"[^>]*>([\s\S]*?)<\/textarea>/.exec(html)[1];
+
+	const fr = plain(generateHtmlReport(p("fr")));
+	assert.match(fr, /SYNTHÈSE/);
+	assert.match(fr, /dépendances analysées/);
+	assert.match(fr, /La bibliothèque .* est vulnérable à/);
+	assert.match(fr, /est en fin de vie depuis le 2020-12-31/);
+	assert.match(fr, /la dernière est 7\.0\.9/);
+	assert.doesNotMatch(fr, /The library|is vulnerable to|end-of-life since|Everything else/);
+	// The count is a placeholder, not a prefix: "Top 2 les plus critiques" is not French.
+	assert.doesNotMatch(fr, /Top \d/);
+
+	const en = plain(generateHtmlReport(p("en")));
+	assert.match(en, /EXECUTIVE SUMMARY/);
+	assert.match(en, /The library .* is vulnerable to/);
+	assert.match(en, /end-of-life since 2020-12-31/);
+	assert.match(en, /latest is 7\.0\.9/);
+
+	// The rich (Word) flavour too, where the values are bolded around the sentence.
+	const richFr = /class="exec-copy-rich">([\s\S]*?)<\/template>/.exec(generateHtmlReport(p("fr")))[1];
+	assert.match(richFr, /La bibliothèque/);
+	assert.match(richFr, /<b>/, "values stay bolded through the translation");
+	assert.doesNotMatch(richFr, /The library/);
+});
