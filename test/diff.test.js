@@ -77,3 +77,22 @@ test("eol identity includes status: unsupported → eol on the same dep is a CHA
 	assert.strictEqual(d.eol.unchanged.length, 0);
 	assert.strictEqual(eolKey({ dep }), eolKey({ status: "eol", dep }), "a pre-status baseline entry equals a status:eol entry");
 });
+
+test("physical Composer copies have distinct diff identities", () => {
+	const first = { ...cve("CVE-1", "vendor/lib", "1.0", { ecosystem: "composer" }), findingId: "fad-cve-first" };
+	const second = { ...first, findingId: "fad-cve-second" };
+	const d = diffFindings(doc([first]), doc([first, second]));
+	assert.deepStrictEqual(d.cve.added.map(f => f.findingId), ["fad-cve-second"]);
+	assert.strictEqual(d.cve.unchanged.length, 1);
+});
+
+test("missing advisory coverage marks an absent application finding unassessed, not resolved", () => {
+	const old = { ...cve("CVE-1", "vendor/lib", "1.0", { ecosystem: "composer" }),
+		findingId: "fad-cve-first", applicationIds: ["wordpress:site"] };
+	const cur = { ...doc([]), coverage: [{ applicationId: "wordpress:site", capability: "advisories",
+		execution: "not-run", result: "indeterminate" }] };
+	const d = diffFindings(doc([old]), cur);
+	assert.strictEqual(d.cve.removed.length, 0);
+	assert.deepStrictEqual(d.cve.unassessed, [old]);
+	assert.strictEqual(summarizeDiff(d).cve.unassessed, 1);
+});

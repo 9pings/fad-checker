@@ -13,6 +13,8 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { attributeMatchOrigins } = require("../lib/attribution");
+const composer = require("../lib/codecs/composer.codec");
+const path = require("node:path");
 
 /** projA declares jackson-databind 2.15.3; projB declares 2.17.0. One merged record. */
 function declaredRecord() {
@@ -97,4 +99,25 @@ test("versions with no provenance (global-pass transitive, other ecosystems) are
 	assert.equal(attributeMatchOrigins(matches), 0);
 	assert.equal(matches[0].dep.scope, "transitive");
 	assert.deepEqual(matches[1].dep.manifestPaths, ["a/package.json"]);
+});
+
+test("Composer matches are attributed to the site and scope holding each version", async () => {
+	const root = path.join(__dirname, "fixtures", "composer-multisite");
+	const { deps } = await composer.collect(root);
+	const dep = deps.get("composer:symfony/console");
+	const matches = [
+		{ dep: { ...dep, version: "5.4.47" } },
+		{ dep: { ...dep, version: "6.2.10" } },
+	];
+	attributeMatchOrigins(matches);
+	assert.deepStrictEqual(new Set(matches[0].dep.manifestPaths), new Set([
+		path.join(root, "site-a", "composer.lock"), path.join(root, "site-b", "composer.lock"),
+	]));
+	assert.strictEqual(matches[0].dep.isDev, false);
+	assert.deepStrictEqual(new Set(matches[0].dep.occurrences.map(o => o.scope)), new Set(["prod", "dev"]));
+	assert.deepStrictEqual(matches[1].dep.manifestPaths, [path.join(root, "site-c", "composer.lock")]);
+	assert.strictEqual(matches[1].dep.isDev, true);
+	assert.strictEqual(matches[1].dep.scope, "dev");
+	assert.deepStrictEqual(matches[1].dep.occurrences.map(o => o.version), ["6.2.10"]);
+	assert.strictEqual(matches[1].dep.pomPaths, matches[1].dep.manifestPaths);
 });

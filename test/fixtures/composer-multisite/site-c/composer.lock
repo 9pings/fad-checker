@@ -1,0 +1,7 @@
+{
+  "packages": [],
+  "packages-dev": [
+    { "name": "symfony/framework-bundle", "version": "v6.2.10", "require": { "symfony/console": "^6.2" } },
+    { "name": "symfony/console", "version": "v6.2.10" }
+  ]
+}

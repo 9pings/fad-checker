@@ -12,7 +12,7 @@ of thing a security consultant or a regulated / air-gapped engagement needs.
 | Ecosystems it targets¹ | Maven, **Gradle**, npm, Yarn, **pnpm**, Composer, PyPI, NuGet, Go, Ruby + vendored JS + **native binaries** | 13 langs / 28 lockfile & manifest types | 13 langs (+ 23 OS families) | 20+ | Java/.NET (others exp.) | many |
 | Reads lockfiles without `install`/build | ✅ | ✅ | ✅ | ✅ | ⚠️ Java needs Maven Central/build | ⚠️ Maven & pip need a build; npm/Yarn/pnpm/Composer lockfiles read directly |
 | Best-effort when **no lockfile** (pinned versions) | ✅ | ~ manifests best-effort (`pom.xml`, `requirements.txt`…) | ❌ | ❌ | ⚠️ | ⚠️ |
-| Vulnerability sources | CVEProject + OSV + NVD + EPSS + KEV + retire.js (+ Snyk), merged | OSV.dev | Aqua DB | Anchore DB | NVD / CPE | Snyk DB |
+| Vulnerability sources | CVEProject + OSV + Packagist audit lane (Composer) + NVD + EPSS + KEV + retire.js (+ Snyk), merged | OSV.dev | Aqua DB | Anchore DB | NVD / CPE | Snyk DB |
 | False-positive control | CPE/version cross-check | ecosystem-aware | ecosystem-aware | ecosystem-aware | ⚠️ CPE → noisy | ecosystem-aware |
 | **EOL** of an application framework⁴ | ✅ endoflife.date | ❌ | ⚠️ OS distros only | ❌ | ❌ | ❌ |
 | **Outdated / deprecated** | ✅ registries + curated | ~ deprecated/yanked only, experimental flag | ❌ | ❌ | ❌ | ⚠️ web UI only (npm deprecated) |
@@ -156,6 +156,36 @@ repositories (lockvet, IcebergSCA) that have not yet earned a comparison.
 > [Snyk requires building the project](https://docs.snyk.io/supported-languages/technical-specifications-and-guidance) ·
 > [EOL/outdated "most tools skip" (Aikido)](https://www.aikido.dev/code/outdated-eol-software)
 
+## Detection on presence: how the official tools select what to scan
+
+fad-checker's application plugins are activated by the default `--app-plugins auto` — a
+present CMS/framework is inventoried. Checked against each ecosystem's own tools
+(2026-09-23): **automatic detection of what is present is the norm, opt-in per product is
+the exception.**
+
+| Tool | What it does when pointed at a tree |
+| --- | --- |
+| `composer audit` | Audits the `composer.lock` of the current directory — whatever is in it, no selection |
+| [OSV-Scanner](https://google.github.io/osv-scanner/) `scan -r .` | Recursively scans **every** supported lockfile/manifest/SBOM it finds; auto-detection is the default subcommand |
+| [Trivy](https://trivy.dev/) `fs .` | Auto-detects every language's lockfiles present; ships a `precise` (default) vs `comprehensive` (more findings, more false positives) detection mode |
+| [Snyk](https://docs.snyk.io/scan-with-snyk/snyk-cli) `test` | Auto-detects the package manager of the current directory; `--all-projects` extends to auto-discovery of every manifest found |
+| [drush](https://www.drush.org/) `pm:security` | Bootstraps the Drupal site it is in and checks every `drupal/*` package present — no opt-in |
+| [WP-CLI](https://make.wordpress.org/cli/) (+ a vulnerability-scanner package) | Only runs **inside** a WordPress installation — the CMS being present is the tool's precondition |
+| [WPScan](https://wpscan.com/) | Fingerprint-detects WordPress automatically; since 2026 its default enumerates only core + active theme, with plugins behind `-e ap` — an API-quota economy, not a detection gate |
+| Wordfence | Only works on an installed WordPress at all |
+
+The one tool that pulled automatic scope back (WPScan) did it to spare a cloud API's
+request budget — its CMS *detection* stayed automatic. fad-checker's split matches that
+logic without the constraint: local inventory (cheap, no network) is automatic on
+detection, while the networked advisory sources stay behind their explicit configuration
+and report `not-run (CMS_PROVIDER_UNCONFIGURED)` until then — never a silent clean
+result. Experimental capabilities stay labelled as such (like Trivy's `[EXPERIMENTAL]`
+flags), not hidden behind an opt-in. False-positive control is the analogue of Trivy's
+`precise` mode: every plugin's detection is a conjunction of positive physical markers
+(a bare `require` constraint never creates an application), verified on real bare
+libraries (guzzle/guzzle, laravel/framework as a package, the symfony/symfony monorepo,
+composer/composer): zero phantom applications.
+
 ## How it's autonomous (no build tools)
 
 Because it doesn't need anything you don't already have on disk:
@@ -188,7 +218,10 @@ For each ecosystem it reads the **lockfile** (or, failing that, the manifest's p
 | Ruby | `Gemfile.lock` (`specs:`) | the lockfile |
 | Vendored JS / binaries | the committed `.js` / `.jar` / `.so` files themselves | n/a (read in place) |
 
-Highlights of the matching layer: **three CVE sources merged** (CVEProject + OSV.dev + NVD),
+Highlights of the matching layer: **four CVE sources merged** (CVEProject + OSV.dev + NVD +
+the Packagist security-advisories endpoint `composer audit` queries, for Composer — measured
+at exact parity with `composer audit` on the four real CMS/framework instances, closing the
+class of CVEs OSV carries without composer coordinates),
 **CPE/version cross-check** to drop false positives, **EPSS + CISA KEV** prioritisation,
 lockfile-first with a **best-effort pinned-version fallback** when no lockfile, in-memory
 **embedded-JAR** unzip (no disk, no zip-slip), and **checksum identity** for native binaries.

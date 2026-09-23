@@ -9,7 +9,7 @@
 > **F**ormidable **A**uditor's **D**ependency **C**hecker<br>
 > AKA **F**uckin' **A**utonomous **D**ependency **C**hecker<br>
 
-`fad-checker` audits **Maven · Gradle · npm · Yarn · pnpm · Composer · PyPI · NuGet · Go · Ruby**, vendored JavaScript, committed native binaries and cryptographic material (certificates & private/public keys) in any source tree; multi-module, monorepo, polyglot; and produces a self-contained **HTML + Word report** (CVE prioritised by EPSS + CISA KEV, EOL, obsolete, outdated, licenses) plus **CycloneDX SBOM / CSAF VEX / SARIF / JSON** exports. **No build tools, no Docker, no network needed**; it reads lockfiles and manifests straight off disk.
+`fad-checker` audits **Maven · Gradle · npm · Yarn · pnpm · Composer · PyPI · NuGet · Go · Ruby**, vendored JavaScript, committed native binaries and cryptographic material (certificates & private/public keys) in any source tree; multi-module, monorepo, polyglot; and produces a self-contained **HTML report + findings JSON** by default (Word `.doc` on request) (CVE prioritised by EPSS + CISA KEV, EOL, obsolete, outdated, licenses) plus **CycloneDX SBOM / CSAF VEX / SARIF / JSON** exports. **No build tools, no Docker, no network needed**; it reads lockfiles and manifests straight off disk.
 
 🌐 **[Project site & docs →](https://9pings.github.io/fad-checker/)**
 
@@ -22,12 +22,14 @@
 
 - **10 ecosystems in one pass**; Maven, Gradle, npm/Yarn/pnpm, Composer, PyPI, NuGet, Go, Ruby — plus **vendored JS**, committed **native binaries** (identified by checksum) and **embedded JARs** (fat-jars/war/ear, opened in-memory).
 - **No build tools**; manifests and lockfiles are read off disk. No `mvn`/`gradle`/`npm install`/`pip`/`dotnet restore`/`go build`, no `node_modules/`. The Maven graph is resolved the way Maven resolves it. → [how](docs/COMPARISON.md#how-its-autonomous-no-build-tools)
-- **CVE, merged & prioritised**; CVEProject + OSV.dev + NVD, CPE/version cross-checked to cut false positives, ranked **CISA KEV → EPSS → CVSS**.
+- **CVE, merged & prioritised**; CVEProject + OSV.dev + Packagist security advisories (Composer — the database `composer audit` queries) + NVD, CPE/version cross-checked to cut false positives, ranked **CISA KEV → EPSS → CVSS**.
 - **Beyond CVEs**; EOL and out-of-active-support frameworks, deprecated/abandoned/yanked, outdated with release dates, SPDX **licenses**, and **private/internal packages** — every coordinate no configured registry knows, in any ecosystem.
 - **Crypto material**; committed **certificates** (expiry, weak key, weak signature, self-signed), **private vs public keys** across PEM/OpenSSH/PuTTY/PGP and JKS/PKCS#12 keystores. Parsed offline, no network.
 - **Air-gapped**; **zero network under `--offline`**, regression-tested and reproducible under `unshare -rn`. On Maven it recovers **657/657** of OSV-Scanner's *online* result with no network interface at all, against 45 / 40 / 37 for the others. → [Benchmark](docs/BENCHMARK.md) · [Air-gapped](#air-gapped-audits)
 - **Supply-chain risk**; known-**malicious** advisories (always block the CI gate) and suspected **typosquats** (`--typosquat`).
 - **Audit-grade**; every report carries a **provenance manifest** and a **Methodology & limitations** chapter; artifacts ship `SHA256SUMS`; **differential audits** diff against a prior run (`--baseline`) and CI can gate on *new* findings only.
+- **Applications and publisher advisories**; Symfony, Laravel, WordPress, Drupal, Joomla, PrestaShop, TYPO3 and Magento/Adobe Commerce inventories, with per-component coverage; Wordfence, Drupal, PrestaShop and TYPO3 publisher feeds where qualified, plus WordPress core checksums. A missing or incomplete source never implies a clean verdict. → [application usage](docs/USAGE.md#application-inventory-experimental)
+- **Shared proxy cache**; `serve-cache` + `--proxy-cache` lets multiple scanners share public-source responses and server-side API keys, with persistent storage and stale-if-error. → [cache usage](docs/USAGE.md#shared-proxy-cache-server-serve-cache----proxy-cache)
 - **A `--help` that fits a screen**; the long tail of switches folds into four flags — `-d eol,nvd` turns things off, `-a licenses,snyk` turns on what is off by default, `-r html,json` picks the outputs, `-o` says where. The individual flags still work and `--help-all` lists them.
 - **Reports in English or French** (`--lang fr`) — the whole report, down to the chapter counts, the status pills, the fix recipes and the summary the 📋 button pastes into Word, plus the CWE titles. Never the evidence: CVE descriptions and advisory text stay as published, a CVSS severity keeps NVD's own wording, and every translated CWE carries MITRE's original with it.
 - **Outputs & CI**; HTML + findings JSON by default (Word `.doc` on `--report-doc`), CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on`, triage with `--ignore`/`--vex`. Private registries for every ecosystem.
@@ -51,7 +53,7 @@ checkable.
 | **Report EOL / deprecated frameworks & deps**, transitive ones included ⁵                  | ✅ | ⚠️ deprecated only | ⚠️ OS distros only | ❌ | ❌ | ⚠️ web UI only |
 | **Report committed keys & certificates** ⁶                                                 | ✅ | ❌ | ⚠️ key rule | ❌ | ❌ | ❌ |
 | **Spot committed binaries** (`.dll`, `.exe`, …) and check them against their checksums ⁷   | ✅ | ❌ | ⚠️ some | ⚠️ patterns | ❌ | ❌ |
-| **Clearly list what was *not* scanned** — before the client asks ⁸                         | ✅ ch. 0 + 6.3 | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log |
+| **Clearly list what was *not* scanned** — before the client asks ⁸                         | ✅ warnings + method | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log |
 | **Answer "against what data?" six months later** ⁹                                         | ✅ | ❌ | ❌ | ⚠️ DB date | ⚠️ NVD date | ❌ |
 | **Send a report, not a JSON dump** ¹⁰                                                      | ✅ HTML + `.doc` | ⚠️ HTML list | ⚠️ template | ❌ | ⚠️ HTML list | ⚠️ `snyk-to-html` |
 | **Charts, per-CVE drill-down and a pasteable Word copy** ¹¹                                | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -71,11 +73,11 @@ checkable.
 
 ⁷ Identified by **hash** via deps.dev + CIRCL → should-be-declared / name≠checksum / unknown / malicious. Syft's patterns name a version, not an identity.
 
-⁸ Chapter 0 flags what *this* scan couldn't reach (missing lockfiles, BOM-only versions, Yarn Berry, undeterminable PHP runtime); chapter 6.3 states what the tool never assesses. Elsewhere the first is a log line the audit never sees, the second isn't written down.
+⁸ Chapter 0 flags what *this* scan couldn't reach (missing lockfiles, BOM-only versions, Yarn Berry, incomplete application checks); the methodology section states what the tool never assesses. Elsewhere the first is a log line the audit never sees, the second isn't written down.
 
-⁹ Provenance manifest: tool, runtime, mode, run configuration and cache freshness for **all 13 sources**. Grype and Dependency-Check carry one source's date, not the run.
+⁹ Provenance manifest: tool, runtime, mode, run configuration and cache freshness for **each consulted source**. Grype and Dependency-Check carry one source's date, not the run.
 
-¹⁰ Chapters 0→6 with an executive summary and fix recipes, self-contained HTML plus a Word `.doc` twin. None of the others emits Word.
+¹⁰ Chapters 0→6 with an executive summary and fix recipes, self-contained HTML plus optional Word `.doc`. None of the others emits Word.
 
 ¹¹ Four inline-SVG charts — CWE by worst severity, vulnerable transitives per root dep, your most vulnerable modules (direct vs transitive on a single-module project), fix-priority bands — rendered in the `.doc` too, with one-click copy as PNG (or a table as rich HTML) that pastes into Word formatted. Every CVE keeps its CVSS vector, CWE, references, CPE config and via-path behind a drill-down, with zero external assets.
 
@@ -86,7 +88,7 @@ feed → [`docs/COMPARISON.md`](docs/COMPARISON.md) ·
 [the gap, measured](#coverage-honestly-the-pairs-snyk-reports-and-fad-checker-doesnt).
 
 **Deliberately not a goal: reachability.** A finding is a vulnerable version on the dependency
-graph, and the report says exactly that (ch. 6.3) instead of guessing at call paths. Deciding
+graph, and the report says exactly that (in Methodology) instead of guessing at call paths. Deciding
 whether the vulnerable code is reachable in *this* application is the auditor's call, made with
 application context no scanner has.
 
@@ -108,14 +110,17 @@ fad-checker -s ./proj -a osv-db,typosquat                      # offline-complet
 fad-checker -s ./proj -a licenses --fail-on high               # license chapter + CI gate
 fad-checker -s ./proj --report-json --baseline last.json --fail-on-new   # differential audit: fail CI on NEW findings
 fad-checker diff last.json this.json                           # standalone diff of two findings JSONs
+fad-checker -s ./site --app-plugins wordpress --private-component wp-content/plugins/acme --offline
 ```
+
+The bundled Symfony, WordPress, Drupal, Laravel, Joomla, PrestaShop, TYPO3 and Magento/Adobe Commerce application inventories are experimental in capability; a present CMS/framework is **activated by the default `--app-plugins auto`** — any recognized layout (conjunctive positive markers per product; a bare `require` never creates an application) is inventoried with honest per-capability coverage, and `--app-plugins none` opts out. They keep private/custom extensions separate and attribute CVEs in their Composer dependencies to the owning extension. Symfony Flex `symfony.lock` is read for recipe context; `composer.lock` supplies installed versions. WordPress can assess a locally supplied Wordfence v3 production-feed snapshot for explicitly declared public components; Drupal can assess a local packages.drupal.org security-advisory snapshot. PrestaShop and TYPO3 assess the publishers' own GitHub repository advisory feeds (`--prestashop-advisories[-live]`, `--typo3-advisories[-live]`), matched per composer coordinate with the publishers' range grammars normalized; Joomla and Magento/Adobe Commerce have no machine-readable publisher feed and stay explicitly not-qualified. WordPress core file integrity compares the tree against the official api.wordpress.org checksums (`--wp-checksums[-live]`, per-version and locale): modified and unexpected files inside `wp-admin`/`wp-includes` are diagnostics under the `integrity` capability, never CVE findings. `--max-advisory-age` bounds their age from a collection date declared inside the snapshot file. `--drupal-advisories-live` fetches Drupal advisories, while `WORDFENCE_API_KEY` or `--wordfence-api-key` fetches the official Wordfence production feed (optionally with `--wordfence-feed-url`). Live snapshots use an atomic local cache (the Drupal live source queries the union of every instance's public packages). A configured local source is validated before discovery: an unreadable, invalid or stale file exits `2` with no report even when no instance matches it. Private extensions remain separate. In the report, findings follow the application view: a CVE on a core, framework, official framework component, bundle, extension or theme is **direct**; a CVE on a library is **indirect** under the component that introduces it (or under the application's primary core/framework when only the root manifest proves it), never direct by mere lock presence. A publisher constat the standard Composer lane already found merges into that finding with the union of its sources instead of duplicating it. A shared physical occurrence is detailed in every exposed instance section with its own origins per instance, coverage rows name the component they are about, identical coverage gaps group into one actionable block per cause, and the overview chart ranks exposed instances with a shared occurrence counted in each. See [application inventory usage](docs/USAGE.md#application-inventory-experimental).
 
 **What `-t <dir>` actually does.** It is an **extraction** step, not a Snyk adapter. It writes a
 parallel tree of **normalised dependency descriptors**: every `pom.xml` reduced to the
 dependency-relevant nodes (coordinates, `properties`, `dependencyManagement`, `dependencies`,
 `modules`), reactor parents rewired to their real in-tree `relativePath`, `${…}` resolved in
 coordinates — **plus every non-Maven lockfile/manifest mirrored** at the same relative path
-(`package-lock`/`yarn.lock`/`pnpm-lock`, `composer.lock`, `poetry`/`Pipfile`/`uv`/`pdm`,
+(`package-lock`/`yarn.lock`/`pnpm-lock`, `composer.lock`/`symfony.lock`, `poetry`/`Pipfile`/`uv`/`pdm`,
 `*.csproj`/`packages.lock.json`, `go.mod`/`go.sum`, `Gemfile.lock`, and companions like
 `Directory.Packages.props` or `nuget.config`). Online it also **probes every coordinate against
 the configured Maven repositories** and reports the ones that don't exist there — your
@@ -124,6 +129,8 @@ the configured Maven repositories** and reports the ones that don't exist there 
 `--fail-on*` or `--baseline`. What you get is a buildless, sanitised dependency inventory you can
 archive as audit evidence, hand to a client or a legal review, or point any scanner at — Snyk via
 `--snyk` being one of them.
+
+A non-empty `-t` directory is refused unless `--force` is supplied. A target that overlaps the source tree or is a symlink is always refused.
 
 > [!IMPORTANT]
 > **`--offline` reads the cache, it doesn't replace it.** On a *cold* cache there is nothing to
@@ -136,18 +143,18 @@ A single self-contained binary (no Node), from-source install and shell completi
 
 ## What it finds
 
-The report is organised into **root chapters** (each grouping related sub-chapters):
+The report keeps the six root chapters. Sub-chapters appear only when they contain results and are numbered consecutively; application inventory and methodology remain available in scan context:
 
 | Chapter | Source | What it catches |
 | --- | --- | --- |
-| **0. Warnings** *(top)* | local heuristics | Missing lockfiles, unresolved Maven versions (BOM-managed), private libs not on Maven Central |
+| **0. Warnings** *(top)* | local heuristics | Missing lockfiles, unresolved Maven versions (BOM-managed), private packages absent from configured registries |
 | **Δ. Changes since baseline** *(top, with `--baseline`)* | diff vs prior JSON | New / fixed / unchanged findings per category + the list of **new production CVEs**; for repeat audits and `--fail-on-new` CI gating |
-| **1. CVE** *(X direct, Y indirect, Z dev)* | CVEProject + OSV.dev + NVD + CPE | **1.1 Production**; public CVE / GHSA in prod deps, per ecosystem, per manifest, **prioritised** by CISA KEV + EPSS + CVSS · **1.2 Vendored JS vulns** ([retire.js](https://retirejs.github.io/)) · **1.3 Dev** (`test`/`provided`, `dev`/`optional`/`peer`) · **1.4 Likely false positives** (CPE-filtered) |
-| **2. Unmanaged / unversioned components** | deps.dev + CIRCL (by checksum), retire.js, built-in X.509 | **2.1 Embedded binaries**; CVEs in libs shipped inside committed `.jar`/`.war`/`.ear` (fat-jars, shaded uber-jars) · **2.2 Native binaries** (`.dll`/`.exe`/`.so`/`.dylib`) identified by hash, flagged should-be-managed / name≠checksum / unknown / malicious · **2.3 Vendored JavaScript** inventory (jQuery, Bootstrap, …) vulnerable *or not* · **2.4 Certificates &amp; key material**; committed certs (expiry / weak key / weak signature / self-signed), **private vs public keys** (PEM/OpenSSH/PuTTY/PGP/SSH) and keystores, all parsed offline |
-| **3. Maintenance / lifecycle** *(X EOL, Y obsolete, Z outdated)* | endoflife.date · curated + registry flags · Maven Central / npm / Packagist / PyPI / NuGet | **3.1 End-of-Life** frameworks (+ an "Out of active support" band with `--eol-support`; Symfony/Laravel grouped as one row per framework; PHP runtime when the Composer constraint proves it), split **direct** (declared / parent-POM-inherited — bump these) vs **transitive** (bump the dep that pulls them in) · **3.2 Obsolete / deprecated / abandoned / yanked** · **3.3 Outdated** (newer version available, with release dates; direct deps only) |
+| **1. CVE** *(X direct, Y indirect, Z dev)* | CVEProject + OSV.dev + Packagist + qualified publisher feeds + NVD/CPE | **Applications first when findings exist**; CMS/framework findings by instance and owner · **Production**; public CVE / GHSA in other prod deps, per ecosystem, per manifest, **prioritised** by CISA KEV + EPSS + CVSS · **Vendored JS vulns** ([retire.js](https://retirejs.github.io/)) — one row per physical library, linked CVEs + CWEs on the row, every advisory behind a click · **Dev** (`test`/`provided`, `dev`/`optional`/`peer`) · **Likely false positives** (CPE-filtered) |
+| **2. Unmanaged / unversioned components** | deps.dev + CIRCL (by checksum), retire.js, built-in X.509 | **Embedded binaries**; CVEs in libs shipped inside committed `.jar`/`.war`/`.ear` (fat-jars, shaded uber-jars) · **Native binaries** (`.dll`/`.exe`/`.so`/`.dylib`) identified by hash, flagged should-be-managed / name≠checksum / unknown / malicious · **Vendored JavaScript** inventory (jQuery, Bootstrap, …) vulnerable *or not* · **Certificates &amp; key material**; committed certs (expiry / weak key / weak signature / self-signed), **private vs public keys** (PEM/OpenSSH/PuTTY/PGP/SSH) and keystores, all parsed offline |
+| **3. Maintenance / EOL** *(X EOL, Y obsolete, Z outdated)* | endoflife.date · curated + registry flags · Maven Central / npm / Packagist / PyPI / NuGet | **End-of-Life** frameworks (+ an "Out of active support" band with `--eol-support`; Symfony/Laravel grouped as one row per framework; PHP runtime when the Composer constraint proves it), split **direct** (declared / parent-POM-inherited — bump these) vs **transitive** (bump the dep that pulls them in) · **Obsolete / deprecated / abandoned / yanked** · **Outdated** (newer version available, with release dates; direct deps only) |
 | **4. Licenses** *(opt-in: `--licenses`)* | registry metadata + Maven POMs → SPDX policy | Each dep's license normalised to SPDX and classified; copyleft (GPL/AGPL/LGPL/MPL), proprietary and unknown flagged for review |
 | **5. Fix Recommendations** | computed | Per-ecosystem pin recipes: Maven `<dependencyManagement>`, Gradle `constraints { }`, npm `overrides`, yarn `resolutions`, `composer require`, `pip install`, `dotnet add package` |
-| **6. Scan context & limitations** | provenance manifest + walk | **6.1 Scanned descriptors** (every manifest parsed) · **6.2 Ignored directories** (pruned paths + rule) · **6.3 Methodology, data sources & limitations** (data-source freshness, run config, explicit statement of **what fad-checker does *not* assess**) |
+| **6. Scan context & limitations** | provenance manifest + walk | **Scanned descriptors** (every manifest parsed) · **Ignored directories** (pruned paths + rule) · **Methodology, data sources & limitations** (data-source freshness, run config, explicit statement of **what fad-checker does *not* assess**) · **Application inventory & coverage** (also shown when no CVE matches) |
 | **Supply-chain risk** *(cross-cutting)* | OSV `MAL-…` + name heuristic | **Known-malicious** packages (always block the CI gate, any `--fail-on` level) and **suspected typosquats** (`--typosquat`: an npm/PyPI name one edit from a popular package; `lodahs`↔`lodash`) |
 
 The HTML report opens in any browser, contains every detail (CVSS vectors, references, full descriptions, CPE configurations, via-paths for transitives) and ships a Word-compatible `.doc` twin. Every match carries a **composite priority** (KEV-exploited > EPSS likelihood > CVSS severity), and the run can additionally emit a **CycloneDX 1.6 SBOM** (`--report-sbom`, vulnerabilities inline) and a **CSAF 2.0 VEX** (`--report-csaf`) for downstream tooling.

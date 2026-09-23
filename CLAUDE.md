@@ -11,6 +11,11 @@ Code-level orientation for contributors and Claude Code sessions on this repo.
 3. Scans the union against:
    - the CVEProject `cvelistV5` Maven-relevant index (built locally),
    - OSV.dev (multi-ecosystem),
+   - the Packagist security-advisories API (Composer — the database `composer audit` itself
+     queries; `lib/packagist-audit.js`. Closes the measured recall class where OSV carries a
+     CVE only as a CVEProject entry without composer coordinates — twig/twig CVE-2026-46636/
+     46627, knplabs/knp-snappy CVE-2026-46643 on the real-instance corpus. Only package
+     NAMES travel, like the registry pass; `-d packagist-audit` disables),
    - NIST NVD (enrichment: CVSS, CPE configurations, references),
    - EPSS (FIRST.org exploit-prediction percentile) + CISA KEV (known-exploited catalogue) — prioritisation signals,
    - retire.js (vendored JS signatures),
@@ -111,6 +116,8 @@ lib/maven-bom.js             External import-BOM (spring-boot-dependencies, …)
 lib/version-overlay.js       Per-module version-mediation overlay: re-resolves EACH module with ONLY its own effective depMgmt (local parent chain + external parent/import-BOMs) → APPENDS transitive versions the global pass masks via cross-module depMgmt bleed. Additive (never removes), offline-aware, effCache-memoised.
 lib/manifest-copy.js         `-t` cleaned-tree write: mirror non-Maven lockfiles/manifests (npm/composer/pypi/nuget/go/ruby) → target so `snyk --all-projects` scans every ecosystem.
 lib/osv.js                   OSV.dev batched query + per-vuln detail fetch.
+lib/packagist-audit.js       Packagist security-advisories lane for Composer (the `composer audit` endpoint). Composer-constraint evaluator (| / ||, AND by comma/space, ^ ~ wildcards partials, hyphen ranges; unparsable → null, never a verdict), per-package 24h cache in ~/.fad-checker/packagist-advisories/, offline = warm cache only. Only package names are sent.
+lib/merge-sources.js         mergeBySource — the seam where every source meets every other. ALIAS-AWARE: the same advisory can be keyed by its CVE (OSV) or its GHSA remoteId (Packagist records with no cve field), and aliases/ghsa resolve the collision instead of duplicating.
 lib/osv-db.js                Offline-COMPLETE OSV matching from an imported local OSV DB (Maven `all.zip` → compact index). `--osv-db`. Fills offline Maven recall when the per-dep OSV cache is cold (different machine / TTL-expired / offline-discovered deps); reuses osv.js#vulnToMatch + maven-version range eval. Additive (merges via mergeBySource, online +0).
 lib/malware.js               Supply-chain risk lane (pure, offline). `flagMalicious()` elevates OSV `MAL-…`/malicious advisories already in the match set (gate hard-fails on them, any `--fail-on` level); `detectTyposquats()` flags npm/PyPI names one Damerau edit from a popular package (`data/popular-packages.json`), opt-in `--typosquat`. JSON export carries `malicious` flag + `typosquat[]` + summary counts.
 lib/nvd.js                   NIST NVD enrichment (CVSS, references, CPE configurations, CWE list). Per-CVE cache (`nvd-cache/<id>.json`, `_schema:2`, 7d TTL). OFFLINE bypasses TTL + schema rejection in readCache — the warmed cache is the only source air-gapped, so a stale/older entry is served (partial > dropping ALL enrichment incl. CWEs); online still enforces both to re-fetch + upgrade.
@@ -123,6 +130,7 @@ lib/codecs/npm/parse.js             package.json, package-lock.json (v1/2/3), ya
 lib/codecs/npm/collect.js           Merge across JS manifests → unified resolvedDeps Map.
 lib/codecs/npm/registry.js          npm registry packument query → per-version deprecation + dist-tags.latest (npm EOL feeds via lib/outdated.js).
 lib/cache-archive.js         tar.gz / zip export & import of ~/.fad-checker/ (incl. retire findings + signatures). Import **merges** (`--replace` = old wholesale swap): per-key file caches union file-by-file, `entries{}` maps union key-by-key (fresher value wins, merged stamp = the OLDER `fetchedAt`), whole-corpus snapshots (kev) + atomic `cve-data/` take the freshest side as a block, `config.json` never touched (machine-local secrets, never exported). Replacing silently cost an enclave its warm cache AND its NVD key / private registry creds, and left a full `.bak-<ts>` copy per import.
+lib/proxy-cache.js           `fad-checker serve-cache` (shared persistent proxy-cache server) + `--proxy-cache <url>` (scan side): one upstream call per URL per TTL for a whole fleet. Store in its OWN root `~/.fad-checker-proxy-cache/` (never inside `~/.fad-checker/` — client caches and shared base are different roles, never bundled/swapped by --export-cache/--import-cache). Single-flight, SWR + stale-if-error (404 mirrored as-is), per-source TTLs, server-side API-key injection (NVD/Wordfence/GitHub; keyless instances share the quota), `--proxy`/`--upstream-proxy` corporate-proxy re-exec (NODE_USE_ENV_PROXY is read at process start only). Only public source hosts cached; private registries pass through uncached. Client wrapper sits UNDER guardedFetch → dead proxy = dead source (retry + exit-2 abort), never a quiet hole.
 lib/deps-descriptor.js       Anonymized dep descriptor serialize/deserialize (anonymized offline→online round-trip).
 lib/config.js                Persistent user config in ~/.fad-checker/config.json (mode 0600): NVD key + `registries` map.
 lib/registries.js            Per-ecosystem registry list assembly (union across layers, dedup, public base last) + Basic/Bearer auth + fan-out. Generalizes maven-repo.js to npm/pypi/ruby/go.
@@ -216,6 +224,7 @@ Test fixtures live in `test/fixtures/`:
 | OSV per-dep stub list | `~/.fad-checker/osv-cache/<eco>__<g>__<a>__<v>.json` | 12 h |
 | OSV vuln details | `~/.fad-checker/osv-cache/vuln_<id>.json` | 12 h |
 | OSV local DB (Maven `all.zip` → index) | `~/.fad-checker/osv-db/maven-index.json` | 24 h (`--osv-db`; travels in the cache archive) |
+| Packagist security advisories (per package) | `~/.fad-checker/packagist-advisories/<vendor>__<name>.json` | 24 h (offline serves the warm cache regardless of age, like OSV/NVD) |
 | NVD CVE record | `~/.fad-checker/nvd-cache/<cveId>.json` | 7 d (online; **offline ignores the TTL + schema check** and serves the warmed body so air-gapped enrichment incl. CWEs is never dropped) |
 | EPSS scores | `~/.fad-checker/epss-cache.json` | 24 h |
 | CISA KEV catalogue | `~/.fad-checker/kev-cache.json` | 24 h |

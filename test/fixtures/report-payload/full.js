@@ -55,7 +55,12 @@ module.exports = (locale) => ({
   cveMatches: [m(direct, "CVE-2021-44228"), m(trans, "CVE-2020-36518", { severity: "HIGH", score: 7.5, fixVersion: null, kev: false, epssPercentile: 0.4 }), m(trans2, "CVE-2024-25710", { severity: "HIGH", score: 7.5, fixVersion: "1.26.0", kev: false, epssPercentile: 0.2 }), m(npmDep, "CVE-2019-10744", { severity: "MEDIUM", score: 5.3, kev: false }), { ...m(bomDep, "CVE-2016-1000027", { severity: "LOW", score: 3.1, kev: false }), cpeFiltered: true }],
   devCveMatches: [m(devDep, "CVE-2018-0001", { severity: "LOW", kev: false })],
   embeddedMatches: [m(embDep, "CVE-2017-0001", { severity: "HIGH", kev: false })],
-  retireMatches: [{ dep: { artifactId: "jquery", version: "1.8.3", vendoredFile: `${SRC}/web/js/jquery.js`, scope: "vendored" }, cve: { id: "CVE-2015-9251", severity: "MEDIUM", description: "EVIDENCE_RETIRE_TEXT", fixVersion: "3.0.0" }, source: "retire" }],
+  retireMatches: [
+    { dep: { artifactId: "jquery", version: "1.8.3", vendoredFile: `${SRC}/web/js/jquery.js`, scope: "vendored" }, cve: { id: "CVE-2015-9251", severity: "MEDIUM", description: "EVIDENCE_RETIRE_TEXT", fixVersion: "3.0.0" }, source: "retire" },
+    // Same physical file, second advisory: the vendored-JS chapter groups the two behind
+    // one library row (the inventory already declared vulnCount: 2 for this file).
+    { dep: { artifactId: "jquery", version: "1.8.3", vendoredFile: `${SRC}/web/js/jquery.js`, scope: "vendored" }, cve: { id: "CVE-2019-11358", severity: "LOW", description: "jQuery.extend prototype pollution", fixVersion: "3.4.0", cwes: ["CWE-1321"] }, source: "retire" },
+  ],
   vendoredJsInventory: [{ component: "jquery", version: "1.8.3", file: "web/js/jquery.js", detection: "filecontent", vulnerable: true, vulnCount: 2, maxSeverity: "MEDIUM" }, { component: "bootstrap", version: "3.4.1", file: "web/js/bootstrap.js", detection: "filename", vulnerable: false, vulnCount: 0 }],
   certFindings: [
     { path: `${SRC}/certs/server.pem`, kind: "certificate", algorithm: "RSA", bits: 1024, subject: "CN=srv", issuer: "CN=ca", notAfter: "2020-01-01T00:00:00Z", daysUntilExpiry: -900, sha256: "c".repeat(64), issues: [{ type: "cert-expired", severity: "high" }, { type: "cert-weak-key", severity: "medium" }, { type: "cert-self-signed", severity: "low" }] },

@@ -6,7 +6,7 @@ const path = require("path");
 const { isManifestName, copyEcosystemManifests } = require("../lib/manifest-copy");
 
 test("isManifestName matches non-Maven lockfiles/manifests, not pom.xml or random files", () => {
-	for (const n of ["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "composer.lock", "poetry.lock",
+	for (const n of ["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "composer.lock", "symfony.lock", "poetry.lock",
 		"Pipfile.lock", "go.mod", "go.sum", "Gemfile.lock", "packages.lock.json", "app.csproj",
 		"Directory.Packages.props", "requirements.txt"]) {
 		assert.equal(isManifestName(n), true, `${n} should match`);
@@ -28,13 +28,14 @@ test("copyEcosystemManifests mirrors manifests to target, skips node_modules/ven
 		fs.writeFileSync(path.join(src, "web", "package-lock.json"), "{}");
 		fs.writeFileSync(path.join(src, "svc", "go.mod"), "module x");
 		fs.writeFileSync(path.join(src, "php", "composer.lock"), "{}");
+		fs.writeFileSync(path.join(src, "php", "symfony.lock"), "{}");
 		fs.writeFileSync(path.join(src, "pom.xml"), "<project/>");                       // not copied
 		fs.writeFileSync(path.join(src, "web", "node_modules", "lodash", "package.json"), "{}"); // pruned
 		fs.writeFileSync(path.join(src, "php", "vendor", "x", "composer.json"), "{}");          // pruned
 
 		const r = await copyEcosystemManifests(src, tgt);
 		const got = r.files.map(f => f.split(path.sep).join("/")).sort();
-		assert.deepEqual(got, ["php/composer.lock", "svc/go.mod", "web/package-lock.json", "web/package.json"]);
+		assert.deepEqual(got, ["php/composer.lock", "php/symfony.lock", "svc/go.mod", "web/package-lock.json", "web/package.json"]);
 		assert.ok(fs.existsSync(path.join(tgt, "web", "package-lock.json")), "manifest mirrored at relative path");
 		assert.ok(!fs.existsSync(path.join(tgt, "pom.xml")), "pom.xml not copied");
 		assert.ok(!fs.existsSync(path.join(tgt, "web", "node_modules")), "node_modules pruned");

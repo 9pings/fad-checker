@@ -52,3 +52,10 @@ test("score 0 falls back to the severity label instead of banding as low", () =>
 	assert.equal(p.band, "critical");
 	assert.ok(p.cvss > 0);
 });
+
+test("missing CVSS, severity and KEV yields unknown priority, even with EPSS", () => {
+	const p = computePriority({ severity: "UNKNOWN", epssPercentile: 0.9 });
+	assert.equal(p.band, "unknown");
+	assert.equal(p.score, null);
+	assert.equal(p.cvss, null);
+});

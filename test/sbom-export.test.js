@@ -88,3 +88,31 @@ test("buildCycloneDx points GHSA/OSV ids at the right advisory db", () => {
 	assert.match(ghsa.source.url, /github\.com\/advisories/);
 	assert.match(cve.source.url, /nvd\.nist\.gov/);
 });
+
+test("Wordfence-only advisory registers its application component in CycloneDX", () => {
+	const dep = { ecosystem: "wordpress", namespace: "wordpress/plugin", name: "example", version: "1.2",
+		coordKey: "wordpress:plugin:example", provenance: "application", manifestPaths: ["site/wp-content/plugins/example/plugin.php"] };
+	const bom = buildCycloneDx(new Map(), [{ dep, source: "wordfence-v3", cve: {
+		id: "WF-123e4567-e89b-12d3-a456-426614174000", severity: "HIGH", score: 7.5,
+	} }]);
+	assert.equal(bom.components.length, 1);
+	assert.equal(bom.components[0].purl, "pkg:generic/wordpress/plugin/example@1.2");
+	assert.deepEqual(bom.vulnerabilities[0].affects, [{ ref: bom.components[0]["bom-ref"] }]);
+	assert.equal(bom.vulnerabilities[0].source.name, "Wordfence");
+});
+
+test("the SBOM carries each occurrence's finding identity and application relation", () => {
+	const { buildCycloneDx } = require("../lib/sbom-export");
+	const mk = (version, relation, findingId) => ({
+		dep: { ecosystem: "composer", namespace: "v", name: "lib", groupId: "v", artifactId: "lib",
+			version, scope: "prod", coordKey: "composer:v/lib", manifestPaths: ["/p/composer.lock"] },
+		cve: { id: "CVE-2099-0001", severity: "HIGH", score: 7.5 },
+		findingId, applicationIds: ["wordpress:site"], applicationRelation: relation,
+	});
+	const bom = buildCycloneDx(new Map(), [mk("1.0.0", "direct", "f-1"), mk("1.1.0", "indirect", "f-2")],
+		{ projectInfo: { name: "p", src: "/p" } });
+	const props = bom.vulnerabilities[0].properties.filter(p => p.name === "fad:finding");
+	assert.deepEqual(props.map(p => p.value).sort(), ["f-1=direct", "f-2=indirect"],
+		"every physical occurrence keeps its findingId and its application relation");
+	assert.ok(bom.vulnerabilities[0].affects.length >= 1);
+});

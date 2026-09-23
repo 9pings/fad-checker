@@ -43,6 +43,52 @@ test("--target equal to --src is rejected", () => {
 	fs.rmSync(src, { recursive: true, force: true });
 });
 
+test("non-empty --target requires --force and preserves its contents on refusal", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "fad-safety-target-"));
+	try {
+		const src = path.join(root, "src");
+		const target = path.join(root, "target");
+		fs.mkdirSync(src);
+		fs.mkdirSync(target);
+		fs.writeFileSync(path.join(target, "IMPORTANT.txt"), "precious");
+		const denied = run(["-s", src, "-t", target, "--offline"]);
+		assert.notEqual(denied.status, 0);
+		assert.match(denied.stderr, /--force/);
+		assert.equal(fs.readFileSync(path.join(target, "IMPORTANT.txt"), "utf8"), "precious");
+		const allowed = run(["-s", src, "-t", target, "--force", "--offline"]);
+		assert.equal(allowed.status, 0, allowed.stderr);
+		assert.ok(!fs.existsSync(path.join(target, "IMPORTANT.txt")));
+	} finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("empty --target works without --force", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "fad-safety-empty-"));
+	try {
+		const src = path.join(root, "src");
+		const target = path.join(root, "target");
+		fs.mkdirSync(src);
+		fs.mkdirSync(target);
+		const result = run(["-s", src, "-t", target, "--offline"]);
+		assert.equal(result.status, 0, result.stderr);
+	} finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("--force still refuses a symlink target", () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "fad-safety-link-"));
+	try {
+		const src = path.join(root, "src");
+		const destination = path.join(root, "destination");
+		const target = path.join(root, "target-link");
+		fs.mkdirSync(src); fs.mkdirSync(destination);
+		fs.writeFileSync(path.join(destination, "IMPORTANT.txt"), "precious");
+		fs.symlinkSync(destination, target, "dir");
+		const result = run(["-s", src, "-t", target, "--force", "--offline"]);
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /symlink/i);
+		assert.equal(fs.readFileSync(path.join(destination, "IMPORTANT.txt"), "utf8"), "precious");
+	} finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 // An unrecognised --fail-on (CI typo) must hard-fail, never silently pass.
 test("invalid --fail-on hard-fails instead of disabling the gate", () => {
 	const src = path.join(__dirname, "fixtures", "simple");

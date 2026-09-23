@@ -226,9 +226,9 @@ const ENGLISH_CHROME = [
 	"Reachability / exploitability in your app.", "These entries were initially matched by name",
 	"Strong copyleft (GPL)", "Every direct dep with at least one CVE matched",
 	"manual triage", "no clean fix declared", "Paste into the root POM", "Or update the direct dependencies",
-	"Private / internal packages", "Manifest without a lockfile", "ranges / no lockfile",
+	"Private / internal packages", "Manifests without a lockfile", "ranges / no lockfile",
 	"Overview charts", "CWE — direct vulns", "Most vulnerable components", "Fix priority",
-	"not warmed", "ecosystems",
+	"not warmed", "ecosystems", "Vulns",
 ];
 
 test("a full French report has no English chrome left in it", () => {
@@ -241,6 +241,11 @@ test("a full French report has no English chrome left in it", () => {
 	assert.deepEqual(absentFromEnglish, [], "these no longer exist in the English report either — fix the list, not the translation");
 	const leftInFrench = ENGLISH_CHROME.filter(s => fr.includes(s));
 	assert.deepEqual(leftInFrench, [], "untranslated chrome in the French report");
+	// The vendored-JS library row pluralises its advisory count, and French inflects.
+	// The catalogue's established short form is "vuln." — same pill as the inventory
+	// chapter — so the grouped count stays French without widening the column.
+	assert.ok(fr.includes("2 vuln."), "the grouped vendored-JS count is French");
+	assert.ok(en.includes("2 vulns"), "the English report keeps its own wording");
 });
 
 test("a full French report still quotes its evidence verbatim, and keeps NVD's vocabulary", () => {

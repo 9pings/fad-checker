@@ -30,6 +30,17 @@ node fad-checker.js -s test/fixtures/monorepo-mixed --offline --no-report
 
 Building the single-file binaries needs [bun](https://bun.sh): `npm run build`.
 
+The ordinary suite is offline and deterministic. `test/real-instances.test.js` is
+opt-in: it clones the representative GitHub repository of each supported
+CMS/framework at a tag known to be vulnerable (WordPress 6.4.2, drupal/drupal
+8.5.0, symfony/symfony-demo v2.6.0, BookStack v24.10), scans the real trees and
+asserts the end-to-end behavior against the real published advisories. It needs
+network and git, so it stays skipped unless you ask for it:
+
+```bash
+FAD_REAL_INSTANCES=1 node --test test/real-instances.test.js
+```
+
 ## Ground rules for changes
 
 - **Tests must not touch the network.** Every fixture-driven test drives an in-memory

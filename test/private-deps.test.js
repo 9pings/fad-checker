@@ -91,6 +91,14 @@ const dep = (name, version) => ({
 });
 const deps = list => new Map(list.map(d => [d.coordKey, d]));
 
+test("Adobe Commerce packages are not looked up in the public Packagist registry", async () => {
+	const product = dep("magento/product-enterprise-edition", "2.4.7-p3");
+	const marketplace = { ...dep("acme/module-pay", "1.2.3"), occurrences: [{ distHost: "repo.magento.com" }] };
+	const fetcher = async () => { throw new Error("wrong registry queried"); };
+	const result = await checkComposerRegistryDeps(deps([product, marketplace]), { fetcher });
+	assert.deepStrictEqual(result, { deprecated: [], outdated: [], licensed: [], private: [] });
+});
+
 test("a package every registry 404s lands in result.private", async () => {
 	const fetcher = async () => ({ ok: false, status: 404 });
 	const r = await withSeededCache(PACKAGIST_CACHE, { meta: {}, entries: {} }, () =>

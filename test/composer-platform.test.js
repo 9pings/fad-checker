@@ -83,7 +83,6 @@ test("readPlatformPhp: precedence platform-overrides > config.platform > lock pl
 
 test("evaluatePhpRuntime: ^7.4 proves an EOL runtime → a finding (not a dependency)", () => {
 	const r = evaluatePhpRuntime([pl("^7.4")], PHP, { now: NOW });
-	assert.equal(r.warnings.length, 0);
 	assert.equal(r.findings.length, 1);
 	const f = r.findings[0];
 	assert.equal(f.product, "PHP");
@@ -110,21 +109,16 @@ test("evaluatePhpRuntime: an exact pin is a certain verdict", () => {
 	assert.equal(r.findings[0].cycle, "7.4");
 });
 
-test("evaluatePhpRuntime: an open constraint is a chapter-0 note, never a finding", () => {
+test("evaluatePhpRuntime: an open constraint proves nothing — silent, never a finding, never a note", () => {
 	const r = evaluatePhpRuntime([pl(">=7.2.5", "json:require", "/p/composer.json")], PHP, { now: NOW });
 	assert.equal(r.findings.length, 0);
-	assert.equal(r.warnings.length, 1);
-	assert.equal(r.warnings[0].type, "php-runtime-undetermined");
-	assert.equal(r.warnings[0].manifestPath, "/p/composer.json");
-	assert.ok(r.warnings[0].message.includes(">=7.2.5"));
-	assert.ok(r.warnings[0].message.includes("json:require"));
+	assert.deepEqual(r.warnings || [], [], "an undeterminable runtime is not a report warning (user decision: the note was noise on source trees)");
 });
 
-test("evaluatePhpRuntime: a constraint that allows a supported PHP is a note", () => {
+test("evaluatePhpRuntime: a constraint that allows a supported PHP stays silent", () => {
 	const r = evaluatePhpRuntime([pl("^7.2.5 || ^8.0")], PHP, { now: NOW });
 	assert.equal(r.findings.length, 0);
-	assert.equal(r.warnings.length, 1);
-	assert.ok(r.warnings[0].message.includes("PHP 8.4"), "names the newest cycle it allows");
+	assert.deepEqual(r.warnings || [], []);
 });
 
 test("evaluatePhpRuntime: out-of-active-support PHP (8.3.*) is a finding ONLY with eolSupport", () => {
@@ -135,16 +129,15 @@ test("evaluatePhpRuntime: out-of-active-support PHP (8.3.*) is a finding ONLY wi
 	assert.equal(r.findings[0].support, "2025-12-31");
 });
 
-test("evaluatePhpRuntime: no PHP cycle data (offline, cold cache) → a note, never a verdict", () => {
+test("evaluatePhpRuntime: no PHP cycle data (offline, cold cache) → no verdict and no note", () => {
 	const r = evaluatePhpRuntime([pl("^7.4")], null, { now: NOW });
 	assert.equal(r.findings.length, 0);
-	assert.equal(r.warnings.length, 1);
-	assert.ok(/offline|cache/i.test(r.warnings[0].message));
+	assert.deepEqual(r.warnings || [], []);
 });
 
 test("evaluatePhpRuntime: empty input → nothing", () => {
-	assert.deepEqual(evaluatePhpRuntime([], PHP), { findings: [], warnings: [] });
-	assert.deepEqual(evaluatePhpRuntime(null, PHP), { findings: [], warnings: [] });
+	assert.deepEqual(evaluatePhpRuntime([], PHP), { findings: [] });
+	assert.deepEqual(evaluatePhpRuntime(null, PHP), { findings: [] });
 });
 
 test("composer codec: collect exposes _composer.platforms and the fixture's deps", async () => {

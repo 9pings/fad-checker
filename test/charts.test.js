@@ -104,6 +104,11 @@ test("fixPriority: bands from composite priority — KEV lands in the exploited 
 	assert.equal(byKey["medium"], 1);
 });
 
+test("fixPriority includes unknown signal in the chart total", () => {
+	const rows = fixPriority([m("a", "unknown", "compile", "UNKNOWN", [], { score: null })]);
+	assert.deepEqual(rows.map(r => [r.key, r.value]), [["unknown", 1]]);
+});
+
 test("renderCharts: emits 4 SVG charts in one row, each with a copy button", () => {
 	const html = renderCharts({
 		prodMatches: [
@@ -226,4 +231,94 @@ test("several descriptors but no critical/high → the components card renders i
 	}, { interactive: false });
 	assert.match(html, /Most vulnerable components/);
 	assert.match(html, /No critical or high/i);
+});
+
+test("application scans rank exposed instances, counting shared occurrences in each", () => {
+	const { mostVulnerableApplications } = require("../lib/charts");
+	const apps = [
+		{ id: "wordpress:site-a", type: "wordpress", root: "site-a" },
+		{ id: "drupal:site-b", type: "drupal", root: "site-b" },
+	];
+	// one shared finding (both instances), one site-a-only finding, one low (excluded)
+	const shared = { ...m("v", "lib", "compile", "CRITICAL", []), findingId: "f1",
+		applicationIds: ["wordpress:site-a", "drupal:site-b"], applicationRelation: "direct" };
+	const only = { ...m("v", "lib2", "compile", "HIGH", []), findingId: "f2",
+		applicationIds: ["wordpress:site-a"], applicationRelation: "indirect" };
+	const low = { ...m("v", "lib3", "compile", "LOW", []), findingId: "f3",
+		applicationIds: ["wordpress:site-a"] };
+	const coverage = [
+		{ applicationId: "wordpress:site-a", capability: "advisories", execution: "not-run" },
+		{ applicationId: "drupal:site-b", capability: "advisories", execution: "completed" },
+		{ applicationId: "drupal:site-b", capability: "inventory", execution: "partial" },
+	];
+	const chart = mostVulnerableApplications([shared, only, low], apps, coverage);
+	const byLabel = Object.fromEntries(chart.rows.map(r => [r.label, r]));
+	assert.equal(byLabel["wordpress · site-a"].value, 2);
+	assert.equal(byLabel["drupal · site-b"].value, 1);
+	// the slice total counts exposures; the distinct findings stay visible for the center
+	assert.equal(chart.unique, 2);
+	// coverage of the advisories capability is carried with the chart
+	assert.equal(chart.incomplete, 1);
+});
+
+test("application scans render the instances chart, not the modules or scope chart", () => {
+	const apps = [{ id: "wordpress:site-a", type: "wordpress", root: "site-a" }];
+	const shared = { ...m("v", "lib", "compile", "CRITICAL", []), findingId: "f1",
+		applicationIds: ["wordpress:site-a"], applicationRelation: "direct" };
+	const html = renderCharts({ prodMatches: [shared], applications: apps,
+		coverage: [{ applicationId: "wordpress:site-a", capability: "advisories", execution: "not-run" }] });
+	assert.match(html, /chart-instances/);
+	assert.match(html, /Most vulnerable instances/);
+	assert.match(html, /wordpress · site-a/);
+	// Bars show per-instance exposure counts; the note explains shared occurrences.
+	assert.match(html, /a shared[\s\S]*?occurrence counts in each/);
+	assert.doesNotMatch(html.slice(html.indexOf('id="chart-instances"'), html.indexOf('id="chart-priority"')), /<path\s+d="M/);
+	assert.match(html, /1 advisory check\(s\) incomplete/);
+	assert.doesNotMatch(html, /chart-components/);
+	assert.doesNotMatch(html, /chart-scope/);
+	// no critical/high application finding → the empty card says so
+	const empty = renderCharts({ prodMatches: [{ ...m("v", "lib", "compile", "LOW", []),
+		applicationIds: ["wordpress:site-a"] }], applications: apps, coverage: [] });
+	assert.match(empty, /No critical or high application CVE\./);
+});
+
+test("application scans chart the CWEs of DIRECT application findings only", () => {
+	const { cweByCriticality } = require("../lib/charts");
+	const apps = [{ id: "wp", type: "wordpress", root: "wp" }];
+	const coreDirect = { ...m("v", "lib", "compile", "CRITICAL", ["CWE-79"]),
+		applicationIds: ["wp"], applicationRelation: "direct" };
+	const libIndirect = { ...m("v", "lib2", "compile", "HIGH", ["CWE-89"]),
+		applicationIds: ["wp"], applicationRelation: "indirect" };
+	const nonApp = m("x", "y", "compile", "HIGH", ["CWE-22"]);
+	const html = renderCharts({ prodMatches: [coreDirect, libIndirect, nonApp], applications: apps, coverage: [] });
+	// the CWE chart carries the application-direct lane only: never the indirect
+	// libraries (chart 2's lane) nor the non-application findings (a different axis)
+	assert.match(html, /chart-cwe[\s\S]*?CWE-79/);
+	assert.doesNotMatch(html, /chart-cwe[\s\S]*?CWE-89/);
+	assert.doesNotMatch(html, /chart-cwe[\s\S]*?CWE-22/);
+	assert.equal(cweByCriticality([coreDirect, libIndirect, nonApp]).length, 3, "non-app aggregator unchanged");
+});
+
+test("application scans group indirect CVEs by their introducing component", () => {
+	const { vulnByApplicationOrigin } = require("../lib/charts");
+	const apps = [{ id: "wp", type: "wordpress", root: "wp" }];
+	const inventory = [
+		{ id: "wp:core", kind: "core", name: "WordPress", applicationId: "wp" },
+		{ id: "wp:plugin:acme", kind: "plugin", name: "Acme", applicationId: "wp" },
+	];
+	const indirect = owner => ({ ...m("v", "lib", "compile", "HIGH", []),
+		applicationIds: ["wp"], applicationRelation: "indirect",
+		applicationExposures: [{ applicationId: "wp", ownerComponentIds: [owner], applicationRelation: "indirect", dependencyPaths: [] }] });
+	const unknown = { ...m("v", "loose", "compile", "HIGH", []), applicationIds: ["wp"], applicationRelation: "unknown" };
+	const chart = vulnByApplicationOrigin([indirect("wp:core"), indirect("wp:plugin:acme"), unknown], inventory);
+	const byLabel = Object.fromEntries(chart.rows.map(r => [r.label, r]));
+	assert.equal(byLabel["core WordPress"].total, 1);
+	assert.equal(byLabel["plugin Acme"].total, 1);
+	assert.equal(chart.unknown, 1, "unattributed indirect CVEs are counted, never invented an origin for");
+	const html = renderCharts({ prodMatches: [indirect("wp:core"), indirect("wp:plugin:acme"), unknown],
+		applications: apps, applicationInventory: inventory, coverage: [] });
+	assert.match(html, /Indirect CVEs per direct dependency/);
+	assert.match(html, /plugin Acme/);
+	assert.match(html, /core WordPress/);
+	assert.match(html, /1 indirect CVE\(s\) with no proven origin/);
 });

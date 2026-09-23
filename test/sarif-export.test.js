@@ -49,3 +49,18 @@ test("buildSarif dedups rules across multiple matches of the same CVE", () => {
 	assert.equal(doc.runs[0].tool.driver.rules.length, 1);
 	assert.equal(doc.runs[0].results.length, 2);
 });
+
+test("each physical occurrence keeps its findingId and application relation in SARIF", () => {
+	const mk = (version, relation, findingId) => ({
+		dep: { ecosystem: "composer", namespace: "v", name: "lib", groupId: "v", artifactId: "lib",
+			version, scope: "prod", coordKey: "composer:v/lib", manifestPaths: ["/p/composer.lock"] },
+		cve: { id: "CVE-2099-0001", severity: "HIGH" },
+		findingId, applicationIds: ["wordpress:site"], applicationRelation: relation,
+	});
+	const doc = buildSarif([mk("1.0.0", "direct", "f-1"), mk("1.1.0", "indirect", "f-2")],
+		{ projectInfo: { src: "/p" }, toolVersion: "2.5.2" });
+	assert.equal(doc.runs[0].results.length, 2, "one SARIF result per physical occurrence");
+	const relations = doc.runs[0].results.map(r => r.properties.applicationRelation);
+	assert.deepEqual(relations.sort(), ["direct", "indirect"]);
+	assert.deepEqual(doc.runs[0].results.map(r => r.partialFingerprints.fadKey).sort(), ["f-1", "f-2"]);
+});

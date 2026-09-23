@@ -83,6 +83,41 @@ if (process.argv.includes("--show-config")) {
 	process.exit(0);
 }
 
+if (process.argv.includes("--list-app-plugins")) {
+	const { allApplicationPlugins } = require("./lib/application-plugins");
+	for (const plugin of allApplicationPlugins()) {
+		console.log(`${plugin.id}\t${plugin.version}\tinventory: ${plugin.capabilities.inventory}\tadvisories: ${plugin.capabilities.advisories || "unavailable"}`);
+	}
+	process.exit(0);
+}
+
+// -------- --proxy <url> / serve-cache --upstream-proxy <url> (re-exec, before anything runs) --------
+// A corporate forward proxy for EVERY outbound request. Node's built-in fetch only
+// honours HTTP(S)_PROXY with NODE_USE_ENV_PROXY set at process start (verified: the
+// env is read at bootstrap — setting it mid-run is silently ignored), so the process
+// re-execs itself with the env applied and the child takes over. The sentinel env
+// prevents recursion. A --proxy-cache URL given in the same command is added to
+// NO_PROXY: traffic to the shared cache is local and must not enter the tunnel.
+if (!process.env.__FAD_PROXY_REEXEC__) {
+	const { parseProxyFlag, runtimeSupportsEnvProxy, reexecWithProxy } = require("./lib/proxy-cache");
+	const corpProxy = parseProxyFlag();
+	if (corpProxy) {
+		if (!/^https?:\/\//i.test(corpProxy)) {
+			console.error(chalk.red(`❌  ${process.argv[2] === "serve-cache" ? "--upstream-proxy" : "--proxy"} expects an http(s) URL, got "${corpProxy}"`));
+			process.exit(2);
+		}
+		if (!runtimeSupportsEnvProxy()) {
+			console.warn(chalk.yellow(`⚠️  Node ${process.versions.node} ignores HTTP(S)_PROXY for fetch (needs Node >= 24, or bun) — continuing anyway`));
+		}
+		let noProxyHost = null;
+		const pcIdx = process.argv.indexOf("--proxy-cache");
+		const pcUrl = pcIdx > -1 && process.argv[pcIdx + 1] && !process.argv[pcIdx + 1].startsWith("-") ? process.argv[pcIdx + 1] : null;
+		if (pcUrl) { try { noProxyHost = new URL(pcUrl).hostname; } catch { /* ignore */ } }
+		reexecWithProxy({ proxyUrl: corpProxy, noProxy: noProxyHost });
+		return; // the child owns the run; this process just relays its exit code
+	}
+}
+
 // -------- --add-repo / --remove-repo / --list-repos (run before program.parse) --------
 if (process.argv.includes("--add-repo") || process.argv.includes("--remove-repo") || process.argv.includes("--list-repos")) {
 	const config = require("./lib/config");
@@ -231,6 +266,70 @@ if (process.argv[2] === "diff") {
 	process.exit(failOnNew && newProd > 0 ? 1 : 0);
 }
 
+// -------- `fad-checker serve-cache` subcommand (pre-parse) --------
+// A long-running shared cache for the public data sources. Other instances point at it
+// with `--proxy-cache http://host:port` and stop making their own upstream calls:
+// one lookup per URL per TTL for the whole fleet, served from a persistent on-disk
+// store that survives restarts (and ships inside --export-cache archives). Mirrors
+// the other pre-parse intercepts so it never collides with the main option set.
+if (process.argv[2] === "serve-cache") {
+	const arg = (name, def) => {
+		const i = process.argv.indexOf(name);
+		return i > -1 && process.argv[i + 1] && !process.argv[i + 1].startsWith("-") ? process.argv[i + 1] : def;
+	};
+	const port = parseInt(arg("--port", "8321"), 10);
+	const host = arg("--host", "127.0.0.1");
+	const cacheDir = arg("--cache-dir", null);
+	const ttlS = parseInt(arg("--ttl", "0"), 10);
+	const maxMb = parseFloat(arg("--max-body-mb", "32"));
+	const token = arg("--token", null);
+	const swr = !process.argv.includes("--no-swr");
+	// --upstream-proxy was already applied by the pre-parse re-exec above (it must be
+	// in the environment at process start); read it back just for the banner.
+	const upstreamProxy = arg("--upstream-proxy", null);
+	// API keys the SERVER injects upstream, so the instances behind it need none:
+	// flags > env > persisted config. Same wire formats as the scan-side lanes
+	// (lib/nvd.js `apiKey` header, Wordfence/GitHub `Authorization: Bearer`).
+	const { getNvdApiKey } = require("./lib/config");
+	const keys = {
+		nvd: arg("--nvd-key", null) || process.env.NVD_API_KEY || getNvdApiKey() || null,
+		wordfence: arg("--wordfence-key", null) || process.env.WORDFENCE_API_KEY || null,
+		github: arg("--github-token", null) || process.env.GITHUB_TOKEN || null,
+	};
+	const { startProxyCacheServer, DEFAULT_CACHE_DIR, CLIENT_CACHE_DIR, createCacheStore } = require("./lib/proxy-cache");
+	const storeDir = path.resolve(cacheDir || DEFAULT_CACHE_DIR());
+	// The scan's per-pass caches and the shared server base are two different roles:
+	// a store inside ~/.fad-checker/ would be bundled/swapped by --export-cache /
+	// --import-cache together with the client's own caches. Separate roots, always.
+	const clientRoot = path.resolve(CLIENT_CACHE_DIR());
+	if (storeDir === clientRoot || storeDir.startsWith(clientRoot + path.sep)) {
+		console.warn(chalk.yellow(`⚠️  --cache-dir is inside the client cache root (${clientRoot}) — --export-cache/--import-cache would bundle or swap the shared base together with the scan's own caches. Keep the two stores separate.`));
+	}
+	startProxyCacheServer({
+		port, host,
+		store: createCacheStore(storeDir),
+		overrideTtlMs: ttlS > 0 ? ttlS * 1000 : null,
+		maxBodyBytes: Math.max(1, maxMb) * 1024 * 1024,
+		token, swr, keys,
+	}).then(({ server, url }) => {
+		console.log(chalk.green(`✅  proxy-cache listening on ${url}`));
+		console.log(chalk.gray(`   store:    ${storeDir}  (persists across restarts; separate from the scan's own ~/.fad-checker/ caches)`));
+		console.log(chalk.gray(`   upstream: ${upstreamProxy ? `via corporate proxy ${upstreamProxy}` : "direct"}`));
+		console.log(chalk.gray(`   stats:    ${url}/__stats    clear: POST ${url}/__clear`));
+		const active = Object.entries(keys).filter(([, v]) => v).map(([k]) => k);
+		console.log(chalk.gray(`   api keys: ${active.length ? active.join(", ") + " (injected upstream; instances behind --proxy-cache need none)" : "none configured (client-sent credentials are forwarded as-is)"}`));
+		console.log(chalk.gray(`   point scans at it with:  --proxy-cache ${url}`));
+		if (host === "0.0.0.0" && !token) console.log(chalk.yellow("⚠️  bound on all interfaces without --token: anyone on the network can read/drive this cache"));
+		const stop = () => server.close(() => process.exit(0));
+		process.on("SIGINT", stop);
+		process.on("SIGTERM", stop);
+	}).catch(err => {
+		console.error(chalk.red(`❌  serve-cache failed to start: ${err.message}`));
+		process.exit(1);
+	});
+	return;
+}
+
 const USAGE = `
 (1) fad-checker -s ./proj                                              # read-only: full report (CVE + EOL + obsolete + outdated + transitive)
 (2) fad-checker -s ./proj -e "^(org.private|client)"                   # same, with regex exclusion of private deps
@@ -249,7 +348,7 @@ program
 	.showHelpAfterError()
 	.addHelpText("beforeAll", () => chalk.cyan(TITLE_LINE) + "\n")
 	.usage(USAGE)
-	.option("-t, --target <target>", "EXTRACTION mode: write the cleaned POM tree to <dir> and stop (no scan unless --snyk / --report-* / --fail-on / --baseline)")
+	.option("-t, --target <target>", "EXTRACTION mode: write the cleaned tree to <dir>; non-empty dir requires --force")
 	// Not a requiredOption: --import-anonymized scans a descriptor with no source tree.
 	.option("-s, --src <src>", "root directory containing pom.xml files")
 	.option("--source <src>", "alias of --src")
@@ -267,6 +366,7 @@ program
 	.option("--no-transitive", "skip transitive dependency resolution")
 	.option("--no-all-libs", "skip Maven Central queries (outdated check + missing-on-central check)")
 	.option("--no-osv", "skip OSV.dev (Google/GitHub aggregated Maven CVE feed)")
+	.option("--no-packagist-audit", "skip the Packagist security-advisories lane for Composer deps (the data `composer audit` queries — closes CVEs OSV carries without composer coordinates)")
 	.option("--no-nvd", "skip NIST NVD enrichment of matched CVEs")
 	.option("--nvd-cpe-match", "ALSO match deps against NVD CPE version ranges (opt-in, LOW PRECISION: ~12% of the findings it adds were corroborated by another scanner — triage aid, not a default)")
 	.option("--no-epss", "skip EPSS (FIRST.org exploit-prediction) enrichment")
@@ -284,11 +384,14 @@ program
 	.option("--fail-on <level>", "exit non-zero if a production finding meets <level>: low|medium|high|critical|kev|none", "none")
 	.option("--baseline <file>", "diff this scan against a prior findings.json (adds a Δ chapter)")
 	.option("--fail-on-new", "also fail on any NEW production CVE vs --baseline")
+	.option("--fail-on-incomplete [capabilities]", "exit 2 if required application capabilities are incomplete (default: inventory,advisories)")
 	.option("--no-checksums", "don't write a SHA256SUMS integrity manifest alongside the report files")
 	.option("--ignore <file>", "triage file: CVE ids / coord globs to suppress")
 	.option("--vex <file>", "ingest a CSAF VEX and suppress what it marks not-affected/fixed")
 	.option("--licenses", "run license detection + copyleft policy check (off by default)")
 	.option("--offline", "no network: use cached CVE/OSV/NVD/EPSS/KEV/POM data only")
+	.option("--proxy-cache <url>", "shared data-source cache (`serve-cache`)")
+	.option("--proxy <url>", "corporate proxy for all requests")
 	.option("--set-nvd-key <key>", "save NVD API key to ~/.fad-checker/config.json (10× faster NVD enrichment)")
 	.option("--show-config", "print the persisted ~/.fad-checker/config.json")
 	.option("--export-cache <file>", "tar.gz/zip the ~/.fad-checker/ caches to <file> (excludes config.json by default)")
@@ -297,7 +400,7 @@ program
 	.option("--include-config", "with --export-cache: also bundle config.json (contains the NVD API key)")
 	.option("--export-anonymized <file>", "offline: write a path-free dependency descriptor and exit")
 	.option("--import-anonymized <file>", "online, no --src: scan a descriptor to warm the caches")
-	.option("--force", "with --import-cache --replace: replace ~/.fad-checker/ without keeping a backup")
+	.option("--force", "allow replacing a non-empty --target directory; with --import-cache --replace, skip backup")
 	.option("-o, --report-output <dir>", "report output directory", "./fad-checker-report")
 	.option("--ignore-test", "skip test-scoped dependencies in report")
 	.option("--cve-refresh", "force re-download of CVE database")
@@ -312,6 +415,24 @@ program
 	.option("--retire-refresh", "ignore retire cache and re-scan")
 	.option("--transitive-depth <n>", "max transitive resolution depth", "6")
 	.option("--ecosystem <list>", "auto (default) | all | comma list of codec ids", "auto")
+	.option("--app-plugins <list>", "auto (default) | none | all | comma list of bundled application plugins", "auto")
+	.option("--scan-context <kind>", "application input context: source (default) | installation | component", "source")
+	.option("--list-app-plugins", "list bundled application plugins and their qualified capabilities")
+	.option("--private-component <path>", "mark an application component path private; repeatable", (value, list) => [...list, value], [])
+	.option("--public-component <path=slug>", "verify a public WordPress plugin/theme catalogue slug; repeatable", (value, list) => [...list, value], [])
+	.option("--wordfence-feed <file>", "local Wordfence v3 vulnerability feed JSON snapshot for WordPress advisories")
+	.option("--drupal-advisories <file>", "local packages.drupal.org security-advisories JSON snapshot")
+	.option("--wordfence-feed-url <url>", "override the official Wordfence v3 production-feed URL for a live scan; requires an API key")
+	.option("--wordfence-api-key <key>", "Wordfence v3 bearer key for a live feed (or set WORDFENCE_API_KEY)")
+	.option("--drupal-advisories-live [url]", "query the official packages.drupal.org security-advisories API live for the inventoried Drupal packages")
+	.option("--prestashop-advisories <file>", "local PrestaShop Github security-advisories JSON snapshot (the publisher's own machine feed)")
+	.option("--prestashop-advisories-live [url]", "query the official PrestaShop Github security-advisories feed live for the inventoried PrestaShop components")
+	.option("--typo3-advisories <file>", "local TYPO3 Github security-advisories JSON snapshot (the publisher's own machine feed)")
+	.option("--typo3-advisories-live [url]", "query the official TYPO3 Github security-advisories feed live for the inventoried TYPO3 components")
+	.option("--wp-checksums <file>", "local api.wordpress.org core checksums JSON snapshot to compare the WordPress core files against")
+	.option("--wp-checksums-live [url]", "fetch the official api.wordpress.org core checksums live and compare the WordPress core files; divergences are diagnostics, not CVEs")
+	.option("--wp-checksums-locale <locale>", "locale of the WordPress distribution checksums reference (default en_US)", "en_US")
+	.option("--max-advisory-age <duration>", "reject advisory snapshots older than this (e.g. 72h, 30d); the snapshot must declare its collection date")
 	.option("--no-maven", "skip the Maven codec")
 	.option("--no-gradle", "skip the Gradle codec")
 	.option("--no-npm", "skip the npm codec")
@@ -339,7 +460,7 @@ program
 // The -d / -a vocabularies, laid out once under the options instead of wrapped inside two
 // option descriptions where they cost fifteen lines.
 program.addHelpText("after", `
-  -d  eol nvd osv epss kev retire transitive all-libs checksums osv-db report
+  -d  eol nvd osv packagist-audit epss kev retire transitive all-libs checksums osv-db report
       vendored-js-inventory default-excludes
       maven gradle npm yarn nuget composer pypi go ruby js jars binaries certs
   -a  licenses eol-support typosquat snyk osv-db nvd-cpe-match cve-refresh
@@ -353,7 +474,8 @@ program.addHelpText("after", `
 if (!process.argv.includes("--help-all")) {
 	const { foldedFlags } = require("./lib/cli-groups");
 	const { ADMIN_FLAGS, REPORTS } = require("./lib/cli-groups");
-	const folded = new Set([...foldedFlags(), ...ADMIN_FLAGS, ...REPORTS.map(r => `--report-${r}`)]);
+	const folded = new Set([...foldedFlags(), ...ADMIN_FLAGS, ...REPORTS.map(r => `--report-${r}`),
+		"--list-app-plugins", "--scan-context", "--private-component", "--public-component", "--wordfence-feed", "--drupal-advisories", "--wordfence-feed-url", "--drupal-advisories-live", "--prestashop-advisories", "--prestashop-advisories-live", "--typo3-advisories", "--typo3-advisories-live", "--wp-checksums", "--wp-checksums-live", "--wp-checksums-locale", "--max-advisory-age", "--fail-on-incomplete"]);
 	for (const opt of program.options) if (folded.has(opt.long)) opt.hidden = true;
 } else {
 	process.argv = process.argv.map(a => a === "--help-all" ? "--help" : a);
@@ -433,12 +555,28 @@ if (!options.offline) {
 	// The mirror/registry rotations report their own exhaustion (their requests bypass the
 	// guard: they carry their own AbortSignal and failover).
 	setActiveLedger(sourceHealth);
-	const baseFetch = globalThis.fetch;
+	let baseFetch = globalThis.fetch;
+	// --proxy-cache: routes ONLY the known public sources through the shared cache server;
+	// the guard still sees the ORIGINAL URL, so a dead proxy is retried and reported as
+	// a dead source (exit 2 naming the skip flag), never as a quiet coverage hole. Private
+	// registries keep going direct — their Authorization headers never reach the proxy.
+	if (options.proxyCache) {
+		const { proxiedFetch } = require("./lib/proxy-cache");
+		try {
+			baseFetch = proxiedFetch(options.proxyCache, { fetch: baseFetch });
+		} catch (err) {
+			console.error(chalk.red(`❌  ${err.message}`));
+			process.exit(2);
+		}
+		if (verbose) console.log(chalk.gray(`   proxy-cache: ${options.proxyCache}`));
+	}
 	globalThis.fetch = guardedFetch({
 		health: sourceHealth,
 		fetch: baseFetch,
 		onRetry: r => ui.interject(`  ${chalk.yellow("⚠")} ${r.label} ${chalk.dim(`— ${r.code}, attempt ${r.attempt}/${r.of}, retrying in ${Math.round(r.delayMs / 1000)}s`)}`),
 	});
+} else if (options.proxyCache) {
+	console.warn(chalk.yellow("⚠️  --proxy-cache ignored (--offline makes no requests at all)"));
 }
 /**
  * Stop the run the moment a source is declared unreachable — before the remaining steps and
@@ -470,6 +608,7 @@ const readOnly = !options.target;
 // not a scan. The vulnerability scan only joins the run when something explicitly
 // needs its output: a Snyk merge, a report file, or a CI gate.
 const scanRequested = !!(options.snyk || options.baseline || options.failOnNew
+	|| options.failOnIncomplete
 	|| (options.failOn && options.failOn !== "none")
 	|| [options.reportHtml, options.reportDoc, options.reportSbom, options.reportCsaf, options.reportJson, options.reportSarif].some(v => v !== undefined));
 const extractOnly = !readOnly && !scanRequested;
@@ -484,22 +623,44 @@ if (options.src && options.importAnonymized) {
 	console.warn(chalk.yellow("⚠️  --import-anonymized ignores --src (the descriptor is the source of deps)"));
 }
 
-if (options.src && options.target) {
-	// --target is rimraf'd before being rewritten, so it must NOT overlap --src in
+function assertSafeExtractionTarget() {
+	if (!options.src || !options.target) return;
+	// --force may replace --target before writing, so it must NOT overlap --src in
 	// EITHER direction: not the same dir, not a subdir of --src, and — the
 	// catastrophic case — not a PARENT of --src (which would delete the source tree
 	// and everything beside it).
-	const srcAbs = path.resolve(options.src);
-	const tgtAbs = path.resolve(options.target);
+	let srcAbs;
+	try { srcAbs = fs.realpathSync(path.resolve(options.src)); }
+	catch { console.error(chalk.red("❌  --src must be an existing directory")); process.exit(1); }
+	const targetInput = path.resolve(options.target);
+	const targetStat = fs.lstatSync(targetInput, { throwIfNoEntry: false });
+	if (targetStat && (!targetStat.isDirectory() || targetStat.isSymbolicLink())) {
+		console.error(chalk.red("❌  --target must be a real directory, not a file or symlink"));
+		process.exit(1);
+	}
+	let ancestor = targetInput;
+	const suffix = [];
+	while (!fs.existsSync(ancestor) && path.dirname(ancestor) !== ancestor) {
+		suffix.unshift(path.basename(ancestor));
+		ancestor = path.dirname(ancestor);
+	}
+	const tgtAbs = path.join(fs.realpathSync(ancestor), ...suffix);
 	const relFromSrc = path.relative(srcAbs, tgtAbs); // target as seen from src
 	const relToSrc = path.relative(tgtAbs, srcAbs);   // src as seen from target
 	const targetInsideSrc = !relFromSrc || (!relFromSrc.startsWith("..") && !path.isAbsolute(relFromSrc));
 	const srcInsideTarget = !relToSrc || (!relToSrc.startsWith("..") && !path.isAbsolute(relToSrc));
 	if (targetInsideSrc || srcInsideTarget) {
-		console.error(chalk.red("❌  --target must not overlap --src (it cannot be the same as, a subdirectory of, or a parent of --src) — it is deleted before being rewritten"));
+		console.error(chalk.red("❌  --target must not overlap --src (it cannot be the same as, a subdirectory of, or a parent of --src)"));
 		process.exit(1);
 	}
+	if (targetStat) {
+		if (fs.readdirSync(targetInput).length && !options.force) {
+			console.error(chalk.red("❌  --target is non-empty; pass --force to replace it"));
+			process.exit(1);
+		}
+	}
 }
+assertSafeExtractionTarget();
 
 // Maven Central presence cache (~/.fad-checker/maven-exists-cache.json) — keyed by
 // "g:a", value true (on a repo) / false (absent → likely private). Persisted so an
@@ -793,7 +954,8 @@ async function timedPhase(label, fn) {
 	}
 
 	if (!readOnly) {
-		try { await rimraf(options.target); } catch (_) { /* fresh dir */ }
+		assertSafeExtractionTarget();
+		if (options.force) await rimraf(options.target);
 	}
 
 	// Maven POM rewrite (cleanup feature). Parse + inheritance already happened
@@ -976,6 +1138,71 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	let scanWarnings = [];
 	let registryPrivateHits = [];
 	const directCount = resolved.size;
+	let appState = { applications: [], inventory: [], findings: [], coverage: [], diagnostics: [] };
+	let applicationRelations = [];
+	if (options.src) {
+		const wordfenceApiKey = options.wordfenceApiKey || process.env.WORDFENCE_API_KEY || null;
+		const { DRUPAL_ADVISORIES_URL, WORDFENCE_PRODUCTION_URL, PRESTASHOP_GITHUB_ADVISORIES_URL, TYPO3_GITHUB_ADVISORIES_URL } = require("./lib/application-providers/live-snapshot");
+		const wordfenceLiveUrl = options.wordfenceFeedUrl || (wordfenceApiKey && !options.wordfenceFeed ? WORDFENCE_PRODUCTION_URL : null);
+		if (offline && (wordfenceLiveUrl || options.drupalAdvisoriesLive || options.prestashopAdvisoriesLive || options.typo3AdvisoriesLive || options.wpChecksumsLive)) {
+			console.error(chalk.red("❌  --offline cannot fetch live advisory sources; supply a local --wordfence-feed / --drupal-advisories / --prestashop-advisories / --typo3-advisories / --wp-checksums snapshot instead"));
+			process.exit(2);
+		}
+		if (wordfenceLiveUrl && !wordfenceApiKey) {
+			ui.warn("Wordfence live scan requires an API key: use --wordfence-api-key or WORDFENCE_API_KEY. No report was written.");
+			process.exit(2);
+		}
+		let maxAdvisoryAgeMs = 0;
+		if (options.maxAdvisoryAge) {
+			const { parseMaxAge } = require("./lib/advisory-freshness");
+			try { maxAdvisoryAgeMs = parseMaxAge(options.maxAdvisoryAge); }
+			catch (error) {
+				console.error(chalk.red(`❌  ${error.message}`));
+				process.exit(2);
+			}
+		}
+		const drupalLiveUrl = options.drupalAdvisoriesLive
+			? (options.drupalAdvisoriesLive === true ? DRUPAL_ADVISORIES_URL : options.drupalAdvisoriesLive) : null;
+		const prestashopLiveUrl = options.prestashopAdvisoriesLive
+			? (options.prestashopAdvisoriesLive === true ? PRESTASHOP_GITHUB_ADVISORIES_URL : options.prestashopAdvisoriesLive) : null;
+		const typo3LiveUrl = options.typo3AdvisoriesLive
+			? (options.typo3AdvisoriesLive === true ? TYPO3_GITHUB_ADVISORIES_URL : options.typo3AdvisoriesLive) : null;
+		const wpChecksumsLiveUrl = options.wpChecksumsLive
+			? (options.wpChecksumsLive === true ? require("./lib/application-providers/wp-checksums").WP_CHECKSUMS_API : options.wpChecksumsLive) : null;
+		try {
+			const { allApplicationPlugins } = require("./lib/application-plugins");
+			const { runApplicationPlugins } = require("./lib/application-plugins/runner");
+			const { buildApplicationRelations } = require("./lib/application-inventory");
+			appState = await runApplicationPlugins(options.src, { plugins: allApplicationPlugins(), selection: options.appPlugins,
+				resolvedDeps: resolved, activeCodecIds: activeIds, excludePath, defaultExcludes, scanContext: options.scanContext,
+				privateComponentPaths: options.privateComponent || [], publicComponents: options.publicComponent || [],
+				wordfenceFeedPath: options.wordfenceFeed || null, drupalAdvisoriesPath: options.drupalAdvisories || null,
+				prestashopAdvisoriesPath: options.prestashopAdvisories || null, typo3AdvisoriesPath: options.typo3Advisories || null,
+				liveWordfenceUrl: wordfenceLiveUrl, wordfenceApiKey, liveDrupalAdvisoriesUrl: drupalLiveUrl,
+				livePrestashopAdvisoriesUrl: prestashopLiveUrl, liveTypo3AdvisoriesUrl: typo3LiveUrl,
+				wpChecksumsPath: options.wpChecksums || null, liveWpChecksumsUrl: wpChecksumsLiveUrl,
+				wpChecksumsLocale: options.wpChecksumsLocale || "en_US",
+				advisoryCacheDir: path.join(require("os").homedir(), ".fad-checker", "advisory-snapshots"),
+				fetchImpl: (...args) => fetch(...args),
+				maxAdvisoryAgeMs,
+				requiredProviderIds: [options.wordfenceFeed && "wordfence-v3", options.drupalAdvisories && "drupal-security-advisories",
+					wordfenceLiveUrl && "wordfence-v3", options.drupalAdvisoriesLive && "drupal-security-advisories",
+					(options.prestashopAdvisories || prestashopLiveUrl) && "github-prestashop-advisories",
+					(options.typo3Advisories || typo3LiveUrl) && "github-typo3-advisories",
+					(options.wpChecksums || wpChecksumsLiveUrl) && "wordpress-checksums"].filter(Boolean) });
+			applicationRelations = buildApplicationRelations(options.src, appState.applications, appState.inventory, resolved);
+			if (appState.applications.length) ui.info(chalk.dim(`${appState.applications.length} application(s), ${appState.inventory.length} component(s) inventoried`));
+			if (appState.applications.some(app => app.type === "wordpress") && !options.wordfenceFeed && !wordfenceLiveUrl)
+				ui.warn("WordPress advisory scan did not run: supply --wordfence-feed, or a Wordfence API key for the live feed.");
+			if (appState.applications.some(app => app.type === "prestashop") && !options.prestashopAdvisories && !prestashopLiveUrl)
+				ui.warn("PrestaShop advisory scan did not run: supply --prestashop-advisories, or use --prestashop-advisories-live.");
+			if (appState.applications.some(app => app.type === "typo3") && !options.typo3Advisories && !typo3LiveUrl)
+				ui.warn("TYPO3 advisory scan did not run: supply --typo3-advisories, or use --typo3-advisories-live.");
+		} catch (error) {
+			console.error(chalk.red(`❌  application plugin selection failed: ${error.message}`));
+			process.exit(2);
+		}
+	}
 	// NOTE: scan-completeness (unresolved-versions) is computed LATER — after the BOM
 	// version-resolution step backfills external-BOM-managed versions — so it reflects
 	// what's *genuinely* still unresolved, not what a Maven Central BOM fetch will fix.
@@ -1026,6 +1253,12 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		? require("./lib/maven-bom").collectExternalParents(mavenStore) : [];
 	const willBom = allBoms.length > 0 || externalParents.length > 0;
 	const willOsv = !!options.osv;
+	// Packagist security-advisories lane (Composer): the advisory DB `composer audit`
+	// queries. OSV misses CVEs that exist there only as CVEProject entries without
+	// Packagist coordinates (measured: twig/twig CVE-2026-46636/46627, knp-snappy
+	// CVE-2026-46643 on the real-instance corpus) — this lane is their official home.
+	const willPackagistAudit = options.packagistAudit !== false &&
+		[...resolved.values()].some(d => d.ecosystem === "composer");
 	// Local OSV DB import (Maven): offline-complete OSV recall, independent of the per-dep
 	// OSV.dev cache. Opt-in (downloads ~9 MB once); then matches online or offline.
 	const { autoEnableOsvDb, hasOsvDbIndex } = require("./lib/osv-db");
@@ -1044,7 +1277,9 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const willBinaryId = [...resolved.values()].some(d => d.provenance === "binary");
 	// License detection piggybacks on the registry passes (same fetched metadata),
 	// so it adds no progress step of its own.
-	const totalSteps = [willBom, willTransitive, willOverlay, willCve, willEol, willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willOsvDb, willNvd, willEpss, willKev, willRetire, willCerts, willBinaryId].filter(Boolean).length;
+	const totalSteps = [willBom, willTransitive, willOverlay, willCve, willEol, willEol && composerPlatforms.length > 0,
+		willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willPackagistAudit, willOsvDb,
+		willNvd, willEpss, willKev, willRetire, willCerts, willBinaryId].filter(Boolean).length;
 	const progress = new ui.Progress(totalSteps, { onStepEnd: abortIfDegraded });
 
 	if (willBom) {
@@ -1157,8 +1392,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			const phpCycles = await outdated.getEolCycles("php", { offline });
 			const r = evaluatePhpRuntime(composerPlatforms, phpCycles, { eolSupport: !!options.eolSupport });
 			eolResults.push(...r.findings);
-			scanWarnings.push(...r.warnings);
-			st.done(r.findings.length ? eolSummaryLabel(r.findings) : (r.warnings.length ? "undetermined from manifests (see chapter 0)" : "supported"));
+			st.done(r.findings.length ? eolSummaryLabel(r.findings) : "supported");
 		} catch (err) { st.fail(err.message); }
 	}
 
@@ -1243,6 +1477,29 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		}
 	}
 
+	// 4b-bis. Packagist security advisories (Composer) — the database `composer audit`
+	// queries. Default-on like OSV: silently missing it shrinks the report; `-d
+	// packagist-audit` turns it off. Only package NAMES travel to packagist.org.
+	if (willPackagistAudit) {
+		const st = progress.start("Packagist security advisories");
+		try {
+			const { queryPackagistAudit } = require("./lib/packagist-audit");
+			let skippedOtherRegistry = [];
+			const pkMatches = await queryPackagistAudit(resolved, { verbose, offline,
+				onProgress: (p, t) => st.tick(p, t), onSkipped: names => { skippedOtherRegistry = names; } });
+			const before = cveMatches.length;
+			cveMatches = mergeBySource(cveMatches, pkMatches);
+			st.done(`${pkMatches.length} advisories matched · +${cveMatches.length - before} after merge` +
+				(skippedOtherRegistry.length ? ` · ${skippedOtherRegistry.length} non-Packagist package(s) skipped` : ""));
+			if (skippedOtherRegistry.length) scanWarnings.push({ type: "packagist-non-packagist-package",
+				message: `${skippedOtherRegistry.length} Composer package(s) from another registry were not queried against Packagist: ${skippedOtherRegistry.join(", ")}. Their application advisory coverage remains incomplete.` });
+		} catch (err) {
+			st.fail(err.message);
+			console.error(chalk.red(`❌  ${err.message}; Packagist advisory coverage is incomplete. No report was written.`));
+			process.exit(2);
+		}
+	}
+
 	// 4b'. Local OSV database (Maven) — offline-COMPLETE recall. The per-dep OSV.dev
 	// queries above only cover deps cached online; the imported full OSV DB matches every
 	// dep offline, deterministically, regardless of cache warmth (the OSV-Scanner model).
@@ -1262,6 +1519,15 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			}
 		} catch (err) { st.fail(err.message); }
 	}
+
+	// Application-provider findings enter the shared enrichment, priority and gate
+	// pipeline through the same alias-aware seam as every other CVE source: a publisher
+	// constat that the standard Composer lane already found (same coord+version+CVE —
+	// e.g. the exact pin in a TYPO3 sysext manifest alongside the observed core marker)
+	// merges into ONE finding with the union of sources, and the application attribution
+	// is rebuilt from the physical occurrence (expandComposerFindings). Findings the
+	// standard lanes cannot see (Drupal core, WordPress catalogue) pass through intact.
+	if (appState.findings.length) cveMatches = require("./lib/merge-sources").mergeBySource(cveMatches, appState.findings);
 
 	// 4c. NVD enrichment — canonical description + full CVSS for matched CVEs.
 	if (willNvd) {
@@ -1370,6 +1636,17 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 					st.fail(r.meta.error);
 					retireWarnings.push({ type: "retire-failed", message: `${r.meta.error} — the vendored-JS scan (chapters 1D / 2) could not run, so any vendored \`.js\` (jQuery, Bootstrap, …) is NOT covered. Re-run with \`-v\` for the exact error; check the \`--src\` path exists and is readable.` });
 				} else {
+					// The vendored-JS chapter lists CWEs on the library row — retire.js itself
+					// has none, so the matches join the SAME NVD enrichment the composer/npm
+					// findings already went through (per-CVE cache, only CVE-shaped ids queried).
+					// The enrichment also upgrades retire's one-line summary to NVD's canonical
+					// description. Folded into this step so the progress count stays exact.
+					if (retireMatches.length && willNvd) {
+						try {
+							const { enrichMatches } = require("./lib/nvd");
+							await enrichMatches(retireMatches, { verbose, offline, onProgress: (p, t) => st.tick(p, t) });
+						} catch (err) { if (verbose) ui.warn(`vendored-JS NVD enrichment skipped: ${err.message}`); }
+					}
 					st.done(`${retireMatches.length} finding(s)${invN ? ` · ${invN} lib(s) inventoried` : ""}`);
 				}
 			} catch (err) { st.fail(err.message); retireWarnings.push({ type: "retire-failed", message: `retire.js scan failed: ${err.message} — vendored-JS chapters (1D / 2) not covered.` }); }
@@ -1419,6 +1696,16 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		const { attributeMatchOrigins } = require("./lib/attribution");
 		const reattributed = attributeMatchOrigins(cveMatches);
 		if (reattributed && verbose) console.log(`   re-attributed ${reattributed} match(es) to their resolving manifest/module`);
+	}
+	if (options.src) {
+		const { expandComposerFindings } = require("./lib/application-inventory");
+		cveMatches = expandComposerFindings(cveMatches, options.src, applicationRelations);
+	}
+	{
+		const { coalescePhysicalFindings } = require("./lib/finding-summary");
+		cveMatches = coalescePhysicalFindings(cveMatches, options.src || null);
+		const { attachPriority } = require("./lib/priority");
+		attachPriority(cveMatches);
 	}
 
 	// 6b. Supply-chain risk lane (pure + offline): flag KNOWN-MALICIOUS advisories
@@ -1652,6 +1939,37 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	}
 
 	const reportWarnings = [
+		...appState.diagnostics.map(d => ({ type: "cms-coverage", code: d.code, message: `${d.applicationId || d.pluginId || "application"}: ${d.message}` })),
+		// CMS coverage gaps are grouped per (application, capability, source, diagnostic)
+		// cause: 14 unassessed themes are one cause with 14 components, not 14 identical
+		// alerts. The structured fields let the report render reason, action and the
+		// component list in its own language; the English message stays for JSON consumers.
+		...(() => {
+			const componentById = new Map(appState.inventory.map(c => [c.id, c]));
+			const groups = new Map();
+			for (const c of appState.coverage) {
+				if (c.execution !== "partial" && c.execution !== "not-run" && c.execution !== "failed") continue;
+				if (appState.diagnostics.some(d => d.applicationId === c.applicationId && d.code === c.diagnostic)) continue;
+				const diagnostic = c.diagnostic || "CMS_INCOMPLETE";
+				const key = `${c.applicationId}\0${c.capability}\0${c.sourceId || ""}\0${diagnostic}`;
+				if (!groups.has(key)) groups.set(key, { applicationId: c.applicationId, capability: c.capability,
+					sourceId: c.sourceId || null, execution: c.execution, diagnostic, checks: [] });
+				groups.get(key).checks.push(c);
+			}
+			return [...groups.values()].map(g => {
+				const items = g.checks.map(c => {
+					const component = componentById.get(c.occurrenceId);
+					return { id: component ? `${component.kind || "component"} · ${component.name || component.coord || component.id}`
+							: c.occurrenceId || g.applicationId,
+						manifestPaths: component?.path ? [path.join(options.src, component.path)] : [] };
+				});
+				return { type: "cms-coverage", code: g.diagnostic, count: g.checks.length,
+					applicationId: g.applicationId, capability: g.capability, sourceId: g.sourceId,
+					execution: g.execution, diagnostic: g.diagnostic, items,
+					message: `${g.applicationId}: ${g.capability}${g.sourceId ? ` (${g.sourceId})` : ""} — ` +
+						`${g.checks.length} component(s) not evaluated (${g.diagnostic})` };
+			});
+		})(),
 		...(suppressedCount ? [{
 			type: "suppressed",
 			count: suppressedCount,
@@ -1691,24 +2009,29 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		try {
 			const baseDoc = JSON.parse(fs.readFileSync(options.baseline, "utf8"));
 			const { buildFindings } = require("./lib/json-export");
-			const curDoc = buildFindings({ cveMatches, retireMatches, vendoredJsInventory, eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version, typosquats });
+			const curDoc = buildFindings({ cveMatches, retireMatches, vendoredJsInventory, eolResults, obsoleteResults, outdatedResults, licenseResults,
+				excludedDirs, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version, typosquats,
+				applications: appState.applications, applicationInventory: appState.inventory,
+				applicationRelations, coverage: appState.coverage, warnings: reportWarnings });
 			const { diffFindings, summarizeDiff } = require("./lib/diff");
 			const dd = diffFindings(baseDoc, curDoc);
 			diff = { ...dd, summary: summarizeDiff(dd) };
-			jsonDiff = { summary: diff.summary, cve: { added: dd.cve.added, removed: dd.cve.removed } };
+			jsonDiff = { summary: diff.summary, cve: { added: dd.cve.added, removed: dd.cve.removed, unassessed: dd.cve.unassessed } };
 		} catch (err) { ui.warn(`baseline diff skipped (${options.baseline}): ${err.message}`); }
 	}
 
 	const wrote = [];
+	// Apply the source-health gate for every output combination, including JSON-only.
+	abortIfDegraded();
 	if (out.html || out.doc) {
 		await ensureDir(out.html); await ensureDir(out.doc);
 		// Last gate: the collection + Maven existence phases run before the step progress
 		// exists, so their outages are only seen here. Nothing has been written yet.
-		abortIfDegraded();
 		const { htmlPath, docPath } = await writeReports({
 			cveMatches: prodMatches, devCveMatches: devMatches, embeddedMatches, retireMatches, vendoredJsInventory, certFindings,
 			eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs,
 			resolvedDeps: resolved, projectInfo, warnings: reportWarnings, parsedManifests, diff, locale: options.lang,
+			applications: appState.applications, applicationInventory: appState.inventory, applicationRelations, coverage: appState.coverage,
 			htmlPath: out.html, docPath: out.doc,
 		});
 		if (htmlPath) wrote.push(["HTML report", htmlPath]);
@@ -1737,7 +2060,10 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		try {
 			const { writeFindings } = require("./lib/json-export");
 			await ensureDir(out.json);
-			writeFindings({ cveMatches, retireMatches, vendoredJsInventory, certFindings, eolResults, obsoleteResults, outdatedResults, licenseResults, excludedDirs, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version, typosquats, diff: jsonDiff }, out.json);
+			writeFindings({ cveMatches, retireMatches, vendoredJsInventory, certFindings, eolResults, obsoleteResults,
+				outdatedResults, licenseResults, excludedDirs, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version,
+				typosquats, diff: jsonDiff, applications: appState.applications, applicationInventory: appState.inventory,
+				applicationRelations, coverage: appState.coverage, warnings: reportWarnings }, out.json);
 			wrote.push(["Findings JSON", out.json]);
 		} catch (err) { ui.warn(`JSON export failed: ${err.message}`); }
 	}
@@ -1806,52 +2132,25 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			ui.info(chalk.dim(`gate: no blocking finding`));
 		}
 	}
-}
-
-/**
- * Merge two match arrays, dedup by (dep, cve.id). When both sides have the
- * same finding, the result keeps the existing record but its `source` is
- * upgraded so the report can show which engine(s) saw it.
- */
-function mergeBySource(existing, additions) {
-	const byKey = new Map();
-	// coordKey keeps embedded-binary findings distinct from a same-g:a:v declared dep
-	// (see cve-match dedup). Falls back to g:a for any match lacking a coordKey.
-	const k = m => `${m.dep.coordKey || (m.dep.groupId + ":" + m.dep.artifactId)}:${m.dep.version}|${m.cve.id}`;
-	for (const m of existing || []) byKey.set(k(m), { ...m, source: m.source || "fad" });
-	for (const m of additions || []) {
-		const key = k(m);
-		if (byKey.has(key)) {
-			const prev = byKey.get(key);
-			const sources = new Set([prev.source, m.source].filter(Boolean));
-			// merge fields: prefer non-empty values, keep first severity if defined
-			byKey.set(key, {
-				...prev,
-				source: sources.size > 1 ? [...sources].sort().join("+") : [...sources][0],
-				cve: {
-					...prev.cve,
-					...m.cve,
-					// keep highest non-null score
-					score: Math.max(prev.cve.score ?? 0, m.cve.score ?? 0) || prev.cve.score || m.cve.score,
-					// prefer non-UNKNOWN severity
-					severity: (prev.cve.severity && prev.cve.severity !== "UNKNOWN") ? prev.cve.severity : m.cve.severity,
-					// prefer the longer description
-					description: ((prev.cve.description || "").length > (m.cve.description || "").length) ? prev.cve.description : m.cve.description,
-				},
-			});
-		} else {
-			byKey.set(key, { ...m, source: m.source || "osv" });
+	if (options.failOnIncomplete) {
+		const { requiredCoverageComplete } = require("./lib/scan-coverage");
+		const raw = options.failOnIncomplete === true ? "inventory,advisories" : String(options.failOnIncomplete);
+		const required = [...new Set(raw.split(",").map(x => x.trim()).filter(Boolean))];
+		const known = new Set(["inventory", "advisories", "recipes"]);
+		if (!required.length || required.some(x => !known.has(x))) {
+			console.error(chalk.red(`❌  invalid --fail-on-incomplete capabilities: ${raw}`));
+			process.exitCode = 2;
+		} else if (!requiredCoverageComplete(appState.coverage, required)) {
+			ui.section("Coverage gate");
+			console.log(chalk.red(`✗ required application checks incomplete: ${required.join(", ")}`));
+			process.exitCode = 2;
 		}
 	}
-	const merged = [...byKey.values()];
-	const rank = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, NONE: 0, UNKNOWN: 0 };
-	merged.sort((a, b) => {
-		const sa = rank[(a.cve.severity || "UNKNOWN").toUpperCase()] || 0;
-		const sb = rank[(b.cve.severity || "UNKNOWN").toUpperCase()] || 0;
-		if (sb !== sa) return sb - sa;
-		return (a.cve.id || "").localeCompare(b.cve.id || "");
-	});
-	return merged;
 }
+
+// mergeBySource now lives in lib/merge-sources.js (extracted to be unit-testable,
+// and made alias-aware: the same advisory can arrive keyed by its CVE from one source
+// and by its GHSA remoteId from another — see that module's header).
+const { mergeBySource } = require("./lib/merge-sources");
 
 } // end: compiled-binary retire-mode guard (see top of file)

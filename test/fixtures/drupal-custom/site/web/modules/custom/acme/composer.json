@@ -1,0 +1,4 @@
+{
+  "name": "acme/payments",
+  "require": { "vendor/vulnerable-lib": "1.0.0" }
+}

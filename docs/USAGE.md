@@ -9,7 +9,7 @@ fad-checker -s <src> [-t <target>] [-e <regex>] [other options]
 ```
 
 - `-s, --src <src>` — **required**. Root of the source tree to scan. Contains `pom.xml` and/or `package(-lock).json` / `yarn.lock`.
-- `-t, --target <dir>` — optional. **Extraction mode.** Write a parallel directory of "cleaned" POMs (private/excluded deps stripped, reactor modules linked to each other) to `<dir>` **and mirror every non-Maven lockfile/manifest** (`package-lock.json`/`yarn.lock`/`pnpm-lock.yaml`, `composer.lock`, `poetry.lock`/`Pipfile.lock`/…, `*.csproj`/`packages.lock.json`, `go.mod`/`go.sum`, `Gemfile.lock`, …) into it — so **any** scanner pointed at `<dir>` (`snyk test --all-projects` among them) sees **every** ecosystem, not just Maven. Each POM is reduced to the dependency-relevant nodes (coordinates, `properties`, `dependencyManagement`, `dependencies`, `modules`), reactor parents are rewired to their real in-tree `relativePath`, and `${…}` is resolved in coordinates. The run then **stops**: the only network action is the Maven-repository *existence* check, which is also what **identifies your private/internal modules** (coordinates that exist in no configured repository) — skipped under `--offline`, or when no repository answers a 5 s preflight. No CVE/EOL/outdated pass, no report — add `--snyk`, a `--report-<type>`, `--fail-on`/`--fail-on-new` or `--baseline` to also run the scan. Without `-t`, the run is read-only and produces the full report.
+- `-t, --target <dir>` — optional. **Extraction mode.** Write a parallel directory of "cleaned" POMs (private/excluded deps stripped, reactor modules linked to each other) to `<dir>` **and mirror every non-Maven lockfile/manifest** (`package-lock.json`/`yarn.lock`/`pnpm-lock.yaml`, `composer.lock`/`symfony.lock`, `poetry.lock`/`Pipfile.lock`/…, `*.csproj`/`packages.lock.json`, `go.mod`/`go.sum`, `Gemfile.lock`, …) into it — so **any** scanner pointed at `<dir>` (`snyk test --all-projects` among them) sees **every** ecosystem, not just Maven. Each POM is reduced to the dependency-relevant nodes (coordinates, `properties`, `dependencyManagement`, `dependencies`, `modules`), reactor parents are rewired to their real in-tree `relativePath`, and `${…}` is resolved in coordinates. The run then **stops**: the only network action is the Maven-repository *existence* check, which is also what **identifies your private/internal modules** (coordinates that exist in no configured repository) — skipped under `--offline`, or when no repository answers a 5 s preflight. No CVE/EOL/outdated pass, no report — add `--snyk`, a `--report-<type>`, `--fail-on`/`--fail-on-new` or `--baseline` to also run the scan. A non-empty target requires `--force` because its contents are replaced. Without `-t`, the run is read-only and produces the full report.
 
 ## Output
 
@@ -40,19 +40,20 @@ fad-checker -s . -d binaries                  # skip committed native-binary sca
 fad-checker -s . -d certs                     # skip certificate / key-material scanning
 fad-checker -s . -d nvd,epss,certs -a licenses,typosquat -o ./audit   # the general shape
 
-> The individual `--no-npm`, `--licenses`, … flags still work; they are hidden from `--help`
-> to keep it to one screen. `--help-all` lists them.
 fad-checker -s . -a eol-support               # also flag "security-only" frameworks (e.g. Symfony 5.4 LTS since 2024-11-30)
 fad-checker -s . --cert-expiry-days 30        # warn on certs expiring within 30 days (default 90)
 ```
 
-> **Embedded JARs**: committed `.jar`/`.war`/`.ear` archives (vendored libs, Spring-Boot fat-jars, shaded uber-jars) are unzipped in-memory and their Maven coordinates — read from `META-INF/maven/.../pom.properties`, then `MANIFEST.MF`, then the file name — are reported in their own **Embedded binaries** chapter (1B), grouped by containing archive. The chapter is a **full inventory** of every embedded coordinate — vulnerable or not (the JAR counterpart of the native-binary inventory 1C and the vendored-JS inventory 1D) — with a CVE-status column per coord and the full CVE detail for vulnerable ones. So a committed fat-jar shows up even when nothing inside it is currently vulnerable. Auto when archives are present; `--no-jars` disables it. Archives with no resolvable coordinate are listed in chapter 0.
+> The individual `--no-npm`, `--licenses`, … flags still work; they are hidden from `--help`
+> to keep it to one screen. `--help-all` lists them.
 
-> **Committed native binaries**: `.dll`/`.exe`/`.so`/`.dylib` files are detected by extension **and** magic-byte confirmation (PE/ELF/Mach-O — images/fonts/assets are rejected even with a spoofed extension), hashed (SHA-1 + SHA-256) and **identified by checksum** online: **deps.dev** maps the hash to an exact package coordinate (byte-identical to a published artifact → *pristine*, and a candidate to declare as a real dependency); **CIRCL hashlookup** recognises known OS/distro/CDN/NSRL files (*known-good*) and carries a free `KnownMalicious` flag. Files no source knows are *unknown*; a filename disagreeing with the resolved identity is *name≠checksum*. Reported in the **Unmanaged / vendored binaries** chapter (1C) and the JSON export (`unmanaged` array). Cached + `--offline`-aware; the binary scan is on by default in `auto` mode and disabled with `--no-binaries`. No malware/AV lane.
+> **Embedded JARs**: committed `.jar`/`.war`/`.ear` archives (vendored libs, Spring-Boot fat-jars, shaded uber-jars) are unzipped in-memory and their Maven coordinates — read from `META-INF/maven/.../pom.properties`, then `MANIFEST.MF`, then the file name — are reported in their own **Embedded binaries** section, grouped by containing archive. The section is a **full inventory** of every embedded coordinate — vulnerable or not (the JAR counterpart of the native-binary and vendored-JS inventories) — with a CVE-status column per coord and the full CVE detail for vulnerable ones. So a committed fat-jar shows up even when nothing inside it is currently vulnerable. Auto when archives are present; `--no-jars` disables it. Archives with no resolvable coordinate are listed in chapter 0.
 
-> **Certificates & key material**: committed cryptographic files are inventoried in chapter **2.4** and the JSON export (`certificates` array) + SARIF (`FAD-*` rules). Detected by extension (`.pem`/`.crt`/`.cer`/`.der`/`.key`/`.pub`/`.p12`/`.pfx`/`.jks`/`.keystore`/`.ppk`/`.asc`/`.gpg`) **and** conventional SSH filenames (`id_rsa`/`id_ed25519`/…/`authorized_keys`/`known_hosts`), then classified by content: **X.509 certificates** (parsed with Node's built-in `crypto.X509Certificate` — flagged `expired`, `expiring` within `--cert-expiry-days` (default 90), `weak key` RSA<2048 / weak EC curve, `weak signature` MD5/SHA1, `self-signed`); **keys** — every one labelled **private** (a committed secret → *critical*) or **public** (*low*, inventory) — covering PEM (PKCS#1/PKCS#8/SEC1), **OpenSSH of every algorithm** (RSA/DSA/ECDSA/Ed25519 incl. FIDO `-sk`), PuTTY `.ppk`, PGP, and one-line SSH public keys; and **keystores** (JKS/JCEKS by magic, PKCS#12 by extension — contents not decrypted, hashed + flagged *medium*). **100% offline** — no network, no decryption. On by default; `--no-certs` disables it, `--cert-expiry-days <n>` sets the expiry window. (Inventory only — these findings don't affect the `--fail-on` gate.)
+> **Committed native binaries**: `.dll`/`.exe`/`.so`/`.dylib` files are detected by extension **and** magic-byte confirmation (PE/ELF/Mach-O — images/fonts/assets are rejected even with a spoofed extension), hashed (SHA-1 + SHA-256) and **identified by checksum** online: **deps.dev** maps the hash to an exact package coordinate (byte-identical to a published artifact → *pristine*, and a candidate to declare as a real dependency); **CIRCL hashlookup** recognises known OS/distro/CDN/NSRL files (*known-good*) and carries a free `KnownMalicious` flag. Files no source knows are *unknown*; a filename disagreeing with the resolved identity is *name≠checksum*. Reported in the **Unmanaged / vendored binaries** section and the JSON export (`unmanaged` array). Cached + `--offline`-aware; the binary scan is on by default in `auto` mode and disabled with `--no-binaries`. No malware/AV lane.
 
-> **PHP runtime**: for every Composer project the declared PHP constraint is read (`composer.lock` `platform-overrides.php` › `composer.json` `config.platform.php` › `composer.lock` `platform.php` › `composer.json` `require.php`). A finding is emitted **only** when the constraint proves an end-of-life runtime — an exact pin, or a bounded range such as `^7.4` (= `<8.0`) whose newest allowed PHP is EOL. An open constraint (`>=7.2.5`) proves nothing about the deployed runtime and produces a chapter-0 `php-runtime-undetermined` note instead. Symfony/Laravel components are reported as **one row per framework** (the anchor package + a component count), never one row per component.
+> **Certificates & key material**: committed cryptographic files are inventoried in the unmanaged-components chapter and the JSON export (`certificates` array) + SARIF (`FAD-*` rules). Detected by extension (`.pem`/`.crt`/`.cer`/`.der`/`.key`/`.pub`/`.p12`/`.pfx`/`.jks`/`.keystore`/`.ppk`/`.asc`/`.gpg`) **and** conventional SSH filenames (`id_rsa`/`id_ed25519`/…/`authorized_keys`/`known_hosts`), then classified by content: **X.509 certificates** (parsed with Node's built-in `crypto.X509Certificate` — flagged `expired`, `expiring` within `--cert-expiry-days` (default 90), `weak key` RSA<2048 / weak EC curve, `weak signature` MD5/SHA1, `self-signed`); **keys** — every one labelled **private** (a committed secret → *critical*) or **public** (*low*, inventory) — covering PEM (PKCS#1/PKCS#8/SEC1), **OpenSSH of every algorithm** (RSA/DSA/ECDSA/Ed25519 incl. FIDO `-sk`), PuTTY `.ppk`, PGP, and one-line SSH public keys; and **keystores** (JKS/JCEKS by magic, PKCS#12 by extension — contents not decrypted, hashed + flagged *medium*). **100% offline** — no network, no decryption. On by default; `--no-certs` disables it, `--cert-expiry-days <n>` sets the expiry window. (Inventory only — these findings don't affect the `--fail-on` gate.)
+
+> **PHP runtime**: for every Composer project the declared PHP constraint is read (`composer.lock` `platform-overrides.php` › `composer.json` `config.platform.php` › `composer.lock` `platform.php` › `composer.json` `require.php`). A finding is emitted **only** when the constraint proves an end-of-life runtime — an exact pin, or a bounded range such as `^7.4` (= `<8.0`) whose newest allowed PHP is EOL. An open constraint (`>=7.2.5`) proves nothing about the deployed runtime and produces no finding and no warning — the deployed PHP must be checked against endoflife.date/php outside the scan. Symfony/Laravel components are reported as **one row per framework** (the anchor package + a component count), never one row per component.
 
 > **npm without a lockfile**: a `package.json` lacking a sibling
 > `package-lock.json`/`yarn.lock` is now scanned **best-effort** — pinned exact
@@ -107,7 +108,7 @@ fad-checker -s . --no-default-excludes                # also walk node_modules/v
 | `--exclude-path <glob...>` | Prune matching sub-paths (relative to `--src`). Repeatable; also settable as `excludePath: [...]` in `.fad-env.json` and unioned across all config layers. |
 | `--no-default-excludes` | Don't prune the built-in ignored dirs (`node_modules`, `bower_components`, `vendor`, `dist`, `build`, `out`, `target`, `.git`, `.gradle`, `__pycache__`, …). Walks everything — slower, but nothing is hidden. |
 
-For full transparency about what was *not* scanned, the report ends with an **"Ignored directories" appendix** (chapter 11) listing the actual directories the scan skipped — relative to `--src`, each tagged with the rule that pruned it (`default` vs `--exclude-path`). The same list is in the findings JSON as `excludedDirs[]`.
+For full transparency about what was *not* scanned, the report includes an **"Ignored directories" section** in scan context listing the actual directories the scan skipped — relative to `--src`, each tagged with the rule that pruned it (`default` vs `--exclude-path`). The same list is in the findings JSON as `excludedDirs[]`.
 
 ## Per-source toggles
 
@@ -117,17 +118,18 @@ Each data source can be disabled independently:
 | --- | --- |
 | `--no-report` | Write **no output files at all** (gate-only / CI mode) — the scan, terminal summary and `--fail-on` gate still run. See **Outputs** for the per-type `--report-*` flags |
 | `--no-transitive` | Don't fetch transitive Maven deps from Maven Central |
-| `--no-all-libs` | Don't query Maven Central for latest versions (skips chapter 6 Outdated and the "missing on Central" check) |
+| `--no-all-libs` | Don't query Maven Central for latest versions (skips the Outdated section and the "missing on Central" check) |
 | `--no-osv` | Skip OSV.dev (Google + GitHub aggregated feed) |
+| `--no-packagist-audit` | Skip the Packagist security-advisories lane for Composer deps — the endpoint `composer audit` queries. OSV misses CVEs it carries only as CVEProject entries without composer coordinates (twig/twig CVE-2026-46636/46627, knp-snappy CVE-2026-46643 on the real-instance corpus); this lane matches them with the official constraints. Only package names are sent |
 | `--no-nvd` | Skip NVD enrichment (no full CVSS, no CPE refinement) |
 | `--no-epss` | Skip EPSS (FIRST.org) exploit-prediction enrichment |
 | `--no-kev` | Skip CISA KEV (known-exploited) enrichment |
 | `--licenses` | Run license detection + the copyleft-policy chapter (**off by default**; legacy `--no-licenses` is a no-op) |
 | `--no-retire` | Skip retire.js vendored-JS scan |
-| `--no-vendored-js-inventory` | Keep only **vulnerable** vendored JS (chapter 2); skip the full **inventory** of all identified standalone JS libs (chapter 1D). The inventory is a cyber-hygiene constat — unmanaged third-party JS regardless of CVEs — on by default. |
-| `--no-jars` | Skip scanning embedded `.jar`/`.war`/`.ear` binaries for Maven coordinates (chapter 1B) |
-| `--no-binaries` | Skip scanning committed native binaries (`.dll`/`.exe`/`.so`/`.dylib`) — no checksum identity/integrity (chapter 1C) |
-| `--no-certs` | Skip the certificate / key-material scan (chapter 2.4) — committed certs, private/public keys and keystores |
+| `--no-vendored-js-inventory` | Keep only **vulnerable** vendored JS (the CVE chapter); skip the full **inventory** of all identified standalone JS libs (under unmanaged components). The inventory is a cyber-hygiene constat — unmanaged third-party JS regardless of CVEs — on by default. |
+| `--no-jars` | Skip scanning embedded `.jar`/`.war`/`.ear` binaries for Maven coordinates (the unmanaged-components chapter) |
+| `--no-binaries` | Skip scanning committed native binaries (`.dll`/`.exe`/`.so`/`.dylib`) — no checksum identity/integrity (the unmanaged-components chapter) |
+| `--no-certs` | Skip the certificate / key-material scan (the unmanaged-components chapter) — committed certs, private/public keys and keystores |
 | `--cert-expiry-days <n>` | Window for the certificate **expiring-soon** warning (default `90`) |
 | `-d, --disable <list>` | Turn features off, comma-separated: `eol nvd osv epss kev retire transitive all-libs checksums osv-db report vendored-js-inventory default-excludes` and any ecosystem (`maven gradle npm yarn nuget composer pypi go ruby js jars binaries certs`). Replaces the `--no-*` flags, which still work but are hidden from `--help` |
 | `-a, --activate <list>` | Turn on what is off by default: `licenses eol-support typosquat snyk osv-db nvd-cpe-match cve-refresh cve-offline osv-db-refresh retire-refresh` |
@@ -137,8 +139,63 @@ Each data source can be disabled independently:
 | `--lang <en\|fr>` | Language of the HTML / Word report (default `en`). Translates the report's own chrome — **all of it**: chapter titles and their counts, table headers, scope chips, every intro paragraph, every status pill, the warning headings, the licence categories, the methodology limitations, the per-ecosystem fix recipes, the empty states, and the executive summary both on screen and as the 📋 button pastes it — plus the CWE titles. **Not** the evidence: CVE descriptions, advisory text and registry reasons stay as published, and a CVSS severity keeps NVD's own wording where it is a finding's value. French CWE titles are fad's own (MITRE publishes English only) and carry MITRE's original with them |
 | `--no-eol` | Skip the end-of-life check (endoflife.date) — the flag the run suggests when that source is unreachable |
 | *(exit code 2)* | **A data source was unreachable and the cache didn't cover it.** Not a findings failure: nothing was written, because the report would have been incomplete. The message names the domain, the codes, the failing URL and the flag that skips that source. Only online; `--offline` never aborts. |
-| `--eol-support` | Also report frameworks/runtimes whose **active (bug-fix) support has ended** while security fixes are still provided (endoflife.date `support` field) — rendered as an "Out of active support" band under chapter 3.1, status `unsupported` in the JSON. Off by default: the default EOL set is unchanged. |
-| `--ignore-test` | Drop test-scoped Maven deps and dev npm deps from the scan entirely (chapter 2 will be empty) |
+| `--eol-support` | Also report frameworks/runtimes whose **active (bug-fix) support has ended** while security fixes are still provided (endoflife.date `support` field) — rendered as an "Out of active support" band under the maintenance chapter, status `unsupported` in the JSON. Off by default: the default EOL set is unchanged. |
+| `--ignore-test` | Drop test-scoped Maven deps and dev npm deps from the scan entirely (the dev-CVE section will be absent) |
+| `--proxy-cache <url>` | Route every public data-source request through a shared `fad-checker serve-cache` server — one upstream call per URL for all instances, persisted across restarts. Private registries always go direct. See **Shared proxy-cache server** |
+| `--proxy <url>` | Route ALL outbound requests through a corporate forward proxy (`http://host:port`; Node >= 24 or bun). See **Corporate forward proxy** |
+
+## Application inventory (experimental)
+
+The bundled `symfony`, `wordpress`, `drupal`, `laravel`, `joomla`, `prestashop`, `typo3`, and `magento` application plugins are currently experimental in capability, but a present CMS/framework is **activated by the default `--app-plugins auto`**: any recognized layout is inventoried automatically, with honest per-capability coverage (advisories stay `not-run (CMS_PROVIDER_UNCONFIGURED)` until their source is configured — never silently clean). Detection requires conjunctive positive evidence per product (e.g. WordPress needs `wp-load.php` + `wp-includes/version.php` + `wp-admin/index.php`; Symfony needs a kernel/front-controller marker *and* `symfony/framework-bundle` in that tree's lock; a bare `require` constraint never creates an application) — verified on real bare libraries (guzzle, laravel/framework as a package, the symfony/symfony monorepo, composer/composer): zero phantom applications. `--app-plugins none` disables every application plugin; `all` is an explicit synonym of the default; a comma list restricts to specific plugins. `--list-app-plugins` shows the available plugins.
+
+```bash
+fad-checker -s ./project --app-plugins symfony --offline --report-json
+fad-checker -s ./project --app-plugins wordpress --private-component site/wp-content/plugins/acme --offline
+fad-checker -s ./project --app-plugins wordpress --wordfence-feed ./wordfence-production.json --public-component site/wp-content/plugins/example=example --offline
+fad-checker -s ./project --app-plugins drupal --offline --fail-on-incomplete inventory,advisories
+fad-checker -s ./project --app-plugins drupal --drupal-advisories ./drupal-advisories.json --offline
+fad-checker -s ./shop --app-plugins prestashop,typo3 --prestashop-advisories ./ps-advisories.json --typo3-advisories ./t3-advisories.json --offline
+fad-checker -s ./shop --app-plugins prestashop,typo3 --prestashop-advisories-live --typo3-advisories-live
+fad-checker -s ./project --app-plugins wordpress --wp-checksums-live
+fad-checker -s ./project --app-plugins wordpress --wp-checksums ./wp-checksums-6.4.2-en_US.json --wp-checksums-locale en_US --offline
+fad-checker -s ./project --app-plugins laravel --offline --report-json
+fad-checker -s ./my-wordpress-plugin --app-plugins wordpress --scan-context component --offline --report-json
+fad-checker -s ./shop --app-plugins magento --offline --report-json
+fad-checker -s ./cms --app-plugins joomla,prestashop,typo3 --offline --report-json
+```
+
+Wave 2 recognizes these product layouts and component metadata:
+
+| Plugin | Tested source files / layout | Version authority | Advisory coverage |
+| --- | --- | --- | --- |
+| Joomla | 5.4.1 core manifest plus `libraries/src/Version.php`; typed extension XML under components, modules, plugins and templates | Runtime version constants, corroborated with the core manifest; extension `<version>` is its own version | Application advisories not yet qualified; Composer packages use the standard OSV/Packagist lanes |
+| PrestaShop | 8.2.1 source `composer.json`, `config/config.inc.php` and installer version; installed `config/settings.inc.php`, static module PHP metadata, `config/theme.yml` | Installed `_PS_VERSION_` ahead of the installer source version; module `$this->version` and theme `version` | Application advisories not yet qualified; Composer/npm scans remain separate |
+| TYPO3 | 13.4.2 source `typo3/sysext/core/ext_emconf.php`; Composer installation with `typo3/cms-core` lock; classic extensions | Locked `typo3/cms-core` for Composer sites, otherwise the literal core `ext_emconf.php` version | Application advisories not yet qualified; locked public Composer packages use OSV/Packagist |
+| Magento / Adobe Commerce | 2.4.7-p3 Magento source markers; Composer product edition lock, `app/code` modules and `app/design` themes | Exact locked `magento/product-*` version, including `-pN`; a module's XML `setup_version` is a database schema version, not its code version | Adobe product bulletins are not parsed as a complete machine feed; application advisories remain not-run |
+
+A missing `composer.lock` leaves package versions and dependency origins incomplete. The four wave-2 plugins also mark product lifecycle as `not-run`: community support, paid support and deployed patches need separate evidence. Magento product packages from `repo.magento.com` are not queried against Packagist; their publisher bulletins require separate review. Components found on disk do not prove activation, and no plugin infers that a patch file was applied. `--scan-context component` also recognizes a standalone extension for each wave-2 CMS when its local metadata is valid.
+
+`--private-component` takes a path relative to `--src` and can be repeated. A WordPress plugin with an `Update URI` header is also classified as private automatically, even if a public slug was declared; [WordPress documents this header for third-party updates](https://developer.wordpress.org/plugins/plugin-basics/header-requirements/). A private WordPress plugin or custom Drupal module stays separate from public catalogue identities; Composer CVEs in its own lockfile are attributed to that component. Shared dependencies retain one physical finding with multiple proven owners. WordPress classic and Bedrock layouts and Drupal Composer and Drupal 7 layouts are recognized. Components found on disk are inventoried even when runtime activation cannot be established.
+
+`--scan-context component` treats `--src` as a standalone WordPress plugin or theme directory when its root header identifies it. It inventories that component and its Composer dependencies without inventing a WordPress core installation. The default `source` and explicit `installation` contexts describe how the input was obtained; neither proves runtime activation or a deployed configuration.
+
+`--wordfence-feed` reads a local JSON snapshot of the Wordfence Intelligence v3 **production** feed. It makes no network request. `--public-component path=slug` explicitly declares the public WordPress catalogue slug for an installed plugin or theme; it can be repeated. This declaration is recorded as `user-declared`, not independently verified. A directory name or display name alone never authorizes a public advisory match. Private components are never matched to that catalogue and retain incomplete advisory coverage. A feed snapshot supplied by the operator must be complete and current for its `no-match` results to be meaningful; fad-checker cannot prove those properties from the JSON file alone. Coverage records retain its SHA-256 and local file modification time, which do not establish its download date. Advisory records retain Wordfence identifiers, references and copyright notices. See the [Wordfence v3 feed documentation](https://www.wordfence.com/help/wordfence-intelligence/v3-accessing-and-consuming-the-vulnerability-data-feed/) for obtaining a key and the feed usage terms.
+
+`--drupal-advisories` reads a local snapshot of the [official Drupal Composer security-advisories response](https://packages.drupal.org/8/packages.json). Save it as `{ "queriedPackages": ["drupal/core", ...], "advisories": { ... } }`; `queriedPackages` must list every package requested from the API, including those omitted from its response because no advisory was returned. Unlisted packages retain `CMS_PACKAGE_NOT_QUERIED` and no negative conclusion. Drupal 7 remains outside the current community security-advisory coverage. Drupal's advisory ratings are kept separately from CVSS scores; the report shows their original rating and the derived gate severity.
+
+`--prestashop-advisories <file>` and `--typo3-advisories <file>` read a local snapshot of the vendor's own [GitHub repository security advisories](https://docs.github.com/en/rest/security-advisories/repository-advisories) (PrestaShop/PrestaShop, TYPO3/typo3), the machine-readable channel those publishers maintain themselves. Save the API's array as `{ "advisories": [ ... ], "_fadSnapshot": { "collectedAt": "..." } }` (a bare array is accepted too, but then `--max-advisory-age` will refuse it until a collection date is declared). The whole repository feed is fetched once and matched per inventoried composer coordinate: `prestashop/prestashop` for the PrestaShop core, `typo3/cms-core` and the `typo3/cms-*` system extensions for TYPO3. The publishers' range spellings are normalized before the shared Composer evaluation — PrestaShop's "< 8.2.6 and < 9.1.1" (two affected branches, one fix each) versus ">= 8.0.0 and < 8.1.1" (one interval), TYPO3's comma-joined hyphen intervals "13.0.0-13.4.33, 14.0.0-14.3.5" (alternative branches) — and the ~30 2020-era PrestaShop records whose package identity is empty in the official feed are attributed to the PrestaShop core coordinate with a documented inference, never silently dropped. An unbounded published range ("> 1.7.0.0") is only decidable through its `patched_versions` bound; a version at or above the publisher's patched release is fixed, never flagged. Joomla and Magento/Adobe Commerce have no machine-readable publisher feed (verified 2026-09-23: empty GitHub advisory lists; their bulletins are HTML pages), so those lanes stay `not-run (CMS_ADVISORY_NOT_QUALIFIED)`.
+
+`--wp-checksums <file>` reads a local snapshot of the official [api.wordpress.org core checksums](https://developer.wordpress.org/rest-api/reference/core-checksums/) (`{ "checksums": { "<file>": "<md5>" }, "version": "...", "locale": "..." }`) and compares the WordPress core files of every inventoried instance against it. `--wp-checksums-live` fetches that reference live, pinned to each instance's observed core version and `--wp-checksums-locale` (default `en_US`). Divergences are **diagnostics, never CVE findings**: `CMS_FILE_MODIFIED` (the file differs from the official distribution), `CMS_FILE_MISSING` (the reference file is absent from the tree — a source checkout is not the distribution archive, so this does not flip the verdict), `CMS_FILE_EXTRA` (an unexpected file inside `wp-admin/` or `wp-includes/`, the controlled perimeter; `wp-content/` is user land and is never flagged), reported under the `integrity` capability with `affected` only on modified or unexpected core-directory files. A reference pinned to another version (`CMS_CHECKSUMS_REFERENCE_MISMATCH`) produces no verdict rather than fake divergences.
+
+An explicitly configured advisory file requires its corresponding `--app-plugins` selection. Invalid JSON, an invalid feed schema, or an unreadable configured file exits with code `2` before any report is written.
+
+`--max-advisory-age <duration>` (e.g. `72h`, `30d`) bounds the age of every configured advisory snapshot. A snapshot's file modification time proves nothing about when it was collected, so the date must be declared **inside the snapshot file**: a top-level `collectedAt` or `generatedAt` ISO 8601 string, or a reserved `_fadSnapshot: { "collectedAt": "..." }` object (the Wordfence v3 feed is a flat UUID-keyed map, so the reserved key is the only metadata it tolerates). A snapshot without a declared date, a malformed date, or one older than the limit exits with code `2` before any report is written. A declared date also travels with the coverage provenance (`sourceSnapshot.collectedAt`) whether or not the limit is set.
+
+Live sources are the alternative to operator-supplied files. `--drupal-advisories-live` queries the official `https://packages.drupal.org/8/security-advisories` endpoint (announced by the packages.drupal.org Composer descriptor; no authentication) for exactly the inventoried public `drupal/*` identities — private components are never sent. `--prestashop-advisories-live` and `--typo3-advisories-live` page the publishers' GitHub advisory feeds (unauthenticated, subject to GitHub's rate limits), and `--wp-checksums-live` fetches the official api.wordpress.org checksums reference; each can take an optional URL override for a mirror of the same API. Wordfence publishes a [free production feed with bearer authentication](https://www.wordfence.com/help/wordfence-intelligence/v3-accessing-and-consuming-the-vulnerability-data-feed/). Set `WORDFENCE_API_KEY` (recommended, to keep it out of the process command line) or pass `--wordfence-api-key <key>`; the key alone selects the official production endpoint, or `--wordfence-feed-url <url>` can override its URL. A live Wordfence request without a key stops with code `2` and an explanatory warning. A WordPress instance without either a local feed or a live key gets an explicit warning and incomplete advisory coverage. A fetched snapshot is stamped `_fadSnapshot.collectedAt` at collection time (so `--max-advisory-age` accepts it by construction), written atomically to `~/.fad-checker/advisory-snapshots/<provider>.json` for offline reuse, and recorded in coverage with `completeness: "tool-fetched"`. Live sources refuse to run under `--offline` (exit `2`); an air-gapped scan supplies a local feed snapshot. A failed or invalid live response stops the scan before any report, and a live source still requires its `--app-plugins` selection.
+
+Symfony Flex `symfony.lock` recipes and `extra.symfony.require` are context. Installed package versions come from `composer.lock`. Extraction with `-t` also mirrors `symfony.lock`. The Symfony and Laravel application-advisory capabilities are currently recorded as `not-run (CMS_ADVISORY_NOT_QUALIFIED)`: their CVEs come from the standard Composer lane (OSV/Packagist), and a capability that never ran never becomes a clean result. WordPress and Drupal advisories run through the Wordfence and Drupal sources configured above. `--fail-on-incomplete` exits with code 2 after writing the partial report when a requested capability is incomplete. The default capability set is `inventory,advisories`.
+
+Report subsections with no results are omitted, and the remaining ones are numbered in order. CMS/framework CVEs appear first under CVE when present; application inventory and coverage remain in scan context even when no advisory matches. The six root chapters remain visible.
 
 ## Outputs
 
@@ -307,11 +364,75 @@ is enforced two ways:
 
 > **Compiled binary, no `node`/`retire` needed:** the bun-compiled single binary
 > (`dist/fad-checker`, `.exe`, `-macos`) statically bundles the retire.js CLI and
-> re-execs itself to run it — so vendored-JS scanning (chapters 1D / 2) works from the
+> re-execs itself to run it — so vendored-JS scanning works from the
 > lone binary on an air-gapped box with no Node.js and no `retire` on `PATH`. The only
 > input it needs is the signature DB warmed in phase 2 (carried in the cache archive).
 > If retire still can't run, the failure is reported as a chapter-0 warning (run `-v`
 > for the exact reason) instead of an empty chapter.
+
+## Shared proxy-cache server (`serve-cache` / `--proxy-cache`)
+
+A scan of a real project makes hundreds of registry / advisory lookups — and every
+machine that scans makes them again. `serve-cache` turns one machine into the cache
+point for the others: one upstream call per URL per TTL for the whole fleet, on a
+persistent on-disk base that survives restarts. The server's store lives in its **own
+root** (`~/.fad-checker-proxy-cache/`), deliberately outside the scan's `~/.fad-checker/`
+cache dir — the client caches and the shared base are two different roles and are never
+bundled, swapped or merged together by `--export-cache` / `--import-cache`.
+
+```bash
+# Terminal 1 — start the server (default 127.0.0.1:8321, store ~/.fad-checker-proxy-cache/)
+fad-checker serve-cache
+fad-checker serve-cache --port 9000 --host 0.0.0.0 --token s3cret   # shared across machines
+fad-checker serve-cache --nvd-key <key> --wordfence-key <key> --github-token <t>
+fad-checker serve-cache --upstream-proxy http://corp-proxy:3128     # the server itself behind a corporate proxy
+
+# Then every scan (same machine, CI runners, other developers) points at it:
+fad-checker -s ./proj --proxy-cache http://127.0.0.1:8321
+```
+
+| Flag (serve-cache) | Effect |
+| --- | --- |
+| `--port <n>` / `--host <h>` | Listen address (default `127.0.0.1:8321`; `0.0.0.0` to share — use `--token`) |
+| `--cache-dir <dir>` | Store location (default `~/.fad-checker-proxy-cache/` — its own root, never inside the scan's `~/.fad-checker/` caches) |
+| `--ttl <seconds>` | Override every per-source TTL (defaults: OSV 12h, NVD + endoflife.date 7d, registries/EPSS/KEV/deps.dev 24h) |
+| `--swr` / `--no-swr` | An expired entry is served stale while a refresh runs in the background (default ON; `--no-swr` makes expiry a blocking refetch) |
+| `--max-body-mb <n>` | Bodies above this (default 32 MB — the CVE bulk zip is ~500 MB) stream through uncached |
+| `--nvd-key` / `--wordfence-key` / `--github-token` | API keys the **server** injects upstream (flags > `NVD_API_KEY` / `WORDFENCE_API_KEY` / `GITHUB_TOKEN` env > `--set-nvd-key` config). Instances behind `--proxy-cache` then need none — the fleet shares the server's quota. Without a server key, a client-sent credential is forwarded as-is |
+| `--upstream-proxy <url>` | Route the server's own upstream fetches through a corporate forward proxy |
+| `--token <t>` | Require `Authorization: Bearer <t>` on every endpoint except `__health` |
+
+Behaviour worth knowing:
+
+- **Only fad's public data sources are ever cached** (npm/PyPI/Packagist/NuGet/RubyGems/Go
+  proxy/Maven Central, OSV, NVD, EPSS, KEV, endoflife.date, deps.dev, CIRCL — the same
+  host list `--offline`/source-health guards). A private registry is proxied as-is,
+  **never cached, and its Authorization headers never leave the scanning machine**.
+- **Single-flight**: ten instances requesting the same packument make one upstream call.
+- **Stale-if-error**: an upstream 403/429/5xx serves the stale copy instead of failing
+  (`x-fad-proxy: stale`); a definitive 404 is mirrored as-is (that is how private
+  packages are detected, it must never be faked).
+- **POSTs** (OSV `querybatch`) and **HEADs** (Maven mirror preflight) are proxied
+  uncached; fad's own per-instance caches still apply on top.
+- Every response carries `x-fad-proxy: hit | miss | stale | pass`; `GET /__stats`
+  shows the counters, `POST /__clear` wipes the base.
+- A dead proxy-cache server is **not** a silent hole: `--proxy-cache` wraps the fetch
+  *before* the outage guard, so the retry schedule runs and the run aborts naming the
+  source and its skip flag (exit 2) — the same contract as a dead registry.
+- `--proxy-cache` and `--offline` are exclusive (offline makes no requests at all).
+
+### Corporate forward proxy (`--proxy`)
+
+```bash
+fad-checker -s ./proj --proxy http://corp-proxy:3128
+```
+
+Routes **every** outbound request through a corporate forward proxy (Node >= 24 or
+bun — Node only honours `HTTP(S)_PROXY` with `NODE_USE_ENV_PROXY` set at process
+start, so fad re-execs itself with the environment applied; verified: a mid-run
+`process.env` change is silently ignored). A `--proxy-cache` URL in the same command
+is added to `NO_PROXY` — traffic to the shared cache is local and stays out of the
+tunnel. For the server-side equivalent see `serve-cache --upstream-proxy` above.
 
 ## Anonymized descriptor (air-gapped audits)
 
@@ -454,12 +575,14 @@ If the snyk run itself **fails** — not authenticated, an unsupported project, 
 | Mode | Trigger | What runs | Disk writes |
 | --- | --- | --- | --- |
 | Read-only (scan) | `-t` omitted (default) | full scan + report | Only `~/.fad-checker/` caches and the report dir |
-| Extraction | `-t <dir>` | walk + reactor linking + normalised descriptor tree + POM analysis (existence check → private-module list, when online), then stop | The normalised descriptor tree at `<dir>` (`rimraf`'d first!) + the existence cache |
+| Extraction | `-t <dir>` | walk + reactor linking + normalised descriptor tree + POM analysis (existence check → private-module list, when online), then stop | The normalised descriptor tree at `<dir>` (replaced only with `--force` if non-empty) + the existence cache |
 | Extraction + scan | `-t <dir>` with `--snyk`, a `--report-<type>`, `--fail-on`, `--fail-on-new` or `--baseline` | both of the above | Both of the above |
 
 The `--target` guardrails refuse:
 - empty `--src`
 - `--target` equal to or a subdirectory of `--src`
+- `--target` containing `--src` (including via a symlinked parent)
+- a non-empty `--target` unless `--force` is passed; a file or symlink target is always refused
 
 ## Verbosity
 

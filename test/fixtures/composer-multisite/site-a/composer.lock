@@ -1,0 +1,11 @@
+{
+  "packages": [{
+    "name": "symfony/console", "version": "v5.4.47", "type": "library",
+    "require": { "php": ">=8.0", "symfony/string": "^5.4" },
+    "replace": { "symfony/console-contracts": "self.version" },
+    "provide": { "psr/console": "1.0" },
+    "source": { "type": "git", "url": "https://example.invalid/private/repo", "reference": "abc123" },
+    "license": ["MIT"]
+  }],
+  "packages-dev": []
+}

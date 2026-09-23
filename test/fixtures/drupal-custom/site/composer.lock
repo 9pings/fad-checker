@@ -1,0 +1,8 @@
+{
+  "packages": [
+    { "name": "drupal/core", "version": "10.3.1", "type": "drupal-core", "require": { "symfony/http-kernel": "^6.4" } },
+    { "name": "drupal/core-recommended", "version": "10.3.1", "type": "metapackage", "require": { "drupal/core": "10.3.1" } },
+    { "name": "symfony/http-kernel", "version": "v6.4.10" }
+  ],
+  "packages-dev": []
+}

@@ -65,3 +65,34 @@ test("buildCsaf keeps schema-valid output for snyk-only + UNKNOWN + v4-vector", 
 	// the unresolved snyk-only dep was registered as a product
 	assert.ok(doc.product_tree.full_product_names.some(p => p.name.includes("ghost")));
 });
+
+test("Wordfence advisory without CVE uses CSAF ids and retains affected product", () => {
+	const dep = { ecosystem: "wordpress", namespace: "wordpress/plugin", name: "example", version: "1.2",
+		coordKey: "wordpress:plugin:example", provenance: "application", manifestPaths: ["site/plugin.php"] };
+	const doc = buildCsaf(new Map(), [{ dep, source: "wordfence-v3", cve: {
+		id: "WF-123e4567-e89b-12d3-a456-426614174000", severity: "HIGH", score: 7.5,
+	} }]);
+	const finding = doc.vulnerabilities[0];
+	assert.equal(finding.cve, undefined);
+	assert.deepEqual(finding.ids, [{ system_name: "Wordfence", text: "123e4567-e89b-12d3-a456-426614174000" }]);
+	assert.equal(finding.product_status.known_affected.length, 1);
+	assert.equal(doc.product_tree.full_product_names[0].product_identification_helper.purl,
+		"pkg:generic/wordpress/plugin/example@1.2");
+});
+
+test("a CSAF vulnerability keeps every physical occurrence as its own affected product", () => {
+	const { makeDepRecord } = require("../lib/dep-record");
+	const resolved = new Map();
+	const mk = (version, findingId) => {
+		const dep = makeDepRecord({ ecosystem: "composer", namespace: "v", name: "lib", version, manifestPath: "/p/composer.lock" });
+		dep.occurrences = [{ version, manifestPath: "/p/composer.lock", scope: "prod", isDev: false, requires: {} }];
+		resolved.set(dep.coordKey, dep);
+		return { dep: { ...dep, version }, cve: { id: "CVE-2099-0001", severity: "HIGH" },
+			findingId, applicationIds: ["wordpress:site"], applicationRelation: "direct" };
+	};
+	const doc = buildCsaf(resolved, [mk("1.0.0", "f-1"), mk("1.1.0", "f-2")],
+		{ projectInfo: { name: "demo", src: "/p" }, toolVersion: "1.0.0", timestamp: "2026-06-01T00:00:00Z" });
+	assert.equal(doc.vulnerabilities.length, 1);
+	assert.ok(doc.vulnerabilities[0].product_status.known_affected.length >= 2,
+		"two physical occurrences of one CVE stay two affected products, never merged into one");
+});

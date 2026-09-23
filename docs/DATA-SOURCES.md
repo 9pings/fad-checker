@@ -10,7 +10,13 @@
 | [FIRST.org EPSS](https://www.first.org/epss/) | Exploit-prediction score + percentile per CVE | CC-BY 4.0 | `GET api.first.org/data/v1/epss?cve=…` (batched) |
 | [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | Known-exploited-vulnerability catalogue membership | US-gov public domain | `GET cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` |
 | [endoflife.date](https://endoflife.date/) | Framework / runtime lifecycle — both the `eol` date (always) and the `support` date (`--eol-support`) | MIT | `GET endoflife.date/api/{product}.json` |
-| [Packagist](https://packagist.org/) p2 metadata | **Dev-time only** — `replace: self.version` tables of `symfony/symfony` / `laravel/framework` to generate `data/eol-composer-frameworks.json` (`scripts/gen-composer-eol-map.js`). Never queried during a scan. | MIT (metadata) | `GET repo.packagist.org/p2/{vendor}/{pkg}.json` |
+| [Packagist](https://packagist.org/) p2 metadata | **Dev-time only** — `replace: self.version` tables of `symfony/symfony` / `laravel/framework` to generate `data/eol-composer-frameworks.json` (`scripts/gen-composer-eol-map.js`). This p2 endpoint is not queried during a scan. | MIT (metadata) | `GET repo.packagist.org/p2/{vendor}/{pkg}.json` |
+| [Packagist security advisories](https://packagist.org/apidoc#list-security-advisories) | Composer package advisories and affected version constraints, the source queried by `composer audit`; cached per package for offline scans | Packagist public API | `GET packagist.org/api/security-advisories/?packages[]=…` |
+| [Wordfence Intelligence v3](https://www.wordfence.com/help/wordfence-intelligence/v3-accessing-and-consuming-the-vulnerability-data-feed/) | WordPress core, public plugin and theme advisories; live production feed needs a free bearer API key, or an operator-supplied local snapshot | Wordfence Intelligence terms | `GET www.wordfence.com/api/intelligence/v3/vulnerabilities/production` |
+| [Drupal security advisories](https://packages.drupal.org/8/packages.json) | Per-package Drupal core and public extension advisories, live or from a local snapshot | Drupal.org public API | `GET packages.drupal.org/8/security-advisories?packages[]=…` |
+| [GitHub repository security advisories — PrestaShop](https://github.com/PrestaShop/PrestaShop/security/advisories) | PrestaShop core advisories as published by the vendor on its own repository (the machine-readable channel `composer audit` cannot see for a source tree); live or from a local snapshot | Publisher's own advisories | `GET api.github.com/repos/PrestaShop/PrestaShop/security-advisories` |
+| [GitHub repository security advisories — TYPO3](https://github.com/TYPO3/typo3/security/advisories) | Per-package TYPO3 CMS advisories (`typo3/cms-core`, system extensions) as published by the vendor on its own monorepo; live or from a local snapshot | Publisher's own advisories | `GET api.github.com/repos/TYPO3/typo3/security-advisories` |
+| [WordPress.org core checksums](https://developer.wordpress.org/rest-api/reference/core-checksums/) | MD5 reference of the official WordPress distribution, pinned per version and locale, for the core file-integrity capability | WordPress.org public API | `GET api.wordpress.org/core/checksums/1.0/?version=…&locale=…` |
 | [Maven Central](https://search.maven.org/) | Latest-version lookups + transitive POM fetches | Free public service | Solr `search.maven.org/solrsearch/select?q=…` + `repo1.maven.org/maven2/<coord>` |
 | [npm registry](https://registry.npmjs.org/) | Per-version `deprecated` + `dist-tags.latest` | Free public service | `GET registry.npmjs.org/<pkg>` |
 | [Packagist](https://packagist.org/) | Latest stable + `abandoned` flag | Free public service | `GET packagist.org/packages/<vendor>/<pkg>.json` |
@@ -28,3 +34,15 @@ Persistent caches (`~/.fad-checker/`) mean each source is hit at most once per i
 table → [`USAGE.md`](USAGE.md)). **No telemetry, no third-party analytics** — every request
 above is made directly to the named endpoint with a `User-Agent: fad-checker-*` header, and
 `--offline` makes none at all.
+
+Joomla, PrestaShop, TYPO3 and Magento/Adobe Commerce application inventories read
+their local manifests; they do not fetch publisher bulletins. The candidate publisher
+pages ([Joomla Security Centre](https://developer.joomla.org/security-centre.html),
+[PrestaShop advisories](https://github.com/PrestaShop/PrestaShop/security/advisories),
+[TYPO3 advisories](https://typo3.org/help/security-advisories),
+[Adobe bulletins](https://helpx.adobe.com/security/products/magento.html)) do not by
+themselves establish a complete, machine-readable feed for every product and
+extension. Public Composer dependencies still use OSV/Packagist. Adobe Commerce
+packages distributed through `repo.magento.com` are excluded from Packagist audit
+and its public package metadata lookup;
+an omitted Packagist response is never treated as a clean advisory result.

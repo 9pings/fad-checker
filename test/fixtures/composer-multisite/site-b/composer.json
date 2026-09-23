@@ -1,0 +1,4 @@
+{
+  "name": "example/site-b",
+  "require-dev": { "symfony/console": "^5.4" }
+}

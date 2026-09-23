@@ -1,5 +1,6 @@
 {
   "name": "acme/legacy-app",
+  "extra": { "symfony": { "require": "5.4.*" } },
   "require": {
     "php": "^7.4",
     "symfony/framework-bundle": "5.4.*",

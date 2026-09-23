@@ -1,0 +1,3 @@
+#!/usr/bin/env php
+<?php
+// Reduced fixture: a Symfony application entry point. Never executed by the scanner.

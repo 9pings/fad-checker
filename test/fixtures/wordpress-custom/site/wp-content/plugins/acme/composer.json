@@ -1,0 +1,4 @@
+{
+  "name": "acme/checkout",
+  "require": { "vendor/vulnerable-lib": "1.0.0" }
+}

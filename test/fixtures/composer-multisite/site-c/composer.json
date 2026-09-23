@@ -1,0 +1,4 @@
+{
+  "name": "example/site-c",
+  "require-dev": { "symfony/framework-bundle": "^6.2" }
+}

@@ -134,3 +134,44 @@ test("eol entries carry status / cycle / support / anchor / components; summary 
 	assert.equal(doc.eol[1].anchor, null);
 	assert.equal(doc.eol[1].components, null);
 });
+
+test("findings JSON carries application inventory, warnings and coverage even without findings", () => {
+	const applications = [{ id: "wordpress:site-a", type: "wordpress", root: "site-a" }];
+	const applicationInventory = [{ applicationId: "wordpress:site-a", kind: "plugin", name: "example", version: null }];
+	const coverage = [{ applicationId: "wordpress:site-a", capability: "advisories", execution: "not-run", result: "indeterminate", diagnostic: "CMS_PROVIDER_UNCONFIGURED" }];
+	const warnings = [{ type: "cms-version-unknown", message: "Version unavailable" }];
+	const doc = buildFindings({ applications, applicationInventory, coverage, warnings });
+	assert.equal(doc.schema, "fad-findings/1");
+	assert.deepEqual(doc.applications, applications);
+	assert.deepEqual(doc.applicationInventory, applicationInventory);
+	assert.deepEqual(doc.coverage, coverage);
+	assert.deepEqual(doc.warnings, warnings);
+	assert.equal(doc.summary.applications, 1);
+	assert.equal(doc.summary.applicationComponents, 1);
+	assert.equal(doc.summary.coverageIncomplete, 1);
+});
+
+test("findings JSON retains physical finding ID and proven private-plugin ownership", () => {
+	const match = { findingId: "fad-cve-copy-a", applicationIds: ["wordpress:site"],
+		ownerComponentIds: ["wordpress:site:plugin:acme"], applicationRelation: "indirect",
+		attributionStatus: "confirmed", dependencyPaths: [["acme/plugin", "vendor/lib"]],
+		dep: { ecosystem: "composer", namespace: "vendor", name: "lib", version: "1.0.0",
+			manifestPaths: ["site/wp-content/plugins/acme/composer.lock"] },
+		cve: { id: "CVE-2099-0001", severity: "HIGH" } };
+	const finding = buildFindings({ cveMatches: [match] }).cve[0];
+	assert.equal(finding.findingId, "fad-cve-copy-a");
+	assert.deepEqual(finding.ownerComponentIds, ["wordpress:site:plugin:acme"]);
+	assert.equal(finding.applicationRelation, "indirect");
+	assert.deepEqual(finding.dependencyPaths, [["acme/plugin", "vendor/lib"]]);
+});
+
+test("JSON headline counts unique physical findings while application exposure can overlap", () => {
+	const dep = { ecosystem: "composer", namespace: "vendor", name: "lib", version: "1.0" };
+	const one = { findingId: "copy-a", applicationIds: ["site-a", "site-b"],
+		applicationRelation: "indirect", dep, cve: { id: "CVE-1", severity: "HIGH", kev: true } };
+	const doc = buildFindings({ cveMatches: [one, { ...one }] });
+	assert.equal(doc.summary.cve.total, 1);
+	assert.equal(doc.summary.cve.high, 1);
+	assert.equal(doc.summary.cve.kev, 1);
+	assert.deepEqual(doc.findingSummary.byApplication, { "site-a": 1, "site-b": 1 });
+});
