@@ -5,6 +5,11 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-09-23
+
+### Added
+- Optional Excel `.xlsx` export (`--report-xlsx [file]` or `-r xlsx`) with a summary and separate sheets for populated findings, inventory, application ownership, coverage, warnings, provenance and baseline diff. Numbers and booleans stay typed; advisory text is never interpreted as a formula. The workbook uses the same findings model as JSON and joins `SHA256SUMS` when enabled.
+
 ## [2.6.0] - 2026-09-23
 
 ### Fixed

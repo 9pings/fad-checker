@@ -1,7 +1,7 @@
 {
   "name": "fad-checker",
-  "version": "2.6.0",
-  "description": "Scan ALL Maven, Gradle, npm, Yarn, Composer, Python, C#/.NET, Go & Ruby dependencies — plus embedded JARs (fat-jars/war/ear) — in a source tree ONE SHOT without mvn/python/etc — CVE (EPSS/KEV-prioritised), EOL, obsolete, outdated & licenses, with SBOM/CSAF/SARIF/JSON exports, CI gating and fix recos",
+  "version": "2.7.0",
+  "description": "Scan ALL Maven, Gradle, npm, Yarn, Composer, Python, C#/.NET, Go & Ruby dependencies — plus embedded JARs (fat-jars/war/ear) — in a source tree ONE SHOT without mvn/python/etc — CVE (EPSS/KEV-prioritised), EOL, obsolete, outdated & licenses, with XLSX/SBOM/CSAF/SARIF/JSON exports, CI gating and fix recos",
   "keywords": [
     "sca",
     "software-composition-analysis",
@@ -18,6 +18,8 @@
     "csaf",
     "vex",
     "sarif",
+    "xlsx",
+    "excel",
     "license-compliance",
     "eol",
     "end-of-life",

@@ -138,7 +138,7 @@ test("--no-report writes no files at all", () => {
 	fs.rmSync(out, { recursive: true, force: true });
 });
 
-// Selecting any --report-* flag overrides the default HTML+doc set: only the
+// Selecting any --report-* flag overrides the default HTML+JSON set: only the
 // chosen outputs are written (each to its given path or its default name).
 test("--report-sbom alone writes only the SBOM (no HTML/doc)", () => {
 	const src = path.join(__dirname, "fixtures", "polyglot");
@@ -158,4 +158,27 @@ test("--report-html with an explicit path writes there", () => {
 	assert.equal(res.status, 0);
 	assert.ok(fs.existsSync(target), "HTML written to the explicit (nested) path");
 	fs.rmSync(out, { recursive: true, force: true });
+});
+
+test("--report-xlsx and -r xlsx select a standalone Excel workbook", () => {
+	const src = path.join(__dirname, "fixtures", "polyglot");
+	const out = fs.mkdtempSync(path.join(os.tmpdir(), "fad-xlsx-cli-"));
+	try {
+		const explicit = path.join(out, "nested", "audit.xlsx");
+		const one = run(["-s", src, "--offline", "--report-xlsx", explicit], { env: { ...process.env, FORCE_COLOR: "0" } });
+		assert.equal(one.status, 0, one.stderr);
+		assert.equal(fs.readFileSync(explicit).subarray(0, 2).toString(), "PK");
+		assert.match(fs.readFileSync(path.join(out, "nested", "SHA256SUMS"), "utf8"), /audit\.xlsx/);
+		assert.ok(!fs.existsSync(path.join(out, "nested", "cve-report.html")));
+		const two = run(["-s", src, "--offline", "-r", "xlsx", "-o", out, "--no-checksums"],
+			{ env: { ...process.env, FORCE_COLOR: "0" } });
+		assert.equal(two.status, 0, two.stderr);
+		assert.equal(fs.readFileSync(path.join(out, "findings.xlsx")).subarray(0, 2).toString(), "PK");
+		const bad = path.join(out, "mislabelled.xls");
+		const invalid = run(["-s", src, "--offline", "--report-xlsx", bad, "--no-checksums"],
+			{ env: { ...process.env, FORCE_COLOR: "0" } });
+		assert.equal(invalid.status, 2, invalid.stderr);
+		assert.match(invalid.stdout + invalid.stderr, /must end in \.xlsx/);
+		assert.ok(!fs.existsSync(bad));
+	} finally { fs.rmSync(out, { recursive: true, force: true }); }
 });

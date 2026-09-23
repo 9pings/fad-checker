@@ -70,9 +70,11 @@ test("-r selects exactly the outputs named, and never overrides an explicit path
 	const explicit = { reportJson: "/tmp/mine.json" };
 	applyReports(explicit, "json");
 	assert.equal(explicit.reportJson, "/tmp/mine.json", "an explicit --report-json path wins");
+	const excel = {}; applyReports(excel, "xlsx");
+	assert.equal(excel.reportXlsx, true);
 	assert.match(applyReports({}, "nope").errors[0], /unknown --report value "nope"/);
 	assert.deepEqual(applyReports({}, "").errors, [], "an empty list selects nothing and is not an error");
-	assert.deepEqual(REPORTS, ["html", "doc", "sbom", "csaf", "json", "sarif"]);
+	assert.deepEqual(REPORTS, ["html", "doc", "xlsx", "sbom", "csaf", "json", "sarif"]);
 });
 
 test("every -d and -a token names a real option", () => {

@@ -133,7 +133,7 @@ Each data source can be disabled independently:
 | `--cert-expiry-days <n>` | Window for the certificate **expiring-soon** warning (default `90`) |
 | `-d, --disable <list>` | Turn features off, comma-separated: `eol nvd osv epss kev retire transitive all-libs checksums osv-db report vendored-js-inventory default-excludes` and any ecosystem (`maven gradle npm yarn nuget composer pypi go ruby js jars binaries certs`). Replaces the `--no-*` flags, which still work but are hidden from `--help` |
 | `-a, --activate <list>` | Turn on what is off by default: `licenses eol-support typosquat snyk osv-db nvd-cpe-match cve-refresh cve-offline osv-db-refresh retire-refresh` |
-| `-r, --report <list>` | Outputs to write: `html doc sbom csaf json sarif` (default `html,json`). `--report-<type> <file>` still takes an explicit path |
+| `-r, --report <list>` | Outputs to write: `html doc xlsx sbom csaf json sarif` (default `html,json`). `--report-<type> <file>` still takes an explicit path |
 | `-o, --report-output <dir>` | Report output directory |
 | `--help-all` | Every option, including the individual flags `-d`/`-a`/`-r` replace and the cache / registry / config commands |
 | `--lang <en\|fr>` | Language of the HTML / Word report (default `en`). Translates the report's own chrome — **all of it**: chapter titles and their counts, table headers, scope chips, every intro paragraph, every status pill, the warning headings, the licence categories, the methodology limitations, the per-ecosystem fix recipes, the empty states, and the executive summary both on screen and as the 📋 button pastes it — plus the CWE titles. **Not** the evidence: CVE descriptions, advisory text and registry reasons stay as published, and a CVSS severity keeps NVD's own wording where it is a finding's value. French CWE titles are fad's own (MITRE publishes English only) and carry MITRE's original with them |
@@ -199,12 +199,13 @@ Report subsections with no results are omitted, and the remaining ones are numbe
 
 ## Outputs
 
-Every output has its own `--report-<type>` flag, each taking an **optional** path. Give a path to write there; omit the path to use a default name under `--report-output` (default dir `./fad-checker-report`). **If you pass no `--report-*` flag at all, the HTML + `.doc` report is written by default** (the historical behaviour); pass `--no-report` to write nothing (gate-only / CI). Selecting any `--report-*` flag writes exactly that set — e.g. `--report-sbom` alone writes only the SBOM, no HTML.
+Every output has its own `--report-<type>` flag, each taking an **optional** path. Give a path to write there; omit the path to use a default name under `--report-output` (default dir `./fad-checker-report`). **If you pass no `--report-*` flag, HTML + `findings.json` are written by default**; pass `--no-report` to write nothing (gate-only / CI). Selecting any `--report-*` flag writes exactly that set — e.g. `--report-sbom` alone writes only the SBOM, no HTML.
 
 | Flag | Default name | Effect |
 | --- | --- | --- |
 | `--report-html [file]` | `cve-report.html` | The self-contained HTML report (inline CSS, no external assets). |
 | `--report-doc [file]` | `cve-report.doc` | The same report as a Word-compatible `.doc`. |
+| `--report-xlsx [file]` | `findings.xlsx` | Excel workbook with a summary and one sheet per populated category, including application ownership, coverage, warnings, provenance and diff when present. Text is stored as text, never evaluated as a formula; an explicit path must end in `.xlsx`. |
 | `--report-sbom [file]` | `sbom.cdx.json` | A **CycloneDX 1.6** SBOM with `vulnerabilities` inline (a VDR). Components carry purls + detected licenses (+ `fad:provenance`/`fad:location` for embedded-jar coords); vulnerabilities carry CVSS ratings, CWEs, affected purls, and `fad:epss` / `fad:kev` / `fad:priorityBand` properties. |
 | `--report-csaf [file]` | `csaf-vex.json` | A **CSAF 2.0 VEX** (`csaf_vex`) document: a `product_tree` of every dep (purl-identified) plus per-CVE `product_status.known_affected`, `cvss_v3` scores, a KEV `exploited` flag, and prioritization notes. |
 | `--report-json [file]` | `findings.json` | A flat **findings JSON** (fad's own format): every chapter (CVE/EOL/obsolete/outdated/licenses/vendored) + an `unmanaged` array (native-binary inventory with identity/integrity/signals), an `embedded` array (every JAR/WAR/EAR coordinate, vuln or not, with `vulnCount`/`maxSeverity`), EOL entries carrying their `productSlug`/`via`/`viaKey` origin + `status`/`cycle`/`support` and, for grouped frameworks, `anchor`/`components[]`, + a summary, easy to diff between audits and post-process. |
@@ -212,7 +213,7 @@ Every output has its own `--report-<type>` flag, each taking an **optional** pat
 | `--report-output <dir>` | `./fad-checker-report` | Base directory for any output left at its default name. |
 
 ```bash
-# default: HTML + .doc into ./fad-checker-report
+# default: HTML + findings.json into ./fad-checker-report
 fad-checker -s ./proj
 
 # only the machine artifacts, default names under a custom dir
@@ -220,6 +221,7 @@ fad-checker -s ./proj --report-output ./out --report-sbom --report-csaf --report
 
 # explicit paths
 fad-checker -s ./proj --report-sbom sbom.cdx.json --report-sarif fad.sarif
+fad-checker -s ./proj -r html,json,xlsx            # add an Excel workbook to the default pair
 ```
 
 All honour `--offline` (they render from whatever the scan already resolved).
@@ -233,7 +235,7 @@ All honour `--offline` (they render from whatever the scan already resolved).
 | `--ignore <file>` | Suppress findings. One rule per line: `CVE-2021-44228` (anywhere), `CVE-… org.apache.*` (coord/purl glob), `* npm:lodash` (any CVE for a coord); text after `#` is the reason. |
 | `--vex <file>` | Ingest a **CSAF VEX**: CVEs marked `known_not_affected` / `fixed` are suppressed (products mapped back to coords by purl — round-trips fad's own `--report-csaf`). |
 
-Suppressed findings are dropped from the report chapters and from `--fail-on`, but kept (flagged `suppressed`) in the JSON/SBOM/CSAF/SARIF exports, and the count is noted in chapter 0.
+Suppressed findings are dropped from the report chapters and from `--fail-on`, but kept (flagged `suppressed`) in the JSON/XLSX/SBOM/CSAF/SARIF exports, and the count is noted in chapter 0.
 
 ```bash
 # Fail the pipeline only on exploited-in-the-wild vulns, minus accepted risks

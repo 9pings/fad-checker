@@ -32,7 +32,7 @@
 - **Shared proxy cache**; `serve-cache` + `--proxy-cache` lets multiple scanners share public-source responses and server-side API keys, with persistent storage and stale-if-error. → [cache usage](docs/USAGE.md#shared-proxy-cache-server-serve-cache----proxy-cache)
 - **A `--help` that fits a screen**; the long tail of switches folds into four flags — `-d eol,nvd` turns things off, `-a licenses,snyk` turns on what is off by default, `-r html,json` picks the outputs, `-o` says where. The individual flags still work and `--help-all` lists them.
 - **Reports in English or French** (`--lang fr`) — the whole report, down to the chapter counts, the status pills, the fix recipes and the summary the 📋 button pastes into Word, plus the CWE titles. Never the evidence: CVE descriptions and advisory text stay as published, a CVSS severity keeps NVD's own wording, and every translated CWE carries MITRE's original with it.
-- **Outputs & CI**; HTML + findings JSON by default (Word `.doc` on `--report-doc`), CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on`, triage with `--ignore`/`--vex`. Private registries for every ecosystem.
+- **Outputs & CI**; HTML + findings JSON by default (Word `.doc` on `--report-doc`), Excel `.xlsx` (`--report-xlsx`), CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on`, triage with `--ignore`/`--vex`. Private registries for every ecosystem.
 - **A report that is complete, or no report at all**; if a data source goes dark mid-scan and the warm cache doesn't cover the gap, the run stops before writing anything and names the domain, the error codes, the failing URL and the flag that skips that source — exit **2**, distinct from the `1` that `--fail-on` uses, so CI can tell *vulnerable* from *not trustworthy*. A source whose cache covered every lookup stays silent.
 - **Tables you can actually hand over**; every table has a split **Copy** button — the left half copies it whole, the chevron offers the first 5 rows, criticals, critical + high, or only what CISA lists as exploited, each with its row count. Pastes into Word with formatting intact.
 
@@ -110,6 +110,7 @@ fad-checker -s ./proj -a osv-db,typosquat                      # offline-complet
 fad-checker -s ./proj -a licenses --fail-on high               # license chapter + CI gate
 fad-checker -s ./proj --report-json --baseline last.json --fail-on-new   # differential audit: fail CI on NEW findings
 fad-checker diff last.json this.json                           # standalone diff of two findings JSONs
+fad-checker -s ./proj -r html,json,xlsx                        # include the Excel workbook
 fad-checker -s ./site --app-plugins wordpress --private-component wp-content/plugins/acme --offline
 ```
 

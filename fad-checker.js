@@ -355,7 +355,7 @@ program
 	.option("--config <file>", "load default options from a JSON config file (else ./.fad-env.json)")
 	.option("-d, --disable <list>", "turn features OFF (comma-separated) — see the token list below")
 	.option("-a, --activate <list>", "turn ON what is off by default (comma-separated) — see below")
-	.option("-r, --report <list>", "outputs to write, comma-separated: html,doc,sbom,csaf,json,sarif (default: html,json)")
+	.option("-r, --report <list>", "outputs to write, comma-separated: html,doc,xlsx,sbom,csaf,json,sarif (default: html,json)")
 	.option("--help-all", "every option, incl. the flags -d/-a/-r replace and the cache / registry / config commands")
 	.option("-e, --exclude <exclude>", "regex of groupId/name to exclude, e.g. '^(client|private)\\.'")
 	.option("--exclude-path <glob...>", "ignore sub-paths during the walk (gitignore-style glob, relative to --src). Repeatable")
@@ -373,10 +373,11 @@ program
 	.option("--no-eol", "skip the end-of-life check (endoflife.date)")
 	.option("--no-kev", "skip CISA KEV (known-exploited) enrichment")
 	// Output family: each --report-<type> takes an OPTIONAL path (omit → default name
-	// under --report-output). With NO --report-* flag at all, HTML + .doc are written
+	// under --report-output). With NO --report-* flag at all, HTML + findings JSON are written
 	// by default. --no-report writes nothing (scan + gate only).
 	.option("--report-html [file]", "write the self-contained HTML report (default: <report-output>/cve-report.html)")
 	.option("--report-doc [file]", "write the Word-compatible .doc report (default: <report-output>/cve-report.doc)")
+	.option("--report-xlsx [file]", "write an Excel workbook (default: <report-output>/findings.xlsx)")
 	.option("--report-sbom [file]", "write a CycloneDX 1.6 SBOM, vulnerabilities inline (default: <report-output>/sbom.cdx.json)")
 	.option("--report-csaf [file]", "write a CSAF 2.0 VEX document (default: <report-output>/csaf-vex.json)")
 	.option("--report-json [file]", "write a flat machine-readable findings JSON (default: <report-output>/findings.json)")
@@ -610,7 +611,7 @@ const readOnly = !options.target;
 const scanRequested = !!(options.snyk || options.baseline || options.failOnNew
 	|| options.failOnIncomplete
 	|| (options.failOn && options.failOn !== "none")
-	|| [options.reportHtml, options.reportDoc, options.reportSbom, options.reportCsaf, options.reportJson, options.reportSarif].some(v => v !== undefined));
+	|| [options.reportHtml, options.reportDoc, options.reportXlsx, options.reportSbom, options.reportCsaf, options.reportJson, options.reportSarif].some(v => v !== undefined));
 const extractOnly = !readOnly && !scanRequested;
 
 // --src is required for every mode except --import-anonymized (which scans a
@@ -835,9 +836,9 @@ async function timedPhase(label, fn) {
 		}
 		// --import-anonymized is a cache-WARMING step (pair with --export-cache), not a
 		// reporting one: the path-bearing report is produced later, offline, from the warmed
-		// cache against the real source tree. So suppress the default HTML+doc output here
+		// cache against the real source tree. So suppress the default HTML+JSON output here
 		// (still honor an explicit --report-<type> if a user really wants a path-free one).
-		const anyReportRequested = [options.reportHtml, options.reportDoc, options.reportSbom, options.reportCsaf, options.reportJson, options.reportSarif].some(v => v !== undefined);
+		const anyReportRequested = [options.reportHtml, options.reportDoc, options.reportXlsx, options.reportSbom, options.reportCsaf, options.reportJson, options.reportSarif].some(v => v !== undefined);
 		if (!anyReportRequested) options.report = false;
 		await runReportFlow(resolved, { activeIds, runMaven, runNpm, privateLibIds: [], mavenRepos, regMap, collectWarnings: [], walkOpts });
 		return;
@@ -1111,7 +1112,7 @@ async function timedPhase(label, fn) {
 	// ---------- Scan flow (CVE / EOL / Obsolete) ----------
 	// The scan always runs — it feeds the terminal summary, the file outputs and the
 	// CI gate. Which files get written is decided by the --report-* family inside
-	// (HTML + .doc by default; --no-report writes nothing).
+	// (HTML + findings JSON by default; --no-report writes nothing).
 	await runReportFlow(resolved, { activeIds, runMaven, runGradle, runNpm, privateLibIds, mavenRepos, regMap, collectWarnings, mavenPropsByPom: mavenCtx?.propsByPom, mavenStore: mavenCtx?.store, gradlePlatformBoms: gradleCtx?.platformBoms || [], parsedManifests, composerPlatforms: composerCtx?.platforms || [], walkOpts });
 	if (!readOnly) {
 		ui.section("Next step");
@@ -1913,8 +1914,8 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// something to --baseline against without anyone having to remember a flag; the .doc is
 	// still one --report-doc away but is no longer written for people who never open it.
 	// file outputs (the scan, terminal summary and --fail-on gate still ran).
-	const DEFAULT_NAMES = { html: "cve-report.html", doc: "cve-report.doc", sbom: "sbom.cdx.json", csaf: "csaf-vex.json", json: "findings.json", sarif: "fad.sarif" };
-	const sel = { html: options.reportHtml, doc: options.reportDoc, sbom: options.reportSbom, csaf: options.reportCsaf, json: options.reportJson, sarif: options.reportSarif };
+	const DEFAULT_NAMES = { html: "cve-report.html", doc: "cve-report.doc", xlsx: "findings.xlsx", sbom: "sbom.cdx.json", csaf: "csaf-vex.json", json: "findings.json", sarif: "fad.sarif" };
+	const sel = { html: options.reportHtml, doc: options.reportDoc, xlsx: options.reportXlsx, sbom: options.reportSbom, csaf: options.reportCsaf, json: options.reportJson, sarif: options.reportSarif };
 	const anySpecified = Object.values(sel).some(v => v !== undefined);
 	const resolveOut = key => {
 		const v = sel[key];
@@ -1922,8 +1923,8 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		return (v === true) ? path.join(reportDir, DEFAULT_NAMES[key]) : v;
 	};
 	const out = options.report === false
-		? { html: null, doc: null, sbom: null, csaf: null, json: null, sarif: null }
-		: { html: resolveOut("html"), doc: resolveOut("doc"), sbom: resolveOut("sbom"), csaf: resolveOut("csaf"), json: resolveOut("json"), sarif: resolveOut("sarif") };
+		? { html: null, doc: null, xlsx: null, sbom: null, csaf: null, json: null, sarif: null }
+		: { html: resolveOut("html"), doc: resolveOut("doc"), xlsx: resolveOut("xlsx"), sbom: resolveOut("sbom"), csaf: resolveOut("csaf"), json: resolveOut("json"), sarif: resolveOut("sarif") };
 	const ensureDir = async p => { if (p) await fs.promises.mkdir(path.dirname(path.resolve(p)), { recursive: true }); };
 
 	// Ignored-directories appendix: re-walk --src ONCE under the same prune policy the
@@ -1931,7 +1932,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// anchored to --src) so the report can list exactly which directories the scan
 	// skipped, and why. Only computed when an output that renders it is requested.
 	let excludedDirs = [];
-	if (options.src && (out.html || out.doc || out.json)) {
+	if (options.src && (out.html || out.doc || out.xlsx || out.json)) {
 		try {
 			const { collectExcludedDirs } = require("./lib/path-filter");
 			excludedDirs = collectExcludedDirs({ srcRoot: options.src, excludePath, defaultExcludes });
@@ -2021,6 +2022,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	}
 
 	const wrote = [];
+	let xlsxFailed = false;
 	// Apply the source-health gate for every output combination, including JSON-only.
 	abortIfDegraded();
 	if (out.html || out.doc) {
@@ -2066,6 +2068,17 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 				applicationRelations, coverage: appState.coverage, warnings: reportWarnings }, out.json);
 			wrote.push(["Findings JSON", out.json]);
 		} catch (err) { ui.warn(`JSON export failed: ${err.message}`); }
+	}
+	if (out.xlsx) {
+		try {
+			const { writeXlsx } = require("./lib/xlsx-export");
+			await ensureDir(out.xlsx);
+			writeXlsx({ cveMatches, retireMatches, vendoredJsInventory, certFindings, eolResults, obsoleteResults,
+				outdatedResults, licenseResults, excludedDirs, resolvedDeps: resolved, projectInfo, toolVersion: pkg.version,
+				typosquats, diff: jsonDiff, applications: appState.applications, applicationInventory: appState.inventory,
+				applicationRelations, coverage: appState.coverage, warnings: reportWarnings }, out.xlsx);
+			wrote.push(["Excel workbook", out.xlsx]);
+		} catch (err) { xlsxFailed = true; ui.warn(`XLSX export failed: ${err.message}`); }
 	}
 	if (out.sarif) {
 		try {
@@ -2146,6 +2159,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			process.exitCode = 2;
 		}
 	}
+	if (xlsxFailed) process.exitCode = 2;
 }
 
 // mergeBySource now lives in lib/merge-sources.js (extracted to be unit-testable,
