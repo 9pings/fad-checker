@@ -486,5 +486,13 @@ test("--proxy re-exec: the child runs with the proxy env applied and exit code i
 	});
 	assert.equal(res.code, 0);
 	assert.match(res.out, /\d+\.\d+\.\d+/);
-	assert.equal(res.err, "");
+	// Node only honours HTTP(S)_PROXY for fetch from 24 -- on older runtimes the
+	// CLI prints its documented "continuing anyway" warning. Strip that one line
+	// (it is the only sanctioned stderr) and anything left fails the test.
+	const expected = `Node ${process.versions.node} ignores HTTP(S)_PROXY for fetch (needs Node >= 24, or bun) — continuing anyway`;
+	const rest = res.err.replace(expected, "");
+	// The only sanctioned stderr is the CLI's own old-Node warning (its glyph plus
+	// that sentence) — anything alphanumeric beyond it fails the test.
+	assert.ok(res.err === "" || (res.err.includes(expected) && /^[^A-Za-z0-9]*$/.test(rest)),
+		`unexpected stderr: ${JSON.stringify(res.err)}`);
 });

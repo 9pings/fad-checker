@@ -9,7 +9,8 @@
 > **F**ormidable **A**uditor's **D**ependency **C**hecker<br>
 > AKA **F**uckin' **A**utonomous **D**ependency **C**hecker<br>
 
-`fad-checker` audits **Maven · Gradle · npm · Yarn · pnpm · Composer · PyPI · NuGet · Go · Ruby**, vendored JavaScript, classics CMS, committed native binaries and cryptographic material (certificates & private/public keys) in any source tree; multi-module, monorepo, polyglot; and produces a self-contained **HTML report + findings JSON** by default (Word `.doc` on request) (CVE prioritised by EPSS + CISA KEV, EOL, obsolete, outdated, licenses) plus **CycloneDX SBOM / CSAF VEX / SARIF / JSON** exports. **No build tools, no Docker, no network needed**; it reads lockfiles and manifests straight off disk.
+`fad-checker` is a polyglot dependency auditor built for **professional code audits**.
+It scans **10 ecosystems + 9 CMS/Frameworks** (WordPress, Drupal, Symfony, Laravel…) in one pass, with **no build tools**, real & complete **air-gapped** support, private package detection, committed binaries & certificates, and produces clean **HTML + Word** reports.
 
 🌐 **[Project site & docs →](https://9pings.github.io/fad-checker/)**
 
