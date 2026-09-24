@@ -7,6 +7,31 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [2.7.0] - 2026-09-24
 
+### Fixed
+- Preserve GitHub advisory pagination through shared and local caches; refetch old
+  cached pages without pagination metadata.
+- Prevent abandoned batch reservations when an overlapping request encounters
+  upstream failure backoff.
+- Route SPIP's NVD product query through the provider cache and server credentials.
+  Exclude non-vulnerable context CPEs and different product names; retain UNKNOWN
+  severity when NVD provides no score.
+- Preserve CMS snapshot collection dates through cache reuse and check live
+  coverage against `--max-advisory-age`; fingerprint all GitHub advisory pages.
+- Exclude generated CMS review reports from the npm package.
+
+- Bound proxy transfers with deadlines, backpressure, concurrency limits and an
+  evicting metadata/body/spool quota; protect readers and clean orphaned files.
+- Merge CMS snapshots by collection date and publish imported semantic cache
+  entries atomically, preserving the old entry if publication fails.
+- Add `--wordfence-live` for scans and anonymized warming using server credentials.
+
+### Documentation
+- Document the remaining dependency advisory coverage gate limitation.
+- Update npm description and CMS/framework keywords; remove development plans,
+  reviews, handoffs and specifications from version control.
+- Align CMS detection, SPIP warming, data-source and credential documentation with
+  implementation; use `npm ci` for contributor setup.
+
 ### Added
 - Optional Excel `.xlsx` export (`--report-xlsx [file]` or `-r xlsx`) with a summary and separate sheets for populated findings, inventory, application ownership, coverage, warnings, provenance and baseline diff. Numbers and booleans stay typed; advisory text is never interpreted as a formula. The workbook uses the same findings model as JSON and joins `SHA256SUMS` when enabled.
 - **Same command, same options, same results online and air-gapped.** The 3-phase air-gap workflow now covers every CMS/framework lane with no extra flag: `fad-checker -s <proj>` online and `fad-checker -s <proj> --offline` in the enclave produce identical reports once phase 2 has run. Three pieces close the loop. (1) The anonymized descriptor (`fad-deps/1`) gains an `applications` section — public product identities only: application type, core version, and the inventoried **public** component identities (private components never leave; a module/theme is inventoried from its `.info.yml` without ever appearing in the lock). (2) `--import-anonymized` **warms every CMS advisory snapshot from the descriptor alone** (`lib/cms-snapshot-warm.js`): the Drupal feed for the union of the lock's `drupal/*` coordinates and the inventoried public identities — the exact set the live source queries —, the PrestaShop/TYPO3 repository feeds (coordinate prefix **or** declared application: an install's lock may hold none of the publisher's own packages), one WordPress checksums reference per declared core version (pinned by the warming run's `--wp-checksums-locale`), and the Wordfence catalogue when the warming machine holds an API key (the key itself never travels; the enclave reads the snapshot back without one). Each fetched snapshot is validated with its provider's schema before being written, so a shape change fails online instead of aborting the enclave. (3) The runner consumes those cached snapshots automatically **in every mode** — the lanes a scan runs are a function of the cache state, not of online/offline — with an explicit flag or live URL always winning, the fallback only engaging when the source's application plugin is selected, and the same schema/`--max-advisory-age` validation as an operator-supplied file. Auto-consumed snapshots report `completeness: "tool-fetched"` with the stamp's `sourceUrl`/`collectedAt` (`localSourceSnapshot` in `lib/application-plugins/wave2-common.js`); an explicit flag still reports `operator-declared`. Previously an offline phase-3 that skipped `--drupal-advisories`/`--wp-checksums` silently lost those lanes (measured: 84 vs 105 CVE on the CMS fixture), and a coordinate-only warming missed advisories of inventoried-but-not-locked modules (webform: 21 CVE). End-to-end on the fixture (Drupal 10.1.0 + WordPress 6.4.2, fresh offline Docker, pure 3-phase workflow, zero CMS flags): both scans report 105 CVEs, byte-identical findings and coverage — the only residual diffs are `generatedAt`, the runtime/mode provenance lines, and `fileModifiedAt` millisecond truncation from the tar transport. Wordfence without a key anywhere stays honestly `not-run`. Tests: `test/offline-snapshot-reuse.test.js`, `test/cms-snapshot-warm.test.js` (warming per source, union query set, keyless skip, loud failure, per-version checksums, Wordfence reuse without a key).
@@ -196,7 +221,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - Packagist audit now rejects omitted packages, malformed responses and HTTP errors instead of treating them as clean; invalid legacy empty cache entries are revalidated. Composer caret and hyphen constraints follow the documented bounds, and `sources[].remoteId` participates in advisory deduplication.
 - Drupal rejects an empty advisory array. Application sections keep distinct shared owner sets, and application charts use readable bars for overlapping categories.
 - Removed a duplicated `validateSnapshot` declaration in `lib/application-providers/drupal-advisories.js` (the second, byte-identical copy silently shadowed the first; no behaviour change — dead code found during the official-tool comparison review).
-- **Report reliability pass over the CMS/framework application layer** (plan `docs/PLAN-correction-fiabilite-rapports-cms.md`, all driven by red tests on the observed defects, re-verified on the real WordPress/Drupal/Symfony/BookStack corpus):
+- **Report reliability pass over the CMS/framework application layer** (driven by red tests on the observed defects, re-verified on the real WordPress/Drupal/Symfony/BookStack corpus):
   - The Drupal live source now queries the union of every instance's public packages: a second instance whose module was not part of the first query is fetched before its evaluation and merged — only responses actually obtained are merged, the disk snapshot holds the exact queried union with matching provenance, and the outcome no longer depends on discovery order (`CMS_PACKAGE_NOT_QUERIED` disappears). A required query that fails still exits `2` before any report.
   - A locally configured advisory source (`--wordfence-feed`, `--drupal-advisories`) is validated once before discovery — readability, size, JSON, provider schema, and freshness when `--max-advisory-age` is set — and the parsed snapshot is reused during assessment. An unusable source fails with exit `2` and no report even when no instance would have reached the file; a valid one is accepted with no matching instance.
   - The instance synthesis aggregates coverage per capability AND provider: a lane with any `failed`/`partial`/`not-run` check never reads `completed`, shows `executed/expected`, the number of unassessed components and the diagnostic counts, and an instance with a finding still carries the "evaluation incomplete" note when its lanes are incomplete (WordPress 6.4.2: 1 core assessed, 14 themes not — the lane reads partial, not completed).

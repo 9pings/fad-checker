@@ -12,7 +12,7 @@
 `fad-checker` is a polyglot dependency auditor built for **professional code audits**.
 
 
-It scans **10 ecosystems + 9 CMS/Frameworks** (WordPress, Drupal, Symfony, Laravel…) in one pass, with **no build tools**, real & complete **air-gapped** support, private package detection, committed binaries & certificates, and produces clean **HTML + Word** reports.
+It scans **10 ecosystems + 9 CMS/Frameworks** (WordPress, Drupal, Symfony, Laravel…) in one pass, with **no build tools**, **air-gapped** workflows using transferred caches, private package detection, committed binaries & certificates, and produces clean **HTML + Word** reports.
 
 🌐 **[Project site & docs →](https://9pings.github.io/fad-checker/)**
 
@@ -87,7 +87,7 @@ checkable.
 
 ¹² `--baseline` adds a Δ chapter (new / fixed / unchanged); `--fail-on-new` gates on new findings only. Snyk tracks this on its platform, not as a local diff.
 ¹³ Symfony, Laravel, WordPress, Drupal, Joomla, PrestaShop, TYPO3, Magento/Adobe Commerce, SPIP — inventoried per instance (core, plugins, themes, bundles, components) with direct/indirect attribution, publisher advisory feeds where they exist (Wordfence, packages.drupal.org, PrestaShop/TYPO3 GitHub) and WordPress core checksums; the others scan lockfiles only, with no CMS-instance view at all. → [the dedicated guide](docs/CMS-FRAMEWORKS.md)
-¹⁴ `fad-checker serve-cache` + `--proxy-cache`: one upstream call per URL per TTL for the whole fleet, single-flight coalescing, stale-if-error, and NVD/Wordfence/GitHub keys held by the server so keyless instances share the quota. Trivy/Grype/DC cache a local DB; Snyk's is on its platform.
+¹⁴ `fad-checker serve-cache` + `--proxy-cache`: one upstream call per provider resource per TTL for the whole fleet, single-flight coalescing, stale-if-error, and NVD/Wordfence/GitHub keys held by the server (use `--wordfence-live` to activate Wordfence with a server key). Trivy/Grype/DC cache a local DB; Snyk's is on its platform.
 
 **Where it loses** — containers/OS packages, auto-fix PRs, and CVE coverage against Snyk's curated
 feed → [`docs/COMPARISON.md`](docs/COMPARISON.md) ·
@@ -200,6 +200,9 @@ with [`scripts/adjudicate-gap.js`](scripts/adjudicate-gap.js).
 
 ## CMS & frameworks
 
+See the [CMS coverage limits](docs/CMS-FRAMEWORKS.md#coverage-and-its-current-limits)
+and [shared-cache operating limits](docs/USAGE.md#shared-proxy-cache-server-serve-cache--proxy-cache).
+
 fad-checker doesn't just read the `composer.json` under a WordPress or Drupal site — it inventories the **instance**: core, plugins, themes, bundles and framework components with their observed versions, attributes every dependency CVE to the component that ships it, and reports each instance in its own sub-chapter — synthesis included even when it comes out clean. Any recognized layout is activated by the default `--app-plugins auto`; `none` opts out.
 
 | Product | Inventory | Advisory lane |
@@ -279,7 +282,6 @@ DB is warmed online (phase 2) and carried by `--export-cache`. Full offline/cach
 - [`docs/COMPARISON.md`](docs/COMPARISON.md); vs OSV-Scanner / Trivy / Grype / OWASP DC / Snyk, and how it stays build-free.
 - [`docs/BENCHMARK.md`](docs/BENCHMARK.md) — reproducible air-gapped recall benchmark vs OSV-Scanner on a public 105-module project.
 - [`docs/DATA-SOURCES.md`](docs/DATA-SOURCES.md); the public datasets fad-checker uses + their licenses.
-- [`docs/SPEC-audit-pro.md`](docs/SPEC-audit-pro.md); the audit-grade features (provenance, differential audit, methodology/integrity) and why each was built that way.
 - [`CHANGELOG.md`](CHANGELOG.md) · [`CLAUDE.md`](CLAUDE.md); release history · code-level orientation for contributors.
 
 ## Contributing

@@ -16,6 +16,7 @@ dist/
 
 # Working documents that must never ship (untracked in git, but npm packs the
 # working directory, not the index)
+cms-review-report/
 launch-kit.md
 rr2.json
 *.local.md

@@ -32,17 +32,15 @@
 
 Persistent caches (`~/.fad-checker/`) mean each source is hit at most once per its TTL (full
 table → [`USAGE.md`](USAGE.md)). **No telemetry, no third-party analytics** — every request
-above is made directly to the named endpoint with a `User-Agent: fad-checker-*` header, and
+above targets the named endpoint, optionally through the configured shared proxy with a `User-Agent: fad-checker-*` header, and
 `--offline` makes none at all.
 
-Joomla, PrestaShop, TYPO3 and Magento/Adobe Commerce application inventories read
-their local manifests; they do not fetch publisher bulletins. The candidate publisher
-pages ([Joomla Security Centre](https://developer.joomla.org/security-centre.html),
-[PrestaShop advisories](https://github.com/PrestaShop/PrestaShop/security/advisories),
-[TYPO3 advisories](https://typo3.org/help/security-advisories),
-[Adobe bulletins](https://helpx.adobe.com/security/products/magento.html)) do not by
-themselves establish a complete, machine-readable feed for every product and
-extension. Public Composer dependencies still use OSV/Packagist. Adobe Commerce
+Application inventory reads local files. Configured PrestaShop and TYPO3 advisory
+lanes also query the GitHub repository feeds listed above. SPIP core advisories use
+NVD's product query (`virtualMatchString=cpe:2.3:a:spip:spip`), routed through the
+shared proxy when configured. Joomla and Magento source-only components retain
+unqualified publisher coverage; this implementation has no dedicated publisher
+advisory lane for them. Public Composer dependencies still use OSV/Packagist. Adobe Commerce
 packages distributed through `repo.magento.com` are excluded from Packagist audit
 and its public package metadata lookup;
 an omitted Packagist response is reported as unknown advisory coverage for that package;

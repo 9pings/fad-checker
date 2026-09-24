@@ -407,8 +407,13 @@ FAD_PROXY_CACHE_TOKEN=s3cret fad-checker -s ./proj --proxy-cache http://cache-ho
 | `--cache-dir <dir>` | Store location (default `~/.fad-checker-proxy-cache/` — its own root, never inside the scan's `~/.fad-checker/` caches) |
 | `--ttl <seconds>` | Override every per-source TTL (defaults: OSV 12h, NVD + endoflife.date 7d, registries/EPSS/KEV/deps.dev 24h) |
 | `--swr` / `--no-swr` | An expired entry is served stale while a refresh runs in the background (default ON; `--no-swr` makes expiry a blocking refetch) |
-| `--max-body-mb <n>` | Bodies above this (default 32 MB) are spooled for concurrent readers but are not kept after the request; CVE release archives have a separate 1 GiB cache limit |
-| `--nvd-key` / `--wordfence-key` / `--github-token` | API keys the **server** injects upstream (flags > `NVD_API_KEY` / `WORDFENCE_API_KEY` / `GITHUB_TOKEN` env > `--set-nvd-key` config). Instances behind `--proxy-cache` then need none — the fleet shares the server's quota. Without a server key, a client-sent credential is forwarded as-is |
+| `--max-body-mb <n>` | Persistence limit per response (default 32 MiB); larger responses use a temporary spool, retired after 30 s when readers finish. CVE archives have a separate 1 GiB persistence limit |
+| `--max-transfer-mb <n>` | Hard upstream body limit, including chunked bodies (default 1024 MiB); JSON batches additionally cap at 32 MiB |
+| `--max-store-mb <n>` | Combined metadata, body and spool budget (default 2048 MiB); evicts the oldest collected unpinned entries, refuses writes if space cannot be freed |
+| `--max-entries <n>` | Persistent entry limit (default 10000) |
+| `--upstream-timeout <seconds>` | Deadline covering upstream headers and body, including background and batch requests (default 120 s) |
+| `--max-concurrent <n>` | Maximum active upstream transfers (default 16); excess distinct requests fail, cached readers continue |
+| `--nvd-key` / `--wordfence-key` / `--github-token` | API keys the **server** injects upstream (flags > `NVD_API_KEY` / `WORDFENCE_API_KEY` / `GITHUB_TOKEN` env > `--set-nvd-key` config). NVD/GitHub clients can use the server credentials. `--wordfence-live` activates the official feed using the server key alone, including `--import-anonymized` warming. Custom feed URLs still require a client key. Without a server key, a client-sent credential is forwarded as-is |
 | `--upstream-proxy <url>` | Route the server's own upstream fetches through a corporate forward proxy |
 | `--token <t>` | Require a token on every endpoint except `__health`; scans send it via `FAD_PROXY_CACHE_TOKEN` or `--proxy-cache-token` without replacing source credentials |
 
@@ -423,10 +428,48 @@ Behaviour worth knowing:
   (`x-fad-proxy: stale`); a definitive 404 is mirrored as-is (that is how private
   packages are detected). With no cached copy, the client receives the upstream failure.
 - The scanner sends `POST /v1/resource` with a provider, data type and subject. The server builds the upstream request and caches by resource identity. OSV, Packagist and EPSS batches are split into individual cache entries; custom/private registry URLs go direct through the same router.
-- Every response carries `x-fad-proxy: hit | miss | stale | coalesced`; `GET /__stats`
+- Resource responses carry `x-fad-proxy` (including `pass`/`error` for failures); `GET /__stats`
   shows the counters, `POST /__clear` wipes the base.
 - A dead proxy-cache server uses the local resource cache when that cache covers the request. Otherwise the source-health retry schedule runs and the scan aborts with exit 2 for a required source.
 - `--proxy-cache` and `--offline` are exclusive (offline makes no requests at all).
+
+GitHub pagination links are retained in both caches. Entries created before this
+metadata was preserved are fetched again; an old headerless GitHub page cannot
+establish a complete feed. CMS snapshots retain the upstream collection time
+reported by the cache, and `--max-advisory-age` checks live as well as local data.
+Without that option, stale fallback has no maximum age.
+
+Transfers are spooled with stream backpressure before a successful response is
+sent. A disconnected requester does not cancel shared work needed by followers;
+that work remains bounded by the upstream deadline and transfer/store budgets.
+Cached readers use streaming backpressure and an inactivity timeout. Limits are
+reported by `GET /__stats` with `storeBytes`, `bodyBytes` and `activeUpstream`.
+Sizes use binary MiB; the store budget accounts for payload and metadata bytes,
+not filesystem block allocation. Leave filesystem headroom for directories and
+block overhead. Large individual JSON batches have an additional 32 MiB bound.
+
+One server owns each store directory (`server.lock`). Startup removes abandoned
+spools and unreferenced body generations. A dead owner's PID allows recovery;
+an unreadable lock or a reused PID requires the operator to verify no server uses
+that directory before removing the lock. Do not share this directory with a second
+server or a scanner process. Metadata is published only after its body is complete.
+
+A shared token grants resource access and cache administration. HTTP does not
+encrypt that token or forwarded source credentials; terminate TLS when crossing
+an untrusted network.
+
+```bash
+fad-checker serve-cache --wordfence-key <key> --max-store-mb 4096 --upstream-timeout 180
+fad-checker -s ./wordpress --proxy-cache http://127.0.0.1:8321 --wordfence-live
+fad-checker --import-anonymized deps.json --proxy-cache http://127.0.0.1:8321 --wordfence-live
+```
+
+When neither client nor server has a Wordfence key, the server refuses the request
+before contacting Wordfence. The key is never exported with snapshots.
+CMS snapshot imports compare the declared collection date, even if a copy has a
+newer filesystem date. Semantic cache imports publish each body/metadata pair
+atomically; interruption preserves the previous committed entry. This is a
+per-entry guarantee, not a transaction spanning the entire imported cache.
 
 ### Corporate forward proxy (`--proxy`)
 

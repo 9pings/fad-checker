@@ -34,8 +34,15 @@ reports there are especially welcome. In particular:
   to the report.
 - **XML / YAML / TOML parsing** — `pom.xml` (xml2js), lockfiles (js-yaml, smol-toml). XXE and
   entity-expansion reports are in scope.
-- **Command execution** — the only subprocesses are `snyk` (opt-in `--snyk`), `retire`, and
-  `curl`/`unzip` for the CVE bundle download.
+- **Command execution** — subprocesses include `snyk` (opt-in `--snyk`), `retire`,
+  CVE download helpers, archive utilities (`tar`, `zip`, `unzip` or PowerShell),
+  and runtime re-execution for proxy configuration. CMS marker files are read,
+  never executed.
+- **Shared cache** — bind to loopback by default. A shared token also authorizes
+  statistics and cache clearing. Use TLS termination when crossing an untrusted
+  network; HTTP alone exposes tokens and forwarded source credentials. Upstream deadlines, transfer limits, a metadata/body/spool quota and concurrency
+  limits bound shared-cache work; filesystem block overhead needs additional headroom. See the operating limits in
+  [`docs/USAGE.md`](docs/USAGE.md#shared-proxy-cache-server-serve-cache--proxy-cache).
 
 ## What leaves your machine
 

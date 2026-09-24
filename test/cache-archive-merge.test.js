@@ -227,3 +227,55 @@ test("import works when the enclave unpacks the archive as root", () => {
 		assert.equal(read(fad(enclave, "nvd-cache", "CVE-2021-44228.json")).id, "CVE-2021-44228");
 	} finally { clean(online, enclave); }
 });
+
+test("CMS snapshot imports compare collection dates even when mtimes are reversed", () => {
+	const online = home("cms-online"), offline = home("cms-offline");
+	const archive = path.join(offline, "cms.tar.gz");
+	try {
+		for (const [name, incomingDate, currentDate, expected] of [
+			["older.json", "2020-01-01", "2026-01-01", "current"],
+			["newer.json", "2026-01-01", "2020-01-01", "incoming"],
+			["invalid.json", "invalid", "2026-01-01", "current"],
+		]) {
+			const incoming = fad(online, "advisory-snapshots", name), current = fad(offline, "advisory-snapshots", name);
+			w(incoming, { _fadSnapshot: { collectedAt: incomingDate }, value: "incoming" });
+			w(current, { _fadSnapshot: { collectedAt: currentDate }, value: "current" });
+			fs.utimesSync(incoming, new Date("2030-01-01"), new Date("2030-01-01"));
+			fs.utimesSync(current, new Date("2010-01-01"), new Date("2010-01-01"));
+		}
+		run(["--export-cache", archive], online);
+		run(["--import-cache", archive], offline);
+		assert.equal(read(fad(offline, "advisory-snapshots", "older.json")).value, "current");
+		assert.equal(read(fad(offline, "advisory-snapshots", "newer.json")).value, "incoming");
+		assert.equal(read(fad(offline, "advisory-snapshots", "invalid.json")).value, "current");
+	} finally { clean(online, offline); }
+});
+
+test("semantic cache merge publishes body and metadata together and preserves old data on failure", () => {
+	const { createCacheStore } = require("../lib/proxy-cache");
+	const { mergeResourceStore } = require("../lib/cache-archive");
+	const incomingDir = home("resource-in"), currentDir = home("resource-out");
+	const incoming = createCacheStore(incomingDir), current = createCacheStore(currentDir);
+	const put = (store, key, body, stamp) => {
+		const tmp = path.join(store.dir, "seed"); fs.writeFileSync(tmp, body);
+		store.commit(key, tmp, { bytes: Buffer.byteLength(body), fetchedAt: stamp, ttlMs: 1 });
+	};
+	const stats = () => ({ added: 0, updated: 0, kept: 0 });
+	try {
+		put(incoming, "a", "new", 2); put(current, "a", "old", 1);
+		const rename = fs.renameSync;
+		try {
+			fs.renameSync = (from, to) => {
+				if (to === current.metaPath(current.hash("a"))) throw new Error("simulated interrupted publication");
+				return rename(from, to);
+			};
+			assert.throws(() => mergeResourceStore(incomingDir, currentDir, stats()), /interrupted/);
+		} finally { fs.renameSync = rename; }
+		assert.equal(fs.readFileSync(current.get("a").bodyPath, "utf8"), "old");
+		mergeResourceStore(incomingDir, currentDir, stats());
+		assert.equal(fs.readFileSync(current.get("a").bodyPath, "utf8"), "new");
+		fs.unlinkSync(incoming.get("a").bodyPath);
+		mergeResourceStore(incomingDir, currentDir, stats());
+		assert.equal(fs.readFileSync(current.get("a").bodyPath, "utf8"), "new");
+	} finally { clean(incomingDir, currentDir); }
+});

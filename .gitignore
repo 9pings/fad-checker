@@ -24,3 +24,9 @@ rr2.json
 
 # OS junk
 Thumbs.db
+
+# Local planning, review and specification documents
+docs/PLAN-*.md
+docs/REVIEW-*.md
+docs/SPEC-*.md
+docs/HANDOFF-*.md

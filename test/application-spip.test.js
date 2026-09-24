@@ -163,3 +163,27 @@ test("an unconfigured lane is an honest not-run, and the lifecycle row says not-
 	assert.equal(lifecycle.execution, "not-run");
 	assert.equal(lifecycle.diagnostic, "CMS_LIFECYCLE_NOT_QUALIFIED");
 });
+
+test("SPIP excludes non-vulnerable context CPEs and other products, and keeps missing severity unknown", () => {
+	const core = { id: "spip:site:core", applicationId: "spip:site", kind: "core", version: "4.1.2", visibility: "public" };
+	for (const change of [
+		m => { m.vulnerable = false; },
+		m => { m.criteria = "cpe:2.3:a:spip:spip_extra:*:*:*:*:*:*:*:*"; },
+	]) {
+		const snapshot = nvdSnapshot();
+		change(snapshot.vulnerabilities[0].cve.configurations[0].nodes[0].cpeMatch[0]);
+		assert.equal(assessSpipAdvisories(snapshot, [core]).matches.length, 0);
+	}
+	const snapshot = nvdSnapshot();
+	delete snapshot.vulnerabilities[0].cve.metrics;
+	assert.equal(assessSpipAdvisories(snapshot, [core]).matches[0].cve.severity, "UNKNOWN");
+});
+
+test("a required live SPIP source fails on an old proxy response with max-advisory-age", async () => {
+	await assert.rejects(runApplicationPlugins(FIXTURE, { plugins: [spip], selection: "spip",
+		liveSpipAdvisoriesUrl: SPIP_ADVISORIES_URL, now: NOW, maxAdvisoryAgeMs: 3600000,
+		fetchImpl: async () => new Response(JSON.stringify(nvdSnapshot()), {
+			headers: { "x-fad-proxy-fetched-at": "2020-01-01T00:00:00Z" },
+		}),
+	}), /snapshot collected .* is stale/);
+});

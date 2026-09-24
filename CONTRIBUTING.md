@@ -22,8 +22,8 @@ one that breaks.
 Node ≥ 20, no other tooling required.
 
 ```bash
-npm install
-npm test                      # 847 tests via node --test
+npm ci
+npm test                      # offline suite via node --test
 node --test test/core.test.js # a single file
 node fad-checker.js -s test/fixtures/monorepo-mixed --offline --no-report
 ```

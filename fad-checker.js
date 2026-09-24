@@ -309,7 +309,12 @@ if (process.argv[2] === "serve-cache") {
 		port, host,
 		store: createCacheStore(storeDir),
 		overrideTtlMs: ttlS > 0 ? ttlS * 1000 : null,
-		maxBodyBytes: Math.max(1, maxMb) * 1024 * 1024,
+		maxBodyBytes: maxMb * 1024 * 1024,
+		maxTransferBytes: Number(arg("--max-transfer-mb", "1024")) * 1024 * 1024,
+		maxStoreBytes: Number(arg("--max-store-mb", "2048")) * 1024 * 1024,
+		upstreamTimeoutMs: Number(arg("--upstream-timeout", "120")) * 1000,
+		maxConcurrent: Number(arg("--max-concurrent", "16")),
+		maxEntries: Number(arg("--max-entries", "10000")),
 		token, swr, keys,
 	}).then(({ server, url }) => {
 		console.log(chalk.green(`✅  proxy-cache listening on ${url}`));
@@ -424,7 +429,8 @@ program
 	.option("--public-component <path=slug>", "verify a public WordPress plugin/theme catalogue slug; repeatable", (value, list) => [...list, value], [])
 	.option("--wordfence-feed <file>", "local Wordfence v3 vulnerability feed JSON snapshot for WordPress advisories")
 	.option("--drupal-advisories <file>", "local packages.drupal.org security-advisories JSON snapshot")
-	.option("--wordfence-feed-url <url>", "override the official Wordfence v3 production-feed URL for a live scan; requires an API key")
+	.option("--wordfence-live", "fetch the official Wordfence feed with a client key or a shared proxy server key")
+	.option("--wordfence-feed-url <url>", "override the official Wordfence v3 production-feed URL for a live scan; custom URLs require a client API key")
 	.option("--wordfence-api-key <key>", "Wordfence v3 bearer key for a live feed (or set WORDFENCE_API_KEY)")
 	.option("--drupal-advisories-live [url]", "query the official packages.drupal.org security-advisories API live for the inventoried Drupal packages")
 	.option("--prestashop-advisories <file>", "local PrestaShop Github security-advisories JSON snapshot (the publisher's own machine feed)")
@@ -479,7 +485,7 @@ if (!process.argv.includes("--help-all")) {
 	const { foldedFlags } = require("./lib/cli-groups");
 	const { ADMIN_FLAGS, REPORTS } = require("./lib/cli-groups");
 	const folded = new Set([...foldedFlags(), ...ADMIN_FLAGS, ...REPORTS.map(r => `--report-${r}`),
-		"--list-app-plugins", "--scan-context", "--private-component", "--public-component", "--wordfence-feed", "--drupal-advisories", "--wordfence-feed-url", "--drupal-advisories-live", "--prestashop-advisories", "--prestashop-advisories-live", "--typo3-advisories", "--typo3-advisories-live", "--spip-advisories", "--spip-advisories-live", "--wp-checksums", "--wp-checksums-live", "--wp-checksums-locale", "--max-advisory-age", "--fail-on-incomplete", "--proxy-cache-token"]);
+		"--list-app-plugins", "--scan-context", "--private-component", "--public-component", "--wordfence-live", "--wordfence-feed", "--drupal-advisories", "--wordfence-feed-url", "--drupal-advisories-live", "--prestashop-advisories", "--prestashop-advisories-live", "--typo3-advisories", "--typo3-advisories-live", "--spip-advisories", "--spip-advisories-live", "--wp-checksums", "--wp-checksums-live", "--wp-checksums-locale", "--max-advisory-age", "--fail-on-incomplete", "--proxy-cache-token"]);
 	for (const opt of program.options) if (folded.has(opt.long)) opt.hidden = true;
 } else {
 	process.argv = process.argv.map(a => a === "--help-all" ? "--help" : a);
@@ -821,7 +827,7 @@ async function timedPhase(label, fn) {
 		ui.ok(`imported ${chalk.bold(resolved.size)} dep(s) across ${activeIds.join(", ") || "—"}`
 			+ (applications.length ? ` · ${chalk.bold(applications.length)} application(s) (${[...new Set(applications.map(a => a.type))].join(", ")})` : ""));
 		if (options.offline) ui.warn("--offline: caches won't warm; only useful to re-render from an already-warm cache");
-		if (!resolved.size) { ui.warn("descriptor has no dependencies — nothing to scan"); process.exit(0); }
+		if (!resolved.size && !applications.length) { ui.warn("descriptor has no dependencies or applications — nothing to scan"); process.exit(0); }
 		// Replay the external-parent / import-BOM backfill from the descriptor's carried hints.
 		// Workflow B has no source tree here, so the mainline store-based backfill can't run —
 		// without this, versionless deps (spring-boot-starter-*) stay unresolved and their CVE
@@ -843,9 +849,8 @@ async function timedPhase(label, fn) {
 		// Warm the per-publisher CMS advisory snapshots the air-gapped phase 3 consumes
 		// automatically (runner offline fallback): the Drupal feed is keyed by the
 		// descriptor's drupal/* identities and PrestaShop/TYPO3 are whole-repository
-		// feeds, so no source tree is needed. WordPress checksums are pinned per core
-		// version+locale and cannot be warmed from a descriptor — they come from an
-		// online scan of the tree or --wp-checksums.
+		// feeds, so no source tree is needed. Application identities also justify SPIP
+		// and WordPress snapshots; --wordfence-live can use a key held by the proxy.
 		if (!options.offline) {
 			const { warmCmsAdvisorySnapshots } = require("./lib/cms-snapshot-warm");
 			try {
@@ -859,6 +864,7 @@ async function timedPhase(label, fn) {
 					applications,
 					wordfenceApiKey: options.wordfenceApiKey || process.env.WORDFENCE_API_KEY || null,
 					wordfenceUrl: options.wordfenceFeedUrl || undefined,
+					wordfenceLive: !!(options.wordfenceLive || options.wordfenceFeedUrl),
 					wpChecksumsLocale: options.wpChecksumsLocale || "en_US",
 					nvdApiKey: require("./lib/config").getNvdApiKey(),
 				});
@@ -867,7 +873,7 @@ async function timedPhase(label, fn) {
 				if (warmed.typo3) ui.ok("TYPO3 advisory snapshot warmed → advisory-snapshots/ — carried by --export-cache, reused offline");
 				if (warmed.spip) ui.ok("SPIP advisory snapshot warmed (NVD product CVEs) → advisory-snapshots/ — carried by --export-cache, reused offline");
 				for (const version of warmed.wpChecksums) ui.ok(`WordPress checksums reference warmed (${version}) → advisory-snapshots/ — carried by --export-cache, reused offline`);
-				if (warmed.wordfence) ui.ok("Wordfence catalogue warmed (API key) → advisory-snapshots/ — carried by --export-cache, reused offline without a key");
+				if (warmed.wordfence) ui.ok("Wordfence catalogue warmed (client or proxy credentials) → advisory-snapshots/ — carried by --export-cache, reused offline without a key");
 			}
 			catch (error) {
 				console.error(chalk.red(`❌  CMS advisory snapshot warming failed: ${error.message}`));
@@ -1208,14 +1214,14 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	if (options.src) {
 		const wordfenceApiKey = options.wordfenceApiKey || process.env.WORDFENCE_API_KEY || null;
 		const { DRUPAL_ADVISORIES_URL, WORDFENCE_PRODUCTION_URL, PRESTASHOP_GITHUB_ADVISORIES_URL, TYPO3_GITHUB_ADVISORIES_URL } = require("./lib/application-providers/live-snapshot");
-		const wordfenceLiveUrl = options.wordfenceFeedUrl || (wordfenceApiKey && !options.wordfenceFeed ? WORDFENCE_PRODUCTION_URL : null);
+		const wordfenceLiveUrl = options.wordfenceFeedUrl || ((options.wordfenceLive || wordfenceApiKey) && !options.wordfenceFeed ? WORDFENCE_PRODUCTION_URL : null);
 		const spipLiveUrl = options.spipAdvisoriesLive
 			? (options.spipAdvisoriesLive === true ? require("./lib/application-providers/spip-advisories").SPIP_ADVISORIES_URL : options.spipAdvisoriesLive) : null;
 		if (offline && (wordfenceLiveUrl || options.drupalAdvisoriesLive || options.prestashopAdvisoriesLive || options.typo3AdvisoriesLive || options.wpChecksumsLive || spipLiveUrl)) {
 			console.error(chalk.red("❌  --offline cannot fetch live advisory sources; supply a local --wordfence-feed / --drupal-advisories / --prestashop-advisories / --typo3-advisories / --spip-advisories / --wp-checksums snapshot instead"));
 			process.exit(2);
 		}
-		if (wordfenceLiveUrl && !wordfenceApiKey) {
+		if (wordfenceLiveUrl && !wordfenceApiKey && !(wordfenceLiveUrl === WORDFENCE_PRODUCTION_URL && options.proxyCache)) {
 			ui.warn("Wordfence live scan requires an API key: use --wordfence-api-key or WORDFENCE_API_KEY. No report was written.");
 			process.exit(2);
 		}
