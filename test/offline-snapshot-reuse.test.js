@@ -175,7 +175,7 @@ test("a cached Wordfence catalogue is consumed without a flag and without an API
 		const root = path.join(temp, "scan");
 		fs.cpSync(path.join(__dirname, "fixtures", "wordpress-custom"), root, { recursive: true });
 		const pluginFile = path.join(root, "site/wp-content/plugins/acme/acme.php");
-		fs.writeFileSync(pluginFile, fs.readFileSync(pluginFile, "utf8").replace(/^Update URI:.*\n/m, ""));
+		fs.writeFileSync(pluginFile, fs.readFileSync(pluginFile, "utf8").replace(/^Update URI:.*\r?\n/m, ""));
 		const cacheDir = path.join(temp, "advisory-snapshots");
 		writeCached(cacheDir, "wordfence-v3.json", {
 			"123e4567-e89b-12d3-a456-426614174000": {

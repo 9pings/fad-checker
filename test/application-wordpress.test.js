@@ -19,7 +19,7 @@ test("Wordfence snapshot only matches an explicitly declared public plugin ident
 	const root = path.join(temp, "scan");
 	fs.cpSync(path.join(__dirname, "fixtures", "wordpress-custom"), root, { recursive: true });
 	const pluginFile = path.join(root, "site/wp-content/plugins/acme/acme.php");
-	fs.writeFileSync(pluginFile, fs.readFileSync(pluginFile, "utf8").replace(/^Update URI:.*\n/m, ""));
+	fs.writeFileSync(pluginFile, fs.readFileSync(pluginFile, "utf8").replace(/^Update URI:.*\r?\n/m, ""));
 	const feedFile = path.join(temp, "feed.json");
 	fs.writeFileSync(feedFile, JSON.stringify(WORD_FENCE_FEED));
 	try {

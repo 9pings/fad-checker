@@ -76,7 +76,7 @@ test("CLI emits a local Wordfence finding for a user-declared public plugin", ()
 		const src = path.join(temp, "scan");
 		fs.cpSync(path.join(__dirname, "fixtures", "wordpress-custom"), src, { recursive: true });
 		const pluginFile = path.join(src, "site/wp-content/plugins/acme/acme.php");
-		fs.writeFileSync(pluginFile, fs.readFileSync(pluginFile, "utf8").replace(/^Update URI:.*\n/m, ""));
+		fs.writeFileSync(pluginFile, fs.readFileSync(pluginFile, "utf8").replace(/^Update URI:.*\r?\n/m, ""));
 		const args = [CLI, "-s", src, "--ecosystem", "composer", "--app-plugins", "wordpress",
 			"--wordfence-feed", feed, "--public-component", "site/wp-content/plugins/acme=acme",
 			"--offline", "-d", "eol,nvd,epss,kev,retire,transitive", "--report-json", out, "--no-checksums"];

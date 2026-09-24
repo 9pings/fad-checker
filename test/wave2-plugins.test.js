@@ -179,8 +179,10 @@ test("Composer dependencies survive CMS detection and remain scannable in an unr
 	const relations = buildApplicationRelations(root, cms.applications, cms.inventory, deps);
 	const expanded = expandComposerFindings([{ dep: { ...affected, version: "1.2.3" }, cve: { id: "CVE-TEST" } }], root, relations);
 	assert.equal(expanded.length, 2);
-	assert.equal(expanded.find(f => f.dep.manifestPaths[0].includes("/joomla/")).applicationIds[0], "joomla:joomla");
-	assert.deepEqual(expanded.find(f => f.dep.manifestPaths[0].includes("/unknown/")).applicationIds, []);
+	// Manifest paths carry the platform's separators — compare normalized.
+	const norm = p => String(p).split("\\").join("/");
+	assert.equal(expanded.find(f => norm(f.dep.manifestPaths[0]).includes("/joomla/")).applicationIds[0], "joomla:joomla");
+	assert.deepEqual(expanded.find(f => norm(f.dep.manifestPaths[0]).includes("/unknown/")).applicationIds, []);
 }));
 
 test("Joomla reports disagreement between its runtime constants and package manifest", () => fixture(async root => {
