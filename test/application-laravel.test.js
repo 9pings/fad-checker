@@ -29,7 +29,9 @@ test("Laravel application requires framework dependency and app markers, then in
 		assert.equal(byCoord["laravel/framework"].kind, "framework");
 		assert.equal(byCoord["symfony/console"].version, "7.0.8");
 		assert.equal(byCoord["acme/private-package"].version, "2.1.0");
-		assert.equal(result.coverage.find(c => c.capability === "advisories").execution, "not-run");
+		const advisories = result.coverage.find(c => c.capability === "advisories");
+		assert.equal(advisories.execution, "completed", "covered by the dependency lanes, not a gap");
+		assert.equal(advisories.sourceId, "dependency-lanes");
 		fs.rmSync(path.join(root, "artisan"));
 		const withoutMarker = await runApplicationPlugins(root, { plugins: [laravel], selection: "laravel",
 			resolvedDeps: deps, activeCodecIds: ["composer"] });

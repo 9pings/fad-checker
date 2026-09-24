@@ -141,12 +141,19 @@ Each data source can be disabled independently:
 | *(exit code 2)* | **A data source was unreachable and the cache didn't cover it.** Not a findings failure: nothing was written, because the report would have been incomplete. The message names the domain, the codes, the failing URL and the flag that skips that source. Only online; `--offline` never aborts. |
 | `--eol-support` | Also report frameworks/runtimes whose **active (bug-fix) support has ended** while security fixes are still provided (endoflife.date `support` field) — rendered as an "Out of active support" band under the maintenance chapter, status `unsupported` in the JSON. Off by default: the default EOL set is unchanged. |
 | `--ignore-test` | Drop test-scoped Maven deps and dev npm deps from the scan entirely (the dev-CVE section will be absent) |
-| `--proxy-cache <url>` | Route every public data-source request through a shared `fad-checker serve-cache` server — one upstream call per URL for all instances, persisted across restarts. Private registries always go direct. See **Shared proxy-cache server** |
+| `--proxy-cache <url>` | Route every public data-source request through a shared `fad-checker serve-cache` server — one upstream call per requested resource for all instances, persisted across restarts. Private registries always go direct. See **Shared proxy-cache server** |
 | `--proxy <url>` | Route ALL outbound requests through a corporate forward proxy (`http://host:port`; Node >= 24 or bun). See **Corporate forward proxy** |
+
+If Packagist answers successfully but omits a package from its advisory data, the scan
+continues and names that package in a report warning; omission is never treated as a
+clean result. An unreachable Packagist endpoint or malformed response still stops an
+online scan before writing a report when this lane is enabled.
 
 ## Application inventory (experimental)
 
 The bundled `symfony`, `wordpress`, `drupal`, `laravel`, `joomla`, `prestashop`, `typo3`, and `magento` application plugins are currently experimental in capability, but a present CMS/framework is **activated by the default `--app-plugins auto`**: any recognized layout is inventoried automatically, with honest per-capability coverage (advisories stay `not-run (CMS_PROVIDER_UNCONFIGURED)` until their source is configured — never silently clean). Detection requires conjunctive positive evidence per product (e.g. WordPress needs `wp-load.php` + `wp-includes/version.php` + `wp-admin/index.php`; Symfony needs a kernel/front-controller marker *and* `symfony/framework-bundle` in that tree's lock; a bare `require` constraint never creates an application) — verified on real bare libraries (guzzle, laravel/framework as a package, the symfony/symfony monorepo, composer/composer): zero phantom applications. `--app-plugins none` disables every application plugin; `all` is an explicit synonym of the default; a comma list restricts to specific plugins. `--list-app-plugins` shows the available plugins.
+
+Every subtree is also scanned through its supported dependency descriptors. If its CMS layout is recognized, dependency findings are shown under that CMS instance; otherwise those findings remain in the ordinary dependency sections.
 
 ```bash
 fad-checker -s ./project --app-plugins symfony --offline --report-json
@@ -191,7 +198,7 @@ An explicitly configured advisory file requires its corresponding `--app-plugins
 
 `--max-advisory-age <duration>` (e.g. `72h`, `30d`) bounds the age of every configured advisory snapshot. A snapshot's file modification time proves nothing about when it was collected, so the date must be declared **inside the snapshot file**: a top-level `collectedAt` or `generatedAt` ISO 8601 string, or a reserved `_fadSnapshot: { "collectedAt": "..." }` object (the Wordfence v3 feed is a flat UUID-keyed map, so the reserved key is the only metadata it tolerates). A snapshot without a declared date, a malformed date, or one older than the limit exits with code `2` before any report is written. A declared date also travels with the coverage provenance (`sourceSnapshot.collectedAt`) whether or not the limit is set.
 
-Live sources are the alternative to operator-supplied files. `--drupal-advisories-live` queries the official `https://packages.drupal.org/8/security-advisories` endpoint (announced by the packages.drupal.org Composer descriptor; no authentication) for exactly the inventoried public `drupal/*` identities — private components are never sent. `--prestashop-advisories-live` and `--typo3-advisories-live` page the publishers' GitHub advisory feeds (unauthenticated, subject to GitHub's rate limits), and `--wp-checksums-live` fetches the official api.wordpress.org checksums reference; each can take an optional URL override for a mirror of the same API. Wordfence publishes a [free production feed with bearer authentication](https://www.wordfence.com/help/wordfence-intelligence/v3-accessing-and-consuming-the-vulnerability-data-feed/). Set `WORDFENCE_API_KEY` (recommended, to keep it out of the process command line) or pass `--wordfence-api-key <key>`; the key alone selects the official production endpoint, or `--wordfence-feed-url <url>` can override its URL. A live Wordfence request without a key stops with code `2` and an explanatory warning. A WordPress instance without either a local feed or a live key gets an explicit warning and incomplete advisory coverage. A fetched snapshot is stamped `_fadSnapshot.collectedAt` at collection time (so `--max-advisory-age` accepts it by construction), written atomically to `~/.fad-checker/advisory-snapshots/<provider>.json` for offline reuse, and recorded in coverage with `completeness: "tool-fetched"`. Live sources refuse to run under `--offline` (exit `2`); an air-gapped scan supplies a local feed snapshot. A failed or invalid live response stops the scan before any report, and a live source still requires its `--app-plugins` selection.
+Live sources are the alternative to operator-supplied files. `--spip-advisories-live` queries NVD's SPIP product CVEs (`cpe:2.3:a:spip:spip`) — the only machine-readable SPIP source that exists (no publisher API, no Packagist package); an NVD API key is optional and only lifts the rate limit. `--drupal-advisories-live` queries the official `https://packages.drupal.org/8/security-advisories` endpoint (announced by the packages.drupal.org Composer descriptor; no authentication) for exactly the inventoried public `drupal/*` identities — private components are never sent. `--prestashop-advisories-live` and `--typo3-advisories-live` page the publishers' GitHub advisory feeds (unauthenticated, subject to GitHub's rate limits), and `--wp-checksums-live` fetches the official api.wordpress.org checksums reference; each can take an optional URL override for a mirror of the same API. Wordfence publishes a [free production feed with bearer authentication](https://www.wordfence.com/help/wordfence-intelligence/v3-accessing-and-consuming-the-vulnerability-data-feed/). Set `WORDFENCE_API_KEY` (recommended, to keep it out of the process command line) or pass `--wordfence-api-key <key>`; the key alone selects the official production endpoint, or `--wordfence-feed-url <url>` can override its URL. A live Wordfence request without a key stops with code `2` and an explanatory warning. A WordPress instance without either a local feed or a live key gets an explicit warning and incomplete advisory coverage. A fetched snapshot is stamped `_fadSnapshot.collectedAt` at collection time (so `--max-advisory-age` accepts it by construction), written atomically to `~/.fad-checker/advisory-snapshots/<provider>.json` for offline reuse, and recorded in coverage with `completeness: "tool-fetched"`. Those cached snapshots are consumed **automatically — in every mode**: the lanes a scan runs are a function of the cache state, not of online/offline, so `fad-checker -s <proj>` online and `fad-checker -s <proj> --offline` in the air-gapped enclave (same command, same options, warmed by the same phase 2) produce identical reports — no `--drupal-advisories` / `--prestashop-advisories` / `--typo3-advisories` / `--wp-checksums` flag needed. The files travel with `--export-cache` / `--import-cache`; `--import-anonymized` **warms them from the descriptor alone** (its `applications` section carries the public product identities — type, core version, inventoried public components — the phase-1 export emits): the Drupal feed for the union of the lock's `drupal/*` coordinates and the inventoried public identities, the PrestaShop/TYPO3 repository feeds, one WordPress checksums reference per declared core version (pinned by the warming run's `--wp-checksums-locale`, so both phases must agree on it), and the Wordfence catalogue when the warming machine holds an API key (the key itself never travels — the enclave reads the snapshot back without one). An explicit flag or live URL always wins, the fallback only engages when the source's application plugin is selected, and the file goes through the same schema and `--max-advisory-age` validation as an operator-supplied one. The WordPress checksums reference is pinned by version and locale, so its fallback resolves per instance. Live sources refuse to run under `--offline` (exit `2`); an air-gapped scan supplies a local feed snapshot — the tool's own cache counts as one. A failed or invalid live response stops the scan before any report, and a live source still requires its `--app-plugins` selection.
 
 Symfony Flex `symfony.lock` recipes and `extra.symfony.require` are context. Installed package versions come from `composer.lock`. Extraction with `-t` also mirrors `symfony.lock`. The Symfony and Laravel application-advisory capabilities are currently recorded as `not-run (CMS_ADVISORY_NOT_QUALIFIED)`: their CVEs come from the standard Composer lane (OSV/Packagist), and a capability that never ran never becomes a clean result. WordPress and Drupal advisories run through the Wordfence and Drupal sources configured above. `--fail-on-incomplete` exits with code 2 after writing the partial report when a requested capability is incomplete. The default capability set is `inventory,advisories`.
 
@@ -376,7 +383,7 @@ is enforced two ways:
 
 A scan of a real project makes hundreds of registry / advisory lookups — and every
 machine that scans makes them again. `serve-cache` turns one machine into the cache
-point for the others: one upstream call per URL per TTL for the whole fleet, on a
+point for the others: one upstream call per provider resource per TTL for the whole fleet, on a
 persistent on-disk base that survives restarts. The server's store lives in its **own
 root** (`~/.fad-checker-proxy-cache/`), deliberately outside the scan's `~/.fad-checker/`
 cache dir — the client caches and the shared base are two different roles and are never
@@ -391,6 +398,7 @@ fad-checker serve-cache --upstream-proxy http://corp-proxy:3128     # the server
 
 # Then every scan (same machine, CI runners, other developers) points at it:
 fad-checker -s ./proj --proxy-cache http://127.0.0.1:8321
+FAD_PROXY_CACHE_TOKEN=s3cret fad-checker -s ./proj --proxy-cache http://cache-host:9000
 ```
 
 | Flag (serve-cache) | Effect |
@@ -399,28 +407,25 @@ fad-checker -s ./proj --proxy-cache http://127.0.0.1:8321
 | `--cache-dir <dir>` | Store location (default `~/.fad-checker-proxy-cache/` — its own root, never inside the scan's `~/.fad-checker/` caches) |
 | `--ttl <seconds>` | Override every per-source TTL (defaults: OSV 12h, NVD + endoflife.date 7d, registries/EPSS/KEV/deps.dev 24h) |
 | `--swr` / `--no-swr` | An expired entry is served stale while a refresh runs in the background (default ON; `--no-swr` makes expiry a blocking refetch) |
-| `--max-body-mb <n>` | Bodies above this (default 32 MB — the CVE bulk zip is ~500 MB) stream through uncached |
+| `--max-body-mb <n>` | Bodies above this (default 32 MB) are spooled for concurrent readers but are not kept after the request; CVE release archives have a separate 1 GiB cache limit |
 | `--nvd-key` / `--wordfence-key` / `--github-token` | API keys the **server** injects upstream (flags > `NVD_API_KEY` / `WORDFENCE_API_KEY` / `GITHUB_TOKEN` env > `--set-nvd-key` config). Instances behind `--proxy-cache` then need none — the fleet shares the server's quota. Without a server key, a client-sent credential is forwarded as-is |
 | `--upstream-proxy <url>` | Route the server's own upstream fetches through a corporate forward proxy |
-| `--token <t>` | Require `Authorization: Bearer <t>` on every endpoint except `__health` |
+| `--token <t>` | Require a token on every endpoint except `__health`; scans send it via `FAD_PROXY_CACHE_TOKEN` or `--proxy-cache-token` without replacing source credentials |
 
 Behaviour worth knowing:
 
-- **Only fad's public data sources are ever cached** (npm/PyPI/Packagist/NuGet/RubyGems/Go
-  proxy/Maven Central, OSV, NVD, EPSS, KEV, endoflife.date, deps.dev, CIRCL — the same
-  host list `--offline`/source-health guards). A private registry is proxied as-is,
-  **never cached, and its Authorization headers never leave the scanning machine**.
-- **Single-flight**: ten instances requesting the same packument make one upstream call.
-- **Stale-if-error**: an upstream 403/429/5xx serves the stale copy instead of failing
+- **Only fad's public data sources are routed and cached by scanner clients** (npm/PyPI/Packagist/NuGet/RubyGems/Go
+  proxy/Maven Central, OSV, NVD, EPSS, KEV, endoflife.date, deps.dev, CIRCL,
+  GitHub publisher advisories, Wordfence and WordPress checksums). Private registry
+  requests go direct from the scanner.
+- **Single-flight**: ten instances requesting the same packument make one upstream call. OSV package/version, Packagist advisory package, and EPSS CVE score each have their own key even when requests arrive in overlapping batches.
+- **Stale-if-error**: a failed connection, broken response body or upstream 403/429/5xx serves the stale copy instead of failing
   (`x-fad-proxy: stale`); a definitive 404 is mirrored as-is (that is how private
-  packages are detected, it must never be faked).
-- **POSTs** (OSV `querybatch`) and **HEADs** (Maven mirror preflight) are proxied
-  uncached; fad's own per-instance caches still apply on top.
-- Every response carries `x-fad-proxy: hit | miss | stale | pass`; `GET /__stats`
+  packages are detected). With no cached copy, the client receives the upstream failure.
+- The scanner sends `POST /v1/resource` with a provider, data type and subject. The server builds the upstream request and caches by resource identity. OSV, Packagist and EPSS batches are split into individual cache entries; custom/private registry URLs go direct through the same router.
+- Every response carries `x-fad-proxy: hit | miss | stale | coalesced`; `GET /__stats`
   shows the counters, `POST /__clear` wipes the base.
-- A dead proxy-cache server is **not** a silent hole: `--proxy-cache` wraps the fetch
-  *before* the outage guard, so the retry schedule runs and the run aborts naming the
-  source and its skip flag (exit 2) — the same contract as a dead registry.
+- A dead proxy-cache server uses the local resource cache when that cache covers the request. Otherwise the source-health retry schedule runs and the scan aborts with exit 2 for a required source.
 - `--proxy-cache` and `--offline` are exclusive (offline makes no requests at all).
 
 ### Corporate forward proxy (`--proxy`)

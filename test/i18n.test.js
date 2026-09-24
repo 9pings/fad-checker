@@ -246,6 +246,7 @@ test("a full French report has no English chrome left in it", () => {
 	// chapter — so the grouped count stays French without widening the column.
 	assert.ok(fr.includes("2 vuln."), "the grouped vendored-JS count is French");
 	assert.ok(en.includes("2 vulns"), "the English report keeps its own wording");
+	assert.ok(fr.includes("Fichiers"), "the vendored-JS file list heading is translated");
 });
 
 test("a full French report still quotes its evidence verbatim, and keeps NVD's vocabulary", () => {

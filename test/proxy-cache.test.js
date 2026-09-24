@@ -10,9 +10,10 @@ const os = require("os");
 const path = require("path");
 const http = require("http");
 const { spawn } = require("child_process");
+const { createSourceHealth, guardedFetch } = require("../lib/source-health");
 
 const {
-	ttlForUrl, upstreamHeadersFor, createCacheStore, proxiedFetch, startProxyCacheServer,
+	ttlForUrl, upstreamHeadersFor, createCacheStore, startProxyCacheServer,
 	parseProxyFlag, DEFAULT_CACHE_DIR, CLIENT_CACHE_DIR,
 } = require("../lib/proxy-cache");
 
@@ -58,7 +59,7 @@ async function startProxy(opts = {}) {
 	const { server, url } = await startProxyCacheServer({
 		port: 0, host: "127.0.0.1",
 		store: createCacheStore(opts.dir || tmpDir()),
-		fetcher: (t, init) => fetch(rewrite(t), init),
+		fetcher: opts.fetcher ? (t, init) => opts.fetcher(t, init, up) : (t, init) => fetch(rewrite(t), init),
 		overrideTtlMs: opts.overrideTtlMs ?? null,
 		maxBodyBytes: opts.maxBodyBytes,
 		swr: opts.swr,
@@ -71,7 +72,24 @@ async function startProxy(opts = {}) {
 	};
 }
 
-const get = url => fetch(url).then(async r => ({ status: r.status, tag: r.headers.get("x-fad-proxy"), body: await r.text() }));
+const callResource = (base, provider, type, params, headers = {}) => fetch(base + "/v1/resource", {
+	method: "POST", headers: { "content-type": "application/json", ...headers },
+	body: JSON.stringify({ provider, type, params }),
+});
+const get = url => {
+	const mark = url.indexOf("/https://");
+	let result;
+	if (mark > 0) {
+		const source = new URL(url.slice(mark + 1));
+		const base = url.slice(0, mark);
+		result = source.hostname === "registry.npmjs.org"
+			? callResource(base, "npm", "package", { name: source.pathname.slice(1) })
+			: source.hostname === "services.nvd.nist.gov"
+				? callResource(base, "nvd", "cve", { id: source.searchParams.get("cveId") })
+				: fetch(url);
+	} else result = fetch(url);
+	return result.then(async r => ({ status: r.status, tag: r.headers.get("x-fad-proxy"), body: await r.text() }));
+};
 
 // ------------------------------------------------------------------ store ----
 
@@ -96,6 +114,42 @@ test("store: set/get roundtrip, TTL freshness, persistence across instances", ()
 	assert.equal(s2.get(URL_NPM), null);
 });
 
+test("store: refresh publishes a new body atomically and keeps active readers alive", () => {
+	const dir = tmpDir(), store = createCacheStore(dir);
+	const seed = path.join(dir, "seed"), update = path.join(dir, "update");
+	fs.writeFileSync(seed, "old");
+	store.commit(URL_NPM, seed, { fetchedAt: 1, ttlMs: 1, contentType: "text/plain", bytes: 3 });
+	const old = store.get(URL_NPM);
+	const release = store.acquire(old);
+	fs.writeFileSync(update, "new value");
+	store.commit(URL_NPM, update, { fetchedAt: 2, ttlMs: 1, contentType: "text/plain", bytes: 9 });
+	const current = store.get(URL_NPM);
+	assert.notEqual(current.bodyPath, old.bodyPath);
+	assert.equal(fs.readFileSync(old.bodyPath, "utf8"), "old", "an in-flight response can finish");
+	assert.equal(fs.readFileSync(current.bodyPath, "utf8"), "new value");
+	assert.equal(fs.readFileSync(createCacheStore(dir).get(URL_NPM).bodyPath, "utf8"), "new value");
+	release();
+	assert.equal(fs.existsSync(old.bodyPath), false, "the retired body is removed after its last reader");
+});
+
+test("store: failed metadata publication preserves the previous cached body", () => {
+	const dir = tmpDir(), store = createCacheStore(dir);
+	const first = path.join(dir, "first"), second = path.join(dir, "second");
+	fs.writeFileSync(first, "old");
+	store.commit(URL_NPM, first, { fetchedAt: 1, ttlMs: 1, contentType: "text/plain", bytes: 3 });
+	fs.writeFileSync(second, "new");
+	const originalRename = fs.renameSync;
+	try {
+		fs.renameSync = (from, to) => {
+			if (to === store.metaPath(store.hash(URL_NPM))) throw new Error("disk publication failed");
+			return originalRename(from, to);
+		};
+		assert.throws(() => store.commit(URL_NPM, second,
+			{ fetchedAt: 2, ttlMs: 1, contentType: "text/plain", bytes: 3 }), /disk publication failed/);
+	} finally { fs.renameSync = originalRename; }
+	assert.equal(fs.readFileSync(createCacheStore(dir).get(URL_NPM).bodyPath, "utf8"), "old");
+});
+
 test("ttlForUrl: per-source table + override + default", () => {
 	assert.equal(ttlForUrl("https://api.osv.dev/v1/querybatch"), 12 * 3600 * 1000);
 	assert.equal(ttlForUrl("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=X"), 7 * 24 * 3600 * 1000);
@@ -104,24 +158,6 @@ test("ttlForUrl: per-source table + override + default", () => {
 });
 
 // ----------------------------------------------------------------- client ----
-
-test("proxiedFetch: rewrites known-source URLs, leaves private hosts and Request objects direct", async () => {
-	const seen = [];
-	const fake = async (input) => { seen.push(typeof input === "string" ? input : (input?.url ?? String(input))); return { ok: true, status: 200, headers: new Map(), text: async () => "" }; };
-	const p = proxiedFetch("http://127.0.0.1:9999/", { fetch: fake });
-	await p(URL_NPM, { method: "GET" });
-	assert.equal(seen[0], "http://127.0.0.1:9999/" + URL_NPM);
-	await p(URL_PRIVATE);
-	assert.equal(seen[1], URL_PRIVATE);
-	await p(new Request("https://registry.npmjs.org/leftpad")); // Request object → untouched
-	assert.equal(seen[2], "https://registry.npmjs.org/leftpad");
-	await p("not-a-url");
-	assert.equal(seen[3], "not-a-url");
-});
-
-test("proxiedFetch: rejects an invalid base URL", () => {
-	assert.throws(() => proxiedFetch("127.0.0.1:8321"), /invalid proxy-cache URL/);
-});
 
 // ----------------------------------------------------------------- server ----
 
@@ -196,6 +232,90 @@ test("server: stale-if-error — a dead upstream serves the stale copy instead o
 	} finally { await p.close(); }
 });
 
+test("server: a refresh body that breaks midstream serves the old entry intact", async () => {
+	let failBody = false;
+	const p = await startProxy({ overrideTtlMs: 30, swr: false,
+		fetcher: (target, init, up) => failBody
+			? new Response(new ReadableStream({ start(controller) {
+				controller.enqueue(new TextEncoder().encode("partial"));
+				controller.error(new Error("upstream stream broke"));
+			} }), { status: 200, headers: { "content-type": "application/json" } })
+			: fetch(target.replace(/^https:\/\/registry\.npmjs\.org/, up.url()), init) });
+	try {
+		const target = p.url + "/" + URL_NPM;
+		const old = await get(target);
+		failBody = true;
+		await new Promise(r => setTimeout(r, 45));
+		const after = await get(target);
+		assert.equal(after.status, 200);
+		assert.equal(after.tag, "stale");
+		assert.equal(after.body, old.body);
+		assert.equal(p.server.fadStore.size(), 1);
+	} finally { await p.close(); }
+});
+
+test("server: default stale-while-revalidate survives offline upstream", async () => {
+	let online = true, attempts = 0;
+	const p = await startProxy({ overrideTtlMs: 30, fetcher: (target, init, up) => {
+		attempts++;
+		if (!online) throw new Error("upstream offline");
+		return fetch(target.replace(/^https:\/\/registry\.npmjs\.org/, up.url()), init);
+	} });
+	try {
+		const target = p.url + "/" + URL_NPM;
+		const first = await get(target);
+		online = false;
+		await new Promise(r => setTimeout(r, 45));
+		const answers = await Promise.all(Array.from({ length: 20 }, () => get(target)));
+		assert.ok(answers.every(r => r.status === 200 && r.tag === "stale" && r.body === first.body));
+		assert.ok(attempts <= 3, `offline refreshes should coalesce (${attempts} attempts)`);
+		assert.equal(p.server.fadStore.size(), 1);
+	} finally { await p.close(); }
+});
+
+test("server: 40 concurrent readers survive an offline upstream; a cold miss fails at the client", async () => {
+	const dir = tmpDir();
+	let online = true, attempts = 0;
+	const fetcher = (target, init, up) => {
+		attempts++;
+		if (!online) throw new Error("upstream offline");
+		return fetch(target.replace(/^https:\/\/registry\.npmjs\.org/, up.url()), init);
+	};
+	const p = await startProxy({ dir, overrideTtlMs: 40, swr: false, fetcher });
+	try {
+		const target = p.url + "/" + URL_NPM;
+		const seed = await get(target);
+		assert.equal(seed.status, 200);
+		const entry = p.server.fadStore.get(require("../lib/providers").providerKey("npm", "package", { name: "express" }));
+		const saved = fs.readFileSync(entry.bodyPath);
+		online = false;
+		await new Promise(r => setTimeout(r, 60));
+		const results = await Promise.all(Array.from({ length: 40 }, () => get(target)));
+		assert.ok(results.every(r => r.status === 200 && r.body === seed.body));
+		assert.ok(results.every(r => r.tag === "stale"));
+		assert.ok(attempts <= 3, `offline stale reads should not hammer upstream (${attempts} attempts)`);
+		assert.deepEqual(fs.readFileSync(p.server.fadStore.get(require("../lib/providers").providerKey("npm", "package", { name: "express" })).bodyPath), saved);
+		assert.equal(p.server.fadStore.size(), 1, "no outage may delete the cached entry");
+
+		const cold = URL_NPM + "/uncached";
+		assert.equal((await get(p.url + "/" + cold)).status, 502);
+		const health = createSourceHealth();
+		const client = guardedFetch({ health, fetch: () => callResource(p.url, "npm", "package", { name: "express/uncached" }), sleep: async () => {} });
+		const res = await client(cold);
+		assert.equal(res.status, 502);
+		assert.equal(health.degraded().length, 1, "the client records a required source outage");
+		assert.ok(attempts >= 2);
+	} finally { await p.close(); }
+
+	const restarted = await startProxy({ dir, overrideTtlMs: 40, swr: false,
+		fetcher: () => { throw new Error("still offline"); } });
+	try {
+		const r = await get(restarted.url + "/" + URL_NPM);
+		assert.equal(r.status, 200);
+		assert.equal(r.tag, "stale");
+	} finally { await restarted.close(); }
+});
+
 test("server: a 500 upstream with NO cached copy is mirrored, never cached", async () => {
 	const p = await startProxy();
 	try {
@@ -208,27 +328,12 @@ test("server: a 500 upstream with NO cached copy is mirrored, never cached", asy
 	} finally { await p.close(); }
 });
 
-test("server: non-GET (OSV POST) and unknown hosts pass through uncached", async () => {
-	const up = fakeUpstream();
-	await up.start();
-	const swap = t => t.replace(/^https?:\/\/[^/]+/, up.url());
-	const { server, url } = await startProxyCacheServer({ port: 0, host: "127.0.0.1", store: createCacheStore(tmpDir()), fetcher: (t, init) => fetch(swap(t), init) });
+test("server: rejects URL-level forwarding", async () => {
+	const p = await startProxy();
 	try {
-		// POST → pass-through, no cache entry created even for a known host
-		let r = await fetch(url + "/https://api.osv.dev/v1/querybatch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ queries: [] }) });
-		assert.equal(r.status, 200);
-		assert.equal(r.headers.get("x-fad-proxy"), "pass");
-		// GET to an unknown (private) host → proxied, not cached
-		r = await get(url + "/" + URL_PRIVATE);
-		assert.equal(r.status, 200);
-		assert.equal(r.tag, "pass");
-		const stats = await get(url + "/__stats").then(x => JSON.parse(x.body));
-		assert.equal(stats.entries, 0);
-		assert.equal(stats.passes, 2);
-	} finally {
-		await new Promise(ok => server.close(ok));
-		await up.close();
-	}
+		assert.equal((await fetch(p.url + "/" + URL_NPM)).status, 404);
+		assert.equal((await fetch(p.url + "/" + URL_PRIVATE)).status, 404);
+	} finally { await p.close(); }
 });
 
 test("server: bodies over maxBodyBytes stream through uncached", async () => {
@@ -244,13 +349,30 @@ test("server: bodies over maxBodyBytes stream through uncached", async () => {
 	} finally { await p.close(); }
 });
 
+test("server: oversized concurrent responses share one upstream stream", async () => {
+	let calls = 0;
+	const p = await startProxy({ maxBodyBytes: 512, fetcher: async () => {
+		calls++;
+		await new Promise(ok => setTimeout(ok, 40));
+		return new Response(Buffer.alloc(2048, "x"), { headers: { "content-type": "text/plain" } });
+	} });
+	try {
+		const responses = await Promise.all(Array.from({ length: 20 }, () => get(p.url + "/" + URL_NPM)));
+		assert.ok(responses.every(r => r.status === 200 && r.body === "x".repeat(2048)));
+		assert.equal(calls, 1);
+		assert.equal(p.server.fadStore.size(), 0, "oversized body is not persisted");
+	} finally { await p.close(); }
+});
+
 test("server: --token requires Bearer auth on everything but __health", async () => {
 	const p = await startProxy({ token: "s3cret" });
 	try {
 		assert.equal((await get(p.url + "/__health")).status, 200);
 		let r = await get(p.url + "/" + URL_NPM);
 		assert.equal(r.status, 401);
-		r = await fetch(p.url + "/" + URL_NPM, { headers: { authorization: "Bearer s3cret" } });
+		r = await callResource(p.url, "npm", "package", { name: "express" }, { "x-fad-proxy-token": "s3cret" });
+		assert.equal(r.status, 200);
+		r = await callResource(p.url, "npm", "package", { name: "express" }, { "x-fad-proxy-token": "s3cret" });
 		assert.equal(r.status, 200);
 	} finally { await p.close(); }
 });

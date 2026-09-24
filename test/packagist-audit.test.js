@@ -235,12 +235,44 @@ test("queryPackagistAudit matches response package names case-insensitively", as
 	assert.equal(out.length, 2);
 });
 
-test("Packagist refuses incomplete and invalid answers without caching them as clean", async () => {
+test("Packagist keeps omitted packages unknown while retaining valid results", async () => {
+	const missing = dep("disp", "log-bundle", "1.0.0");
+	const known = dep("twig", "twig", "1.35.0");
+	const deps = new Map([[missing.coordKey, missing], [known.coordKey, known]]);
+	const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-pksa-unknown-"));
+	try {
+		let unknown;
+		const fetcher = fetcherWith({ advisories: { "twig/twig": FIXTURE_ADVISORIES["twig/twig"] } });
+		const matches = await queryPackagistAudit(deps, { cacheDir, fetcher, onUnknown: names => { unknown = names; } });
+		assert.equal(matches.length, 2, "the known package is still audited");
+		assert.deepEqual(unknown, ["disp/log-bundle"]);
+		assert.deepEqual(fs.readdirSync(cacheDir), ["twig__twig.json"], "unknown is never cached as clean");
+		await queryPackagistAudit(deps, { cacheDir, fetcher, onUnknown: names => { unknown = names; } });
+		assert.equal(fetcher.calls().length, 2, "the unknown package is retried next run");
+		assert.deepEqual(unknown, ["disp/log-bundle"]);
+	} finally { fs.rmSync(cacheDir, { recursive: true, force: true }); }
+});
+
+test("Packagist accepts an empty top-level advisory array as unknown, not clean", async () => {
+	const missing = dep("disp", "log-bundle", "1.0.0");
+	const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-pksa-empty-"));
+	try {
+		let unknown;
+		const matches = await queryPackagistAudit(new Map([[missing.coordKey, missing]]), {
+			cacheDir, fetcher: fetcherWith({ advisories: [] }), onUnknown: names => { unknown = names; },
+		});
+		assert.deepEqual(matches, []);
+		assert.deepEqual(unknown, ["disp/log-bundle"]);
+		assert.deepEqual(fs.readdirSync(cacheDir), []);
+	} finally { fs.rmSync(cacheDir, { recursive: true, force: true }); }
+});
+
+test("Packagist refuses malformed answers without caching them as clean", async () => {
 	const r = dep("twig", "twig", "1.35.0");
 	const deps = new Map([[r.coordKey, r]]);
 	for (const [label, response] of [
-		["omitted", { ok: true, json: async () => ({ advisories: {} }) }],
 		["missing object", { ok: true, json: async () => ({}) }],
+		["malformed top-level list", { ok: true, json: async () => ({ advisories: ["wrong"] }) }],
 		["malformed list", { ok: true, json: async () => ({ advisories: { "twig/twig": null } }) }],
 		["HTTP error", { ok: false, status: 429 }],
 	]) {

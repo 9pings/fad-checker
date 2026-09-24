@@ -45,4 +45,5 @@ themselves establish a complete, machine-readable feed for every product and
 extension. Public Composer dependencies still use OSV/Packagist. Adobe Commerce
 packages distributed through `repo.magento.com` are excluded from Packagist audit
 and its public package metadata lookup;
-an omitted Packagist response is never treated as a clean advisory result.
+an omitted Packagist response is reported as unknown advisory coverage for that package;
+it is never cached or treated as a clean advisory result.

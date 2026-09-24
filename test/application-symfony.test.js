@@ -23,8 +23,14 @@ test("Symfony application inventory keeps exact framework and independent bundle
 	assert.ok(result.diagnostics.some(d => d.code === "CMS_RECIPE_ORPHANED" && d.package === "symfony/old-bundle"));
 	assert.equal(result.coverage.find(c => c.capability === "recipes").execution, "completed");
 	assert.equal(result.coverage.find(c => c.capability === "inventory").execution, "completed");
-	assert.equal(result.coverage.find(c => c.capability === "advisories").execution, "not-run");
-	assert.equal(result.coverage.find(c => c.capability === "advisories").expected, result.inventory.length);
+	// No Symfony publisher feed exists: the components are Composer deps, so the
+	// advisories capability reads as covered by the dependency lanes, not as a gap.
+	const advisories = result.coverage.find(c => c.capability === "advisories");
+	assert.equal(advisories.execution, "completed");
+	assert.equal(advisories.sourceId, "dependency-lanes");
+	assert.equal(advisories.expected, result.inventory.length);
+	assert.equal(advisories.executed, result.inventory.length);
+	assert.ok(!advisories.diagnostic, "no fake CMS_ADVISORY_NOT_QUALIFIED gap");
 });
 
 test("a library using Symfony Console is not classified as a Symfony application", async () => {

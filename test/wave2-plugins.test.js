@@ -6,6 +6,7 @@ const path = require("node:path");
 const { allApplicationPlugins } = require("../lib/application-plugins");
 const { runApplicationPlugins } = require("../lib/application-plugins/runner");
 const composer = require("../lib/codecs/composer.codec");
+const { buildApplicationRelations, expandComposerFindings } = require("../lib/application-inventory");
 
 function fixture(fn) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "fad-wave2-"));
@@ -112,7 +113,40 @@ test("Magento distinguishes Adobe Commerce from Open Source and preserves the ex
 	const mod = result.inventory.find(c => c.coord === "acme/module-pay");
 	assert.equal(mod.version, "1.2.3");
 	assert.notEqual(mod.version, "0.1.0", "module schema version is not the package version");
-	assertAdvisoriesNotRun(result, "magento");
+	// The locked product and module ARE Composer dependencies the dependency lanes
+	// scanned (OSV/Packagist/NVD) — their advisories read as covered, never as a
+	// CMS-feed gap the scan could have filled.
+	const advisoryRows = result.coverage.filter(c => c.capability === "advisories");
+	assert.ok(advisoryRows.length >= 2);
+	assert.ok(advisoryRows.every(r => r.execution === "completed" && r.sourceId === "dependency-lanes"),
+		"locked components are advisory-covered by the dependency lanes");
+}));
+
+test("A Magento SOURCE distribution reports its exact product version without a lock — the root composer.json carries it", () => fixture(async root => {
+	// Source archives ship no composer.lock; the exact -pN version lives in the root
+	// composer.json of the distribution itself.
+	put(root, "composer.json", { name: "magento/magento2ce", version: "2.4.7-p3",
+		require: { "magento/product-community-edition": "2.4.7-p3" } });
+	put(root, "bin/magento", "<?php // marker\n");
+	put(root, "app/bootstrap.php", "<?php // marker\n");
+	put(root, "app/code/Magento/Sales/etc/module.xml", '<config><module name="Magento_Sales" setup_version="103.0.7"/></config>');
+	put(root, "app/code/Magento/Sales/registration.php", "<?php ComponentRegistrar::register(ComponentRegistrar::MODULE, 'Magento_Sales', __DIR__);\n");
+	put(root, "app/code/Magento/Sales/composer.json", { name: "magento/module-sales", type: "magento2-module", version: "103.0.7-p3" });
+	const result = await scan(root, "magento");
+	const core = result.inventory.find(c => c.kind === "core");
+	assert.equal(core.name, "Magento Open Source");
+	assert.equal(core.version, "2.4.7-p3", "the observed composer.json version fills the synthesis and the inventory");
+	assert.equal(core.versionStatus, "observed");
+	const inventory = result.coverage.find(c => c.capability === "inventory");
+	assert.equal(inventory.execution, "completed", "no CMS_VERSION_UNKNOWN row on a source distribution");
+	assert.equal(core.coord, "magento/product-community-edition", "the required metapackage is the core's catalogue identity");
+	const coreAdvisory = result.coverage.find(c => c.capability === "advisories" && c.occurrenceId === core.id);
+	assert.equal(coreAdvisory.sourceId, "dependency-lanes");
+	assert.equal(coreAdvisory.execution, "completed", "the required product metapackage is scanned by the dependency lanes");
+	const moduleAdvisory = result.coverage.find(c => c.capability === "advisories" && /module/.test(String(c.occurrenceId)));
+	assert.equal(moduleAdvisory.execution, "not-run");
+	assert.equal(moduleAdvisory.diagnostic, "CMS_ADVISORY_NOT_QUALIFIED",
+		"a source-only module with no dep record has no advisory source anywhere — honestly not-qualified");
 }));
 
 test("auto inventories a recognized wave-two layout and unrelated PHP packages never become applications", () => fixture(async root => {
@@ -126,6 +160,27 @@ test("auto inventories a recognized wave-two layout and unrelated PHP packages n
 	assert.equal(auto.applications[0].type, "joomla");
 	assert.equal(auto.inventory.find(c => c.kind === "core").version, "5.4.1");
 	assert.ok(!auto.diagnostics.some(d => d.code === "CMS_PLUGIN_UNQUALIFIED"));
+}));
+
+test("Composer dependencies survive CMS detection and remain scannable in an unrecognized subtree", () => fixture(async root => {
+	put(root, "joomla/composer.json", { name: "example/joomla-site", require: { "acme/affected": "1.2.3" } });
+	put(root, "joomla/composer.lock", { packages: [{ name: "acme/affected", version: "1.2.3" }], "packages-dev": [] });
+	put(root, "unknown/composer.json", { name: "example/unknown-site", require: { "acme/affected": "1.2.3" } });
+	put(root, "unknown/composer.lock", { packages: [{ name: "acme/affected", version: "1.2.3" }], "packages-dev": [] });
+	const { deps } = await composer.collect(root);
+	const affected = [...deps.values()].find(d => d.namespace === "acme" && d.name === "affected");
+	assert.equal(affected.occurrences.length, 2, "both subtrees reach the standard Composer lane");
+	put(root, "joomla/administrator/manifests/files/joomla.xml",
+		'<extension type="file"><name>Joomla!</name><version>5.4.1</version></extension>');
+	put(root, "joomla/libraries/src/Version.php", "<?php class Version {}\n");
+	const cms = await runApplicationPlugins(root, { plugins: allApplicationPlugins(), selection: "auto",
+		resolvedDeps: deps, activeCodecIds: ["composer"] });
+	assert.deepEqual(cms.applications.map(a => [a.type, a.root]), [["joomla", "joomla"]]);
+	const relations = buildApplicationRelations(root, cms.applications, cms.inventory, deps);
+	const expanded = expandComposerFindings([{ dep: { ...affected, version: "1.2.3" }, cve: { id: "CVE-TEST" } }], root, relations);
+	assert.equal(expanded.length, 2);
+	assert.equal(expanded.find(f => f.dep.manifestPaths[0].includes("/joomla/")).applicationIds[0], "joomla:joomla");
+	assert.deepEqual(expanded.find(f => f.dep.manifestPaths[0].includes("/unknown/")).applicationIds, []);
 }));
 
 test("Joomla reports disagreement between its runtime constants and package manifest", () => fixture(async root => {

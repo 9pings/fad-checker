@@ -1,0 +1,6 @@
+<plugin>
+	<nom>Acme Checkout</nom>
+	<prefix>acmecheckout</prefix>
+	<version>1.2.0</version>
+	<etat>stable</etat>
+</plugin>

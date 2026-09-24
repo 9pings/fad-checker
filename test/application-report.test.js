@@ -21,6 +21,7 @@ test("HTML and Word group private plugin dependency CVEs without losing physical
   for (const render of [generateHtmlReport, generateWordReport]) {
     const report = render(payload);
     assert.match(report, /Acme Private/);
+    assert.match(report, /plugin Acme Private 1\.0/, "the owner group header carries the component's observed version");
     assert.match(report, /Private \/ custom components/);
     assert.match(report, /private/i);
     assert.match(report, /indirect/i);
@@ -28,6 +29,14 @@ test("HTML and Word group private plugin dependency CVEs without losing physical
     assert.match(report, /site\/a\/composer\.lock/);
     assert.match(report, /site\/b\/composer\.lock/);
   }
+});
+
+test("executive CVE links reach the application section", () => {
+	const report = generateHtmlReport({ cveMatches: [{ ...match("site/a/composer.lock"),
+		cve: { ...match("site/a/composer.lock").cve, severity: "CRITICAL", score: 10 } }],
+		applications: apps, applicationInventory: inventory, projectInfo });
+	assert.match(report, /class="exec-cve-link" href="#chapps">CVE-2099-0001<\/a>/);
+	assert.match(report, /id="chapps"/);
 });
 
 test("reports show application inventory and incomplete coverage even without CVEs", () => {
@@ -69,7 +78,7 @@ test("a shared occurrence is detailed in each exposed instance section, with its
 		// each section references the other exposure
 		assert.equal((report.match(/Also exposed in/g) || []).length, 2);
 		// global counters stay a union of findings, not the sum of displayed rows
-		assert.match(report, /1\.1 Applications \(1\)/);
+		assert.match(report, /1\.1 CMS & Frameworks \(1\)/);
 		assert.match(report, /Production \(1\)/);
 	}
 });
@@ -177,7 +186,9 @@ test("lane aggregation keeps failed visible and separates providers", () => {
 			execution: "completed", result: "no-match", expected: 4, executed: 4 },
 	];
 	const html = generateHtmlReport({ cveMatches: [], applications: apps, applicationInventory: [], coverage, projectInfo });
-	assert.doesNotMatch(html, /\d+\.\d+ Applications \(0\)/);
+	assert.match(html, /1\.1 CMS & Frameworks \(0\)/, "a zero-finding instance still gets its chapter");
+	assert.match(html, /Instance synthesis/, "the synthesis shows even with no application CVE");
+	assert.match(html, /No application CVE on the inventoried instances/);
 	assert.match(html, /drupal-security-advisories/);
 	assert.match(html, /CMS_PLUGIN_FAILED/);
 	assert.match(html, /application-advisories/);
@@ -203,7 +214,7 @@ test("6.4 coverage rows name the component each check is about", () => {
 	}
 });
 
-test("chapter 0 groups identical coverage gaps into one navigable warning per cause", () => {
+test("application subsections group coverage diagnostics by cause", () => {
 	const apps = [{ id: "wordpress:wp", type: "wordpress", root: "wp" }];
 	const inventory = [
 		{ id: "wordpress:wp:theme:a", applicationId: "wordpress:wp", kind: "theme", name: "Theme A", version: "1.0", visibility: "public", path: "wp/wp-content/themes/a" },
@@ -233,11 +244,40 @@ test("chapter 0 groups identical coverage gaps into one navigable warning per ca
 		const report = render({ cveMatches: [], applications: apps, applicationInventory: inventory, coverage, warnings, projectInfo });
 		// one block per cause — not one identical message per unassessed component
 		assert.equal((report.match(/warn-block warn-cms-coverage/g) || []).length, 2);
+		assert.doesNotMatch(report, /id="ch0"/, "application diagnostics are not global alerts");
 		assert.match(report, /2 component\(s\) not evaluated/);
 		assert.match(report, /warn-items[\s\S]*?Theme A[\s\S]*?Theme B/, "both themes are listed inside the group");
 		assert.match(report, /Declare a verified catalogue identity/, "the group states the expected action");
 		assert.match(report, /CMS_IDENTITY_UNVERIFIED/);
 	}
+});
+
+test("WordPress file diagnostics form one local warning subsection with a scrolling full path list", () => {
+	const files = Array.from({ length: 7 }, (_, i) => `wp-includes/js/copy-${i + 1}.js`);
+	const warnings = [
+		{ type: "no-lockfile", message: "global descriptor warning" },
+		...files.map(file => ({ type: "cms-coverage", code: "CMS_FILE_MISSING", applicationId: "wordpress:site",
+			path: file, message: `wordpress:site: ${file} is absent` })),
+		{ type: "cms-coverage", code: "CMS_INTEGRITY_LIST_TRUNCATED", applicationId: "wordpress:site",
+			message: "more official files were absent" },
+	];
+	const payload = { cveMatches: [match("site/a/composer.lock")], applications: apps,
+		applicationInventory: inventory, warnings, projectInfo };
+	const html = generateHtmlReport(payload);
+	const global = html.slice(html.indexOf('id="ch0"'), html.indexOf('id="chcve"'));
+	assert.match(global, /global descriptor warning/);
+	assert.doesNotMatch(global, /copy-1\.js|CMS_FILE_MISSING/);
+	assert.equal((html.match(/class="warnings app-warnings"/g) || []).length, 1);
+	assert.match(html, /wordpress · site[\s\S]*?<summary><h3>Warnings \(8\)<\/h3><\/summary>/);
+	assert.match(html, /app-warning-files \{ max-height: 240px; overflow-y: auto/);
+	for (const file of files) assert.match(html, new RegExp(file.replaceAll(".", "\\.")));
+	assert.match(html, /more official files were absent/);
+	const word = generateWordReport(payload);
+	for (const file of files) assert.match(word, new RegExp(file.replaceAll(".", "\\.")));
+	const empty = generateHtmlReport({ ...payload, cveMatches: [] });
+	assert.match(empty, /id="chapps"/, "the zero-finding instance keeps its chapter");
+	assert.match(empty, /Instance synthesis \(1\)/);
+	assert.match(empty, /Application inventory &amp; coverage[\s\S]*?wordpress · site[\s\S]*?Warnings \(8\)/);
 });
 
 test("fix recommendations carry no orphan 7.0 numbering", () => {
@@ -253,7 +293,7 @@ test("fix recommendations carry no orphan 7.0 numbering", () => {
 	assert.doesNotMatch(fr, /Deps directes/);
 });
 
-test("coverage chrome translates in both directions (synthesis, 6.4, chapter 0)", () => {
+test("coverage chrome translates in both directions (synthesis, inventory and app warnings)", () => {
 	const apps = [{ id: "wordpress:wp", type: "wordpress", root: "wp" }];
 	const inventory = [
 		{ id: "wordpress:wp:core", applicationId: "wordpress:wp", kind: "core", name: "WordPress", version: "6.4.2", visibility: "public", path: "wp" },
@@ -273,15 +313,17 @@ test("coverage chrome translates in both directions (synthesis, 6.4, chapter 0)"
 	const en = generateHtmlReport(payload);
 	const fr = generateHtmlReport({ ...payload, locale: "fr" });
 	// EN chrome stays English
-	assert.doesNotMatch(en, /\d+\.\d+ Applications \(0\)/);
+	assert.match(en, /1\.1 CMS & Frameworks \(0\)/, "the chapter shows the zero-finding synthesis");
+	assert.match(en, /No application CVE on the inventoried instances/);
 	assert.match(en, /wordfence-v3/);
 	assert.match(en, /not evaluated/);
 	// FR chrome is French in the synthesis, the 6.4 table and chapter 0
 	assert.match(fr, /Inventaire applicatif et couverture/);
 	assert.match(fr, /wordfence-v3/);
 	assert.match(fr, /non évalué\(s\)/);
-	assert.match(fr, /Limites de couverture applicative/);
+	assert.match(fr, /Avertissements/);
 	assert.match(fr, /1 composant\(s\) non évalué\(s\)/);
+	assert.doesNotMatch(fr, /id="ch0"/, "application diagnostics stay in the application subsection");
 	assert.doesNotMatch(fr, /inventory: completed/);
 	assert.doesNotMatch(fr, /: partial/);
 	assert.doesNotMatch(fr, /<td>not-run</);
@@ -293,7 +335,8 @@ test("the French application synthesis translates its chrome and its notes", () 
 		{ id: "wordpress:site-c", type: "wordpress", root: "site-c" }];
 	const coverage = [{ applicationId: "drupal:site-b", capability: "advisories", execution: "not-run", result: "indeterminate", diagnostic: "CMS_PROVIDER_UNCONFIGURED" }];
 	const fr = generateHtmlReport({ cveMatches: [], applications: apps, applicationInventory: [], coverage, projectInfo, locale: "fr" });
-	assert.doesNotMatch(fr, /Synthèse des instances/);
+	assert.match(fr, /Synthèse des instances/, "the zero-finding synthesis shows — translated");
+	assert.match(fr, /Aucune CVE applicative sur les instances inventoriées/);
 	assert.match(fr, /Inventaire applicatif et couverture/);
 	assert.match(fr, /CMS_PROVIDER_UNCONFIGURED/);
 	assert.doesNotMatch(fr, /Evaluation incomplete\./);
@@ -307,7 +350,7 @@ test("report numbers only populated subsections and keeps the contents links val
 		applicationInventory: inventory, projectInfo };
 	for (const render of [generateHtmlReport, generateWordReport]) {
 		const report = render(payload);
-		assert.match(report, /1\.1 Applications \(1\)/);
+		assert.match(report, /1\.1 CMS & Frameworks \(1\)/);
 		assert.match(report, /1\.2 Production \(1\)/);
 		assert.doesNotMatch(report, /1\.3 (?:Vendored JS|Dev dependencies)/);
 		assert.match(report, /6\.1 Methodology, data sources & limitations/);
@@ -317,11 +360,11 @@ test("report numbers only populated subsections and keeps the contents links val
 	}
 	const empty = generateHtmlReport({ applications: apps, applicationInventory: inventory, projectInfo });
 	assert.match(empty, /1\. CVE \(0 direct, 0 indirect, 0 dev\)/);
-	assert.doesNotMatch(empty, /id="chapps"/);
-	assert.doesNotMatch(empty, /Applications \(0\)/);
+	assert.match(empty, /1\.1 CMS & Frameworks \(0\)/, "an inventoried instance keeps its chapter even with zero findings");
+	assert.match(empty, /Instance synthesis \(1\)/);
 	assert.match(empty, /Application inventory & coverage/);
 	const orphan = generateHtmlReport({ cveMatches: [match("site/composer.lock")], projectInfo });
-	assert.match(orphan, /1\.1 Applications \(1\)/);
+	assert.match(orphan, /1\.1 CMS & Frameworks \(1\)/);
 	assert.doesNotMatch(orphan, /Instance synthesis \(0\)/);
 });
 

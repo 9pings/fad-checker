@@ -392,6 +392,7 @@ program
 	.option("--licenses", "run license detection + copyleft policy check (off by default)")
 	.option("--offline", "no network: use cached CVE/OSV/NVD/EPSS/KEV/POM data only")
 	.option("--proxy-cache <url>", "shared data-source cache (`serve-cache`)")
+	.option("--proxy-cache-token <token>", "authenticate to a shared proxy-cache server (or set FAD_PROXY_CACHE_TOKEN)")
 	.option("--proxy <url>", "corporate proxy for all requests")
 	.option("--set-nvd-key <key>", "save NVD API key to ~/.fad-checker/config.json (10× faster NVD enrichment)")
 	.option("--show-config", "print the persisted ~/.fad-checker/config.json")
@@ -430,6 +431,8 @@ program
 	.option("--prestashop-advisories-live [url]", "query the official PrestaShop Github security-advisories feed live for the inventoried PrestaShop components")
 	.option("--typo3-advisories <file>", "local TYPO3 Github security-advisories JSON snapshot (the publisher's own machine feed)")
 	.option("--typo3-advisories-live [url]", "query the official TYPO3 Github security-advisories feed live for the inventoried TYPO3 components")
+	.option("--spip-advisories <file>", "local NVD SPIP security-advisories JSON snapshot (the only machine-readable SPIP source)")
+	.option("--spip-advisories-live [url]", "query the NVD SPIP product CVEs (cpe:2.3:a:spip:spip) live for the observed SPIP core version")
 	.option("--wp-checksums <file>", "local api.wordpress.org core checksums JSON snapshot to compare the WordPress core files against")
 	.option("--wp-checksums-live [url]", "fetch the official api.wordpress.org core checksums live and compare the WordPress core files; divergences are diagnostics, not CVEs")
 	.option("--wp-checksums-locale <locale>", "locale of the WordPress distribution checksums reference (default en_US)", "en_US")
@@ -476,7 +479,7 @@ if (!process.argv.includes("--help-all")) {
 	const { foldedFlags } = require("./lib/cli-groups");
 	const { ADMIN_FLAGS, REPORTS } = require("./lib/cli-groups");
 	const folded = new Set([...foldedFlags(), ...ADMIN_FLAGS, ...REPORTS.map(r => `--report-${r}`),
-		"--list-app-plugins", "--scan-context", "--private-component", "--public-component", "--wordfence-feed", "--drupal-advisories", "--wordfence-feed-url", "--drupal-advisories-live", "--prestashop-advisories", "--prestashop-advisories-live", "--typo3-advisories", "--typo3-advisories-live", "--wp-checksums", "--wp-checksums-live", "--wp-checksums-locale", "--max-advisory-age", "--fail-on-incomplete"]);
+		"--list-app-plugins", "--scan-context", "--private-component", "--public-component", "--wordfence-feed", "--drupal-advisories", "--wordfence-feed-url", "--drupal-advisories-live", "--prestashop-advisories", "--prestashop-advisories-live", "--typo3-advisories", "--typo3-advisories-live", "--spip-advisories", "--spip-advisories-live", "--wp-checksums", "--wp-checksums-live", "--wp-checksums-locale", "--max-advisory-age", "--fail-on-incomplete", "--proxy-cache-token"]);
 	for (const opt of program.options) if (folded.has(opt.long)) opt.hidden = true;
 } else {
 	process.argv = process.argv.map(a => a === "--help-all" ? "--help" : a);
@@ -556,15 +559,17 @@ if (!options.offline) {
 	// The mirror/registry rotations report their own exhaustion (their requests bypass the
 	// guard: they carry their own AbortSignal and failover).
 	setActiveLedger(sourceHealth);
-	let baseFetch = globalThis.fetch;
-	// --proxy-cache: routes ONLY the known public sources through the shared cache server;
-	// the guard still sees the ORIGINAL URL, so a dead proxy is retried and reported as
-	// a dead source (exit 2 naming the skip flag), never as a quiet coverage hole. Private
-	// registries keep going direct — their Authorization headers never reach the proxy.
+	const baseFetch = globalThis.fetch;
+	// Public data clients call getResource(provider, type, params); configure its
+	// transport once, before any lookup. Custom registry URLs stay direct.
 	if (options.proxyCache) {
-		const { proxiedFetch } = require("./lib/proxy-cache");
+		const { configureResourceRoute } = require("./lib/providers");
+		const { createCacheStore } = require("./lib/proxy-cache");
 		try {
-			baseFetch = proxiedFetch(options.proxyCache, { fetch: baseFetch });
+			configureResourceRoute({ proxyUrl: options.proxyCache,
+				token: options.proxyCacheToken || process.env.FAD_PROXY_CACHE_TOKEN || null,
+				health: sourceHealth, fetcher: baseFetch,
+				store: createCacheStore(require("node:path").join(require("node:os").homedir(), ".fad-checker", "resource-cache")) });
 		} catch (err) {
 			console.error(chalk.red(`❌  ${err.message}`));
 			process.exit(2);
@@ -811,9 +816,10 @@ async function timedPhase(label, fn) {
 		let imported;
 		try { imported = deserializeDeps(descriptor); }
 		catch (e) { console.error(chalk.red(`❌  invalid descriptor: ${e.message}`)); process.exit(1); }
-		const { resolved, activeIds, runMaven, runNpm, externalParents = [], importBoms = [], propertyOverrides = {} } = imported;
+		const { resolved, activeIds, runMaven, runNpm, externalParents = [], importBoms = [], propertyOverrides = {}, applications = [] } = imported;
 		ui.section("Anonymized descriptor");
-		ui.ok(`imported ${chalk.bold(resolved.size)} dep(s) across ${activeIds.join(", ") || "—"}`);
+		ui.ok(`imported ${chalk.bold(resolved.size)} dep(s) across ${activeIds.join(", ") || "—"}`
+			+ (applications.length ? ` · ${chalk.bold(applications.length)} application(s) (${[...new Set(applications.map(a => a.type))].join(", ")})` : ""));
 		if (options.offline) ui.warn("--offline: caches won't warm; only useful to re-render from an already-warm cache");
 		if (!resolved.size) { ui.warn("descriptor has no dependencies — nothing to scan"); process.exit(0); }
 		// Replay the external-parent / import-BOM backfill from the descriptor's carried hints.
@@ -833,6 +839,40 @@ async function timedPhase(label, fn) {
 		if (runNpm && !options.offline && options.retire !== false) {
 			const { warmRetireSignatures } = require("./lib/retire");
 			await warmRetireSignatures({ verbose });
+		}
+		// Warm the per-publisher CMS advisory snapshots the air-gapped phase 3 consumes
+		// automatically (runner offline fallback): the Drupal feed is keyed by the
+		// descriptor's drupal/* identities and PrestaShop/TYPO3 are whole-repository
+		// feeds, so no source tree is needed. WordPress checksums are pinned per core
+		// version+locale and cannot be warmed from a descriptor — they come from an
+		// online scan of the tree or --wp-checksums.
+		if (!options.offline) {
+			const { warmCmsAdvisorySnapshots } = require("./lib/cms-snapshot-warm");
+			try {
+				const warmed = await warmCmsAdvisorySnapshots(resolved, {
+					fetchImpl: (...args) => fetch(...args),
+					advisoryCacheDir: path.join(require("os").homedir(), ".fad-checker", "advisory-snapshots"),
+					drupalUrl: typeof options.drupalAdvisoriesLive === "string" ? options.drupalAdvisoriesLive : undefined,
+					prestashopUrl: typeof options.prestashopAdvisoriesLive === "string" ? options.prestashopAdvisoriesLive : undefined,
+					typo3Url: typeof options.typo3AdvisoriesLive === "string" ? options.typo3AdvisoriesLive : undefined,
+					spipUrl: typeof options.spipAdvisoriesLive === "string" ? options.spipAdvisoriesLive : undefined,
+					applications,
+					wordfenceApiKey: options.wordfenceApiKey || process.env.WORDFENCE_API_KEY || null,
+					wordfenceUrl: options.wordfenceFeedUrl || undefined,
+					wpChecksumsLocale: options.wpChecksumsLocale || "en_US",
+					nvdApiKey: require("./lib/config").getNvdApiKey(),
+				});
+				if (warmed.drupal) ui.ok(`Drupal advisory snapshot warmed (${warmed.drupal} package(s)) → advisory-snapshots/ — carried by --export-cache, reused offline`);
+				if (warmed.prestashop) ui.ok("PrestaShop advisory snapshot warmed → advisory-snapshots/ — carried by --export-cache, reused offline");
+				if (warmed.typo3) ui.ok("TYPO3 advisory snapshot warmed → advisory-snapshots/ — carried by --export-cache, reused offline");
+				if (warmed.spip) ui.ok("SPIP advisory snapshot warmed (NVD product CVEs) → advisory-snapshots/ — carried by --export-cache, reused offline");
+				for (const version of warmed.wpChecksums) ui.ok(`WordPress checksums reference warmed (${version}) → advisory-snapshots/ — carried by --export-cache, reused offline`);
+				if (warmed.wordfence) ui.ok("Wordfence catalogue warmed (API key) → advisory-snapshots/ — carried by --export-cache, reused offline without a key");
+			}
+			catch (error) {
+				console.error(chalk.red(`❌  CMS advisory snapshot warming failed: ${error.message}`));
+				process.exit(2);
+			}
 		}
 		// --import-anonymized is a cache-WARMING step (pair with --export-cache), not a
 		// reporting one: the path-bearing report is produced later, offline, from the warmed
@@ -932,7 +972,31 @@ async function timedPhase(label, fn) {
 		const externalParents = mavenCtx?.store ? collectExternalParents(mavenCtx.store) : [];
 		const importBoms = mavenCtx?.propsByPom ? collectImportBoms(mavenCtx.propsByPom) : [];
 		const propertyOverrides = mavenCtx?.store ? collectPropertyOverrides(mavenCtx.store) : {};
-		const descriptor = serializeDeps(resolved, { generator: `fad-checker ${pkgVersion}`, externalParents, importBoms, propertyOverrides });
+		// Application identities (public product coordinates — type + core version, no
+		// paths): they let a Phase-2 online run warm what no package coordinate carries
+		// (WordPress checksums pinned by core version, publisher feeds of installs whose
+		// lock holds none of the publisher's own packages). Local reads only — discovery
+		// never touches the network, and a discovery failure only drops the section.
+		let applications = [];
+		if (options.appPlugins !== "none") {
+			try {
+				const { allApplicationPlugins } = require("./lib/application-plugins");
+				const { runApplicationPlugins } = require("./lib/application-plugins/runner");
+				const appState = await runApplicationPlugins(options.src, { plugins: allApplicationPlugins(),
+					selection: options.appPlugins, resolvedDeps: resolved, activeCodecIds: activeIds, offline: true });
+				applications = appState.applications.map(app => {
+					const core = appState.inventory.find(c => c.applicationId === app.id && c.kind === "core");
+					// Public catalogue identities only — private/custom components never
+					// leave the enclave, exactly like the live query that filters them out.
+					const components = [...new Set(appState.inventory
+						.filter(c => c.applicationId === app.id && c.visibility !== "private"
+							&& typeof c.coord === "string" && c.coord)
+						.map(c => c.coord.toLowerCase()))].sort();
+					return { type: app.type, version: core?.version || null, ...(components.length ? { components } : {}) };
+				});
+			} catch { /* the descriptor stays valid without application identities */ }
+		}
+		const descriptor = serializeDeps(resolved, { generator: `fad-checker ${pkgVersion}`, externalParents, importBoms, propertyOverrides, applications });
 		try { fs.writeFileSync(options.exportAnonymized, JSON.stringify(descriptor, null, 2) + "\n"); }
 		catch (e) { console.error(chalk.red(`❌  could not write --export-anonymized file: ${e.message}`)); process.exit(1); }
 		const ecoSummary = Object.entries(descriptor.summary.byEcosystem).map(([k, v]) => `${k}:${v}`).join(", ");
@@ -1145,8 +1209,10 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		const wordfenceApiKey = options.wordfenceApiKey || process.env.WORDFENCE_API_KEY || null;
 		const { DRUPAL_ADVISORIES_URL, WORDFENCE_PRODUCTION_URL, PRESTASHOP_GITHUB_ADVISORIES_URL, TYPO3_GITHUB_ADVISORIES_URL } = require("./lib/application-providers/live-snapshot");
 		const wordfenceLiveUrl = options.wordfenceFeedUrl || (wordfenceApiKey && !options.wordfenceFeed ? WORDFENCE_PRODUCTION_URL : null);
-		if (offline && (wordfenceLiveUrl || options.drupalAdvisoriesLive || options.prestashopAdvisoriesLive || options.typo3AdvisoriesLive || options.wpChecksumsLive)) {
-			console.error(chalk.red("❌  --offline cannot fetch live advisory sources; supply a local --wordfence-feed / --drupal-advisories / --prestashop-advisories / --typo3-advisories / --wp-checksums snapshot instead"));
+		const spipLiveUrl = options.spipAdvisoriesLive
+			? (options.spipAdvisoriesLive === true ? require("./lib/application-providers/spip-advisories").SPIP_ADVISORIES_URL : options.spipAdvisoriesLive) : null;
+		if (offline && (wordfenceLiveUrl || options.drupalAdvisoriesLive || options.prestashopAdvisoriesLive || options.typo3AdvisoriesLive || options.wpChecksumsLive || spipLiveUrl)) {
+			console.error(chalk.red("❌  --offline cannot fetch live advisory sources; supply a local --wordfence-feed / --drupal-advisories / --prestashop-advisories / --typo3-advisories / --spip-advisories / --wp-checksums snapshot instead"));
 			process.exit(2);
 		}
 		if (wordfenceLiveUrl && !wordfenceApiKey) {
@@ -1179,26 +1245,40 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 				privateComponentPaths: options.privateComponent || [], publicComponents: options.publicComponent || [],
 				wordfenceFeedPath: options.wordfenceFeed || null, drupalAdvisoriesPath: options.drupalAdvisories || null,
 				prestashopAdvisoriesPath: options.prestashopAdvisories || null, typo3AdvisoriesPath: options.typo3Advisories || null,
+				spipAdvisoriesPath: options.spipAdvisories || null,
 				liveWordfenceUrl: wordfenceLiveUrl, wordfenceApiKey, liveDrupalAdvisoriesUrl: drupalLiveUrl,
 				livePrestashopAdvisoriesUrl: prestashopLiveUrl, liveTypo3AdvisoriesUrl: typo3LiveUrl,
+				liveSpipAdvisoriesUrl: spipLiveUrl, spipAdvisoriesApiKey: getNvdApiKey(),
 				wpChecksumsPath: options.wpChecksums || null, liveWpChecksumsUrl: wpChecksumsLiveUrl,
 				wpChecksumsLocale: options.wpChecksumsLocale || "en_US",
 				advisoryCacheDir: path.join(require("os").homedir(), ".fad-checker", "advisory-snapshots"),
+				offline,
 				fetchImpl: (...args) => fetch(...args),
 				maxAdvisoryAgeMs,
 				requiredProviderIds: [options.wordfenceFeed && "wordfence-v3", options.drupalAdvisories && "drupal-security-advisories",
 					wordfenceLiveUrl && "wordfence-v3", options.drupalAdvisoriesLive && "drupal-security-advisories",
 					(options.prestashopAdvisories || prestashopLiveUrl) && "github-prestashop-advisories",
 					(options.typo3Advisories || typo3LiveUrl) && "github-typo3-advisories",
+					(options.spipAdvisories || spipLiveUrl) && "spip-security-advisories",
 					(options.wpChecksums || wpChecksumsLiveUrl) && "wordpress-checksums"].filter(Boolean) });
 			applicationRelations = buildApplicationRelations(options.src, appState.applications, appState.inventory, resolved);
 			if (appState.applications.length) ui.info(chalk.dim(`${appState.applications.length} application(s), ${appState.inventory.length} component(s) inventoried`));
-			if (appState.applications.some(app => app.type === "wordpress") && !options.wordfenceFeed && !wordfenceLiveUrl)
-				ui.warn("WordPress advisory scan did not run: supply --wordfence-feed, or a Wordfence API key for the live feed.");
-			if (appState.applications.some(app => app.type === "prestashop") && !options.prestashopAdvisories && !prestashopLiveUrl)
-				ui.warn("PrestaShop advisory scan did not run: supply --prestashop-advisories, or use --prestashop-advisories-live.");
-			if (appState.applications.some(app => app.type === "typo3") && !options.typo3Advisories && !typo3LiveUrl)
-				ui.warn("TYPO3 advisory scan did not run: supply --typo3-advisories, or use --typo3-advisories-live.");
+			// Cached advisory snapshots (drupal/prestashop/typo3 feeds, wp checksums) auto-
+			// reused under --offline carry completeness "tool-fetched" — live fetches are
+			// impossible here, so any such row is a cache reuse worth announcing.
+			if (offline && appState.coverage.some(c => c.sourceSnapshot?.completeness === "tool-fetched"))
+				ui.info(chalk.dim("--offline: advisory snapshot(s) reused from the imported cache (advisory-snapshots/)"));
+			// The lanes may have run from a cached snapshot (auto-consumed) — only warn
+			// when the coverage rows say the lane genuinely did not execute.
+			const laneRan = sourceId => appState.coverage.some(c => c.sourceId === sourceId && c.execution !== "not-run");
+			if (appState.applications.some(app => app.type === "wordpress") && !options.wordfenceFeed && !wordfenceLiveUrl && !laneRan("wordfence-v3"))
+				ui.warn("WordPress advisory scan did not run: supply --wordfence-feed, or a Wordfence API key for the live feed (a warmed catalogue snapshot is reused without one).");
+			if (appState.applications.some(app => app.type === "prestashop") && !options.prestashopAdvisories && !prestashopLiveUrl && !laneRan("github-prestashop-advisories"))
+				ui.warn("PrestaShop advisory scan did not run: supply --prestashop-advisories, use --prestashop-advisories-live — or warm it once so the cached snapshot is reused.");
+			if (appState.applications.some(app => app.type === "typo3") && !options.typo3Advisories && !typo3LiveUrl && !laneRan("github-typo3-advisories"))
+				ui.warn("TYPO3 advisory scan did not run: supply --typo3-advisories, use --typo3-advisories-live — or warm it once so the cached snapshot is reused.");
+			if (appState.applications.some(app => app.type === "spip") && !options.spipAdvisories && !spipLiveUrl && !laneRan("spip-security-advisories"))
+				ui.warn("SPIP advisory scan did not run: supply --spip-advisories, use --spip-advisories-live — or warm it once so the cached NVD snapshot is reused.");
 		} catch (error) {
 			console.error(chalk.red(`❌  application plugin selection failed: ${error.message}`));
 			process.exit(2);
@@ -1486,14 +1566,19 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		try {
 			const { queryPackagistAudit } = require("./lib/packagist-audit");
 			let skippedOtherRegistry = [];
+			let unknownPackages = [];
 			const pkMatches = await queryPackagistAudit(resolved, { verbose, offline,
-				onProgress: (p, t) => st.tick(p, t), onSkipped: names => { skippedOtherRegistry = names; } });
+				onProgress: (p, t) => st.tick(p, t), onSkipped: names => { skippedOtherRegistry = names; },
+				onUnknown: names => { unknownPackages = names; } });
 			const before = cveMatches.length;
 			cveMatches = mergeBySource(cveMatches, pkMatches);
 			st.done(`${pkMatches.length} advisories matched · +${cveMatches.length - before} after merge` +
-				(skippedOtherRegistry.length ? ` · ${skippedOtherRegistry.length} non-Packagist package(s) skipped` : ""));
+				(skippedOtherRegistry.length ? ` · ${skippedOtherRegistry.length} non-Packagist package(s) skipped` : "") +
+				(unknownPackages.length ? ` · ${unknownPackages.length} package(s) with unknown coverage` : ""));
 			if (skippedOtherRegistry.length) scanWarnings.push({ type: "packagist-non-packagist-package",
 				message: `${skippedOtherRegistry.length} Composer package(s) from another registry were not queried against Packagist: ${skippedOtherRegistry.join(", ")}. Their application advisory coverage remains incomplete.` });
+			if (unknownPackages.length) scanWarnings.push({ type: "packagist-advisory-data-unknown",
+				message: `Packagist returned no advisory data for ${unknownPackages.length} Composer package(s): ${unknownPackages.join(", ")}. Their Packagist advisory coverage is unknown.` });
 		} catch (err) {
 			st.fail(err.message);
 			console.error(chalk.red(`❌  ${err.message}; Packagist advisory coverage is incomplete. No report was written.`));
@@ -1940,7 +2025,9 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	}
 
 	const reportWarnings = [
-		...appState.diagnostics.map(d => ({ type: "cms-coverage", code: d.code, message: `${d.applicationId || d.pluginId || "application"}: ${d.message}` })),
+		...appState.diagnostics.map(d => ({ type: "cms-coverage", code: d.code,
+			applicationId: d.applicationId || null, ...(d.path ? { path: d.path } : {}),
+			message: `${d.applicationId || d.pluginId || "application"}: ${d.message}` })),
 		// CMS coverage gaps are grouped per (application, capability, source, diagnostic)
 		// cause: 14 unassessed themes are one cause with 14 components, not 14 identical
 		// alerts. The structured fields let the report render reason, action and the

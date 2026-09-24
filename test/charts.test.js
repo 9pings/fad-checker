@@ -121,6 +121,8 @@ test("renderCharts: emits 4 SVG charts in one row, each with a copy button", () 
 		eolTotal: 1, obsoleteTotal: 0, outdatedTotal: 0, nativeBinaryCount: 0,
 	}, { formatDep: d => `${d.groupId}:${d.artifactId}` });
 	assert.equal((html.match(/<svg\b/g) || []).length, 4, "four SVG charts");
+	assert.equal((html.match(/<svg class="chart-svg"[^>]*height="250"/g) || []).length, 4,
+		"each exportable SVG keeps a 250px canvas");
 	assert.ok((html.match(/chart-copy/g) || []).length >= 4, "a copy button per chart");
 	assert.match(html, /class="charts-row"/, "single-row container");
 	assert.ok(html.includes("CWE-79"), "CWE chart legend rendered");
@@ -270,9 +272,9 @@ test("application scans render the instances chart, not the modules or scope cha
 	assert.match(html, /chart-instances/);
 	assert.match(html, /Most vulnerable instances/);
 	assert.match(html, /wordpress · site-a/);
-	// Bars show per-instance exposure counts; the note explains shared occurrences.
+	// The donut legend shows per-instance exposure counts; the note explains overlap.
 	assert.match(html, /a shared[\s\S]*?occurrence counts in each/);
-	assert.doesNotMatch(html.slice(html.indexOf('id="chart-instances"'), html.indexOf('id="chart-priority"')), /<path\s+d="M/);
+	assert.match(html.slice(html.indexOf('id="chart-instances"'), html.indexOf('id="chart-priority"')), /<circle\s+cx=/);
 	assert.match(html, /1 advisory check\(s\) incomplete/);
 	assert.doesNotMatch(html, /chart-components/);
 	assert.doesNotMatch(html, /chart-scope/);

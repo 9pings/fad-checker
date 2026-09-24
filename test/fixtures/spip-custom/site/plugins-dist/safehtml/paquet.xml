@@ -1,0 +1,8 @@
+<paquet
+	prefix="safehtml"
+	version="3.0.2"
+	etat="stable"
+	compatibilite="[4.1.0;4.*]"
+>
+	<nom>SafeHTML</nom>
+</paquet>

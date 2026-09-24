@@ -1,0 +1,6 @@
+{
+  "packages": [
+    { "name": "guzzlehttp/guzzle", "version": "6.3.0" }
+  ],
+  "packages-dev": []
+}

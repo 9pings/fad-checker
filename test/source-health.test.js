@@ -34,6 +34,9 @@ test("sourceForUrl maps a URL to its source by host, including subdomains and mi
 	assert.equal(m("https://proxy.golang.org/github.com/x/@latest"), "go");
 	assert.equal(m("https://api.deps.dev/v3alpha/query"), "binary");
 	assert.equal(m("https://hashlookup.circl.lu/sha256/ABC"), "binary");
+	assert.equal(m("https://www.wordfence.com/api/intelligence/v3/vulnerabilities/production"), "wordfence");
+	assert.equal(m("https://api.wordpress.org/core/checksums/1.0/"), "wordpress");
+	assert.equal(m("https://api.github.com/repos/TYPO3/typo3/security-advisories"), "githubApi");
 	assert.equal(m("https://example.invalid/whatever"), null, "an unknown host is not attributed");
 	assert.equal(m("not a url"), null);
 });

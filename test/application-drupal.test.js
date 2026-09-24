@@ -23,6 +23,7 @@ test("Drupal local advisory snapshot assesses core while keeping a custom module
 		assert.equal(result.findings.length, 1);
 		assert.equal(result.findings[0].cve.id, "SA-CORE-2099-001");
 		assert.equal(result.findings[0].cve.severityScheme, "drupal-rating");
+		assert.equal(result.findings[0].cve.fixVersion, "10.3.2", "the affected range's exclusive upper bound is the publisher's fix");
 		assert.equal(result.coverage.find(c => c.occurrenceId?.endsWith(":core")).result, "affected");
 		assert.match(result.coverage.find(c => c.occurrenceId?.endsWith(":core")).sourceSnapshot.sha256, /^[a-f0-9]{64}$/);
 		assert.equal(result.coverage.find(c => c.occurrenceId?.includes(":module:")).diagnostic, "CMS_PRIVATE_COMPONENT");
