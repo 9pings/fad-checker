@@ -39,6 +39,13 @@ It scans **10 ecosystems + 9 CMS/Frameworks** (WordPress, Drupal, Symfony, Larav
 
 📖 **[Usage & all flags](docs/USAGE.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Comparison vs other tools](docs/COMPARISON.md)** · **[Data sources](docs/DATA-SOURCES.md)**
 
+### Interactive HTML samples
+
+- **[Apache Dubbo 2.7.8 — open the report](https://9pings.github.io/fad-checker/samples/dubbo.html)**: the project used for the screenshot above, rescanned with v2.7.1; 105 Maven descriptors, direct/transitive CVEs, KEV/EPSS, EOL and fix recommendations.
+- **[Multi-instance CMS & frameworks — open the report](https://9pings.github.io/fad-checker/samples/multi-cms-frameworks.html)**: WordPress 6.4.2, Drupal 8.5.0, Symfony Demo (Symfony 7.1.1) and BookStack v24.10 (Laravel 10.48.22), with findings attributed to each instance.
+
+These are standalone reports from real source scans, frozen on **2026-09-24**. The CMS sample focuses on PHP dependencies; WordPress advisory coverage is explicitly incomplete without a Wordfence feed. [Sample scope, sources and reproduction commands](docs/samples/README.md).
+
 ## Why use fad-checker for code audits?
 
 What it does for an audit that the others don't. Same column set and sourcing discipline as
@@ -82,7 +89,7 @@ checkable.
 
 ¹⁰ Chapters 0→6 with an executive summary and fix recipes, self-contained HTML plus optional Word `.doc`. None of the others emits Word.
 
-¹¹ Four inline-SVG charts — CWE by worst severity, vulnerable transitives per root dep, your most vulnerable modules (direct vs transitive on a single-module project), fix-priority bands — rendered in the `.doc` too, with one-click copy as PNG (or a table as rich HTML) that pastes into Word formatted. Every CVE keeps its CVSS vector, CWE, references, CPE config and via-path behind a drill-down, with zero external assets.
+¹¹ Four inline-SVG charts — CWE, vulnerable transitives per root dep, your most vulnerable modules (direct vs transitive on a single-module project), and fix-priority bands. Category colours identify each slice; an aligned outer ring shows its severity mix. They render in the `.doc` too, with one-click copy as PNG (or a table as rich HTML) that pastes into Word formatted. Every CVE keeps its CVSS vector, CWE, references, CPE config and via-path behind a drill-down, with zero external assets.
 
 ¹² `--baseline` adds a Δ chapter (new / fixed / unchanged); `--fail-on-new` gates on new findings only. Snyk tracks this on its platform, not as a local diff.
 ¹³ Symfony, Laravel, WordPress, Drupal, Joomla, PrestaShop, TYPO3, Magento/Adobe Commerce, SPIP — inventoried per instance (core, plugins, themes, bundles, components) with direct/indirect attribution, publisher advisory feeds where they exist (Wordfence, packages.drupal.org, PrestaShop/TYPO3 GitHub) and WordPress core checksums; the others scan lockfiles only, with no CMS-instance view at all. → [the dedicated guide](docs/CMS-FRAMEWORKS.md)
@@ -148,12 +155,6 @@ The HTML report opens in any browser, contains every detail (CVSS vectors, refer
 
 <p align="center"><img src="docs/assets/report.png" alt="fad-checker HTML report; executive summary with severity tiles and a detailed CVE table with CWE, descriptions and fix versions" width="900"></p>
 
-### Interactive HTML samples
-
-- **[Apache Dubbo 2.7.8 — open the report](https://9pings.github.io/fad-checker/samples/dubbo.html)**: the project used for the screenshot above, rescanned with v2.7.1; 105 Maven descriptors, direct/transitive CVEs, KEV/EPSS, EOL and fix recommendations.
-- **[Multi-instance CMS & frameworks — open the report](https://9pings.github.io/fad-checker/samples/multi-cms-frameworks.html)**: WordPress 6.4.2, Drupal 8.5.0, Symfony Demo (Symfony 7.1.1) and BookStack v24.10 (Laravel 10.48.22), with findings attributed to each instance.
-
-These are standalone reports from real source scans, frozen on **2026-09-24**. The CMS sample focuses on PHP dependencies; WordPress advisory coverage is explicitly incomplete without a Wordfence feed. [Sample scope, sources and reproduction commands](docs/samples/README.md).
 
 ## CMS & frameworks
 

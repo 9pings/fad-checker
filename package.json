@@ -1,6 +1,6 @@
 {
   "name": "fad-checker",
-  "version": "2.7.1",
+  "version": "2.7.2",
   "description": "One-shot polyglot dependency auditor (10 ecosystems + 9 CMS/Frameworks). No build tools. Real & complete air-gapped mode. Private deps, binaries, certs, EOL, CVE (KEV+EPSS) - Made for professional code audits.",
   "keywords": [
     "sca",

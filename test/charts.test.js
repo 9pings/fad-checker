@@ -135,6 +135,23 @@ test("renderCharts: returns empty string when there is nothing to chart", () => 
 	assert.equal(html, "");
 });
 
+test("category colours stay distinct while the outer ring preserves each severity count", () => {
+	const html = renderCharts({ prodMatches: [
+		m("a", "one", "compile", "CRITICAL", ["CWE-79"]),
+		m("a", "one", "compile", "MEDIUM", ["CWE-79"]),
+		m("b", "two", "compile", "HIGH", ["CWE-89"]),
+	] });
+	const cweCard = html.split('id="chart-cwe"')[1].split('</figure>')[0];
+	const priorityCard = html.split('id="chart-priority"')[1].split('</figure>')[0];
+	assert.equal((cweCard.match(/class="severity-arc"/g) || []).length, 3);
+	assert.match(cweCard, /CWE-79 — Critical: 1\/2 \(50%\)/);
+	assert.match(cweCard, /CWE-79 — Medium: 1\/2 \(50%\)/);
+	assert.match(cweCard, /CWE-89 — High: 1\/1 \(100%\)/);
+	assert.match(cweCard, /fill="#2563eb"/);
+	assert.match(cweCard, /fill="#0d9488"/);
+	assert.doesNotMatch(priorityCard, /severity-arc/, "priority already uses severity colours");
+});
+
 /* ---------------- Most vulnerable components ---------------- */
 
 
@@ -154,8 +171,9 @@ test("components are ranked by critical+high only, and only the project's own mo
 		hit("LOW", ["/p/web/pom.xml"]),
 	], names);
 	assert.deepEqual(rows.map(r => [r.label, r.value]), [["acme-api", 2], ["acme-web", 1]]);
-	assert.equal(rows[0].color, "#7c0008", "worst severity in that module drives the colour (critical)");
-	assert.equal(rows[1].color, "#c92a2a", "high");
+	assert.notEqual(rows[0].color, rows[1].color, "modules have distinct category colours");
+	assert.deepEqual([rows[0].segments.critical, rows[0].segments.high], [1, 1]);
+	assert.deepEqual([rows[1].segments.critical, rows[1].segments.high], [0, 1]);
 });
 
 test("a module with no declared name is labelled by its relative path", () => {
