@@ -1297,6 +1297,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	// ---- Vulnerability database update (global step progress) ----
 	ui.section("Vulnerability database update");
 	if (offline) ui.info(chalk.dim("--offline: cached data only, no network"));
+	else ui.info(chalk.dim("First scans may take longer while caches fill."));
 
 	const hasNvdKey = !!getNvdApiKey();
 	if (options.nvd && !offline && !hasNvdKey) {
@@ -1934,8 +1935,6 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	if (obsoleteResults.length > 8) console.log(chalk.dim(`    …and ${obsoleteResults.length - 8} more`));
 
 	heading("Outdated", outdatedResults.length, options.allLibs ? "" : chalk.dim("pass -a/--allLibs to query registries"));
-	for (const o of outdatedResults.slice(0, 8)) console.log("    " + chalk.dim(coordOf(o.dep)) + ` ${o.dep.version} → ${chalk.green(o.latest)}` + definedInOf(o.dep));
-	if (outdatedResults.length > 8) console.log(chalk.dim(`    …and ${outdatedResults.length - 8} more`));
 
 	if (retireMatches.length) {
 		heading("Vendored JS (retire.js)", retireMatches.length);

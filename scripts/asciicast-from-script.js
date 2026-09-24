@@ -1,18 +1,12 @@
 // script(1) classic capture  ->  asciicast v2
-// Real output, real inter-chunk timings. The only synthesised part is the prompt line
-// being typed, which is how the viewer learns the command; the run itself is untouched.
+// The CLI output is unchanged; playback is paced to make fast cached steps readable.
 const fs = require("fs");
-const { StringDecoder } = require("string_decoder");
-const [raw, tim, out, colsS, rowsS] = process.argv.slice(2);
+const [raw, out, colsS, rowsS] = process.argv.slice(2);
 const cols = +colsS, rows = +rowsS;
-let buf = fs.readFileSync(raw);
-// script(1) appends its own "Script done on <date> [COMMAND_EXIT_CODE=...]" footer to the
-// log. It is the harness talking, not the tool — drop it so the recording ends on the run.
-const foot = buf.lastIndexOf(Buffer.from("\nScript done on "));
-if (foot !== -1) buf = buf.subarray(0, foot + 1);
-const timings = fs.readFileSync(tim, "utf8").trim().split("\n")
-	.map(l => l.trim().split(/\s+/)).filter(p => p.length === 2)
-	.map(([d, n]) => ({ d: parseFloat(d), n: parseInt(n, 10) }));
+let output = fs.readFileSync(raw, "utf8");
+// util-linux script adds a header/footer which are not part of the CLI output.
+output = output.replace(/^Script started on [^\n]*\n/, "")
+	.replace(/\nScript done on [\s\S]*$/, "");
 
 const CMD = "fad -s test/fixtures/private-lib-detection --offline --no-report";
 const PROMPT = "\u001b[38;5;114m❯\u001b[0m ";
@@ -21,22 +15,15 @@ let t = 0;
 const push = (dt, s) => { t += dt; ev.push([+t.toFixed(6), "o", s]); };
 
 push(0.4, PROMPT);
-for (const ch of CMD) push(0.032 + Math.random() * 0.028, ch);   // typing
+for (const ch of CMD) push(0.04, ch);   // typing
 push(0.55, "\r\n");                                               // Enter
 
-// A chunk boundary can land mid-UTF-8 (the box-drawing banner, ⚠, ▸, ·), so decode
-// across chunks instead of per chunk.
-const dec = new StringDecoder("utf8");
-let off = 0;
-for (const { d, n } of timings) {
-	if (off >= buf.length) break;
-	const chunk = buf.subarray(off, Math.min(off + n, buf.length)); off += n;
-	if (!chunk.length) continue;
-	const s = dec.write(chunk);
-	if (s) push(Math.min(d, 0.25), s);
+// Each cursor-up starts the next step on the same terminal row. Add a short
+// reading pause between steps and before Results; no delay is added to the CLI.
+const blocks = output.split(/(?=\x1b\[1A\r\x1b\[K|\x1b\[1m\x1b\[36m)/);
+for (const block of blocks) {
+	if (block) push(0.4, block);
 }
-const tail = dec.write(off < buf.length ? buf.subarray(off) : Buffer.alloc(0)) + dec.end();
-if (tail) push(0.02, tail);
 
 // Tokyo Night — the palette the previous demo.gif used.
 const THEME = {
@@ -46,4 +33,4 @@ const THEME = {
 };
 const header = { version: 2, width: cols, height: rows, timestamp: Math.floor(Date.now() / 1000), theme: THEME, env: { TERM: "xterm-256color", SHELL: "/bin/bash" } };
 fs.writeFileSync(out, JSON.stringify(header) + "\n" + ev.map(e => JSON.stringify(e)).join("\n") + "\n", "utf8");
-console.log(`events=${ev.length} duration=${t.toFixed(2)}s bytes=${off}/${buf.length}`);
+console.log(`events=${ev.length} duration=${t.toFixed(2)}s bytes=${Buffer.byteLength(output)}`);
