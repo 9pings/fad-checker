@@ -12,7 +12,7 @@
 `fad-checker` is a polyglot dependency auditor built for **professional code audits**.
 
 
-It scans **10 ecosystems + 9 CMS/Frameworks** (WordPress, Drupal, Symfony, Laravel…) in one pass, with **no build tools**, **air-gapped** workflows using transferred caches, private package detection, committed binaries & certificates, and produces clean **HTML + Word** reports.
+It scans **10 ecosystems + 9 CMS/Frameworks** (WordPress, Drupal, Symfony, Laravel…) in one pass, with **no build tools**, **air-gapped** workflows using transferred caches, private package detection, committed binaries & certificates, then produces clean **HTML reports + json baseline + (DOC/XLSX/SARIF/CycloneDX/etc)** .
 
 🌐 **[Project site & docs →](https://9pings.github.io/fad-checker/)**
 
