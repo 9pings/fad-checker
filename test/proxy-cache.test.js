@@ -191,6 +191,18 @@ test("server: single-flight — 10 concurrent identical lookups → one upstream
 	} finally { await p.close(); }
 });
 
+// A stale-while-revalidate response returns BEFORE its background refetch lands —
+// under CI load the upstream may not have been called yet when the next line runs,
+// so a background revalidation is awaited, never raced.
+async function waitFor(condition, { timeoutMs = 5000, stepMs = 10 } = {}) {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (condition()) return;
+		await new Promise(r => setTimeout(r, stepMs));
+	}
+	if (!condition()) throw new Error("waitFor: condition not met within " + timeoutMs + "ms");
+}
+
 test("server: TTL expiry refetches; swr serves stale then refreshes in the background", async () => {
 	const p = await startProxy({ overrideTtlMs: 50 });
 	try {
@@ -200,7 +212,7 @@ test("server: TTL expiry refetches; swr serves stale then refreshes in the backg
 		await new Promise(r => setTimeout(r, 80)); // expired
 		const r2 = await get(target);
 		assert.equal(r2.tag, "stale"); // served the old copy immediately
-		assert.equal(p.up.state.hits, 2); // …and refreshed upstream (background revalidate)
+		await waitFor(() => p.up.state.hits === 2); // …and refreshed upstream (background revalidate)
 		const r3 = await get(target);
 		assert.equal(r3.tag, "hit"); // the refreshed entry is now served
 	} finally { await p.close(); }
