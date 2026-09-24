@@ -204,16 +204,29 @@ async function waitFor(condition, { timeoutMs = 5000, stepMs = 10 } = {}) {
 }
 
 test("server: TTL expiry refetches; swr serves stale then refreshes in the background", async () => {
-	const p = await startProxy({ overrideTtlMs: 50 });
+	// The TTL must stay comfortably larger than CI scheduling jitter: after the
+	// background revalidate lands, the refreshed entry needs to still be FRESH
+	// when the next request reads it — a 50ms TTL expired again mid-assert on a
+	// loaded runner and the third read got "stale" instead of "hit".
+	const p = await startProxy({ overrideTtlMs: 500 });
 	try {
 		const target = p.url + "/" + URL_NPM;
 		await get(target);
 		assert.equal(p.up.state.hits, 1);
-		await new Promise(r => setTimeout(r, 80)); // expired
+		await new Promise(r => setTimeout(r, 700)); // expired
 		const r2 = await get(target);
 		assert.equal(r2.tag, "stale"); // served the old copy immediately
-		await waitFor(() => p.up.state.hits === 2); // …and refreshed upstream (background revalidate)
-		const r3 = await get(target);
+		// …and refreshed upstream in the background. The refreshed entry is
+		// served once the revalidate LANDS — poll for that observable instead of
+		// guessing when the store write lands: a loaded runner may interleave
+		// further "stale" reads (each one re-arming the coalesced revalidate),
+		// and the loop converges on the first read inside the fresh TTL.
+		let r3 = r2;
+		const deadline = Date.now() + 10000;
+		while (r3.tag !== "hit" && Date.now() < deadline) {
+			await new Promise(r => setTimeout(r, 25));
+			r3 = await get(target);
+		}
 		assert.equal(r3.tag, "hit"); // the refreshed entry is now served
 	} finally { await p.close(); }
 });
