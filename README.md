@@ -29,14 +29,13 @@ It scans **10 ecosystems + 9 CMS/Frameworks** (WordPress, Drupal, Symfony, Larav
 - **Beyond CVEs**; EOL and out-of-active-support frameworks, deprecated/abandoned/yanked, outdated with release dates, SPDX **licenses**, and **private/internal packages** — every coordinate no configured registry knows, in any ecosystem.
 - **Crypto material**; committed **certificates** (expiry, weak key, weak signature, self-signed), **private vs public keys** across PEM/OpenSSH/PuTTY/PGP and JKS/PKCS#12 keystores. Parsed offline, no network.
 - **Air-gapped**; **zero network under `--offline`**, regression-tested and reproducible under `unshare -rn`. On Maven it recovers **657/657** of OSV-Scanner's *online* result with no network interface at all, against 45 / 40 / 37 for the others. → [Benchmark](docs/BENCHMARK.md) · [Air-gapped](#air-gapped-audits)
-- **CMS & frameworks audited as instances**; Symfony, Laravel, WordPress, Drupal, Joomla, PrestaShop, TYPO3, Magento/Adobe Commerce and SPIP are auto-activated (`--app-plugins auto`): per-instance inventory (core, plugins, themes, bundles, components), direct/indirect attribution, Wordfence / Drupal / PrestaShop / TYPO3 publisher feeds where qualified, WordPress core checksums, and a per-instance « CMS & Frameworks » chapter with its synthesis even at zero findings. A missing or incomplete source never implies a clean verdict. → [the dedicated guide](docs/CMS-FRAMEWORKS.md) · [application usage](docs/USAGE.md#application-inventory-experimental)
-- **Shared cache for a scanner fleet**; `fad-checker serve-cache` + `--proxy-cache` turns one box into the cache point for every other instance: single-flight coalescing, per-source TTLs, stale-if-error, persistent storage outside `--export-cache`, and **API keys held server-side** so a keyless instance shares the fleet's quota. → [cache usage](docs/USAGE.md#shared-proxy-cache-server-serve-cache----proxy-cache)
+- **CMS & frameworks audited as instances**; Symfony, Laravel, WordPress, Drupal, Joomla, PrestaShop, TYPO3, Magento/Adobe Commerce and SPIP are auto-activated with per-instance inventory (core, plugins, themes, bundles, components) → [the dedicated guide](docs/CMS-FRAMEWORKS.md) · [application usage](docs/USAGE.md#application-inventory-experimental)
+- **Shared cache for a scanner fleet**; `fad-checker serve-cache` + `--proxy-cache` turns one box into the cache point for every other instance. → [cache usage](docs/USAGE.md#shared-proxy-cache-server-serve-cache----proxy-cache)
 - **Supply-chain risk**; known-**malicious** advisories (always block the CI gate) and suspected **typosquats** (`--typosquat`).
 - **Audit-grade**; every report carries a **provenance manifest** and a **Methodology & limitations** chapter; artifacts ship `SHA256SUMS`; **differential audits** diff against a prior run (`--baseline`) and CI can gate on *new* findings only.
-- **Reports in English or French** (`--lang fr`) — the whole report, down to the chapter counts, the status pills, the fix recipes and the summary the 📋 button pastes into Word, plus the CWE titles. Never the evidence: CVE descriptions and advisory text stay as published, a CVSS severity keeps NVD's own wording, and every translated CWE carries MITRE's original with it.
+- **Reports in English or French** (`--lang fr`) 
 - **Outputs & CI**; HTML + findings JSON by default (Word `.doc` on `--report-doc`), Excel `.xlsx` (`--report-xlsx`), CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on`, triage with `--ignore`/`--vex`. Private registries for every ecosystem.
-- **A report that is complete, or no report at all**; if a data source goes dark mid-scan and the warm cache doesn't cover the gap, the run stops before writing anything and names the domain, the error codes, the failing URL and the flag that skips that source — exit **2**, distinct from the `1` that `--fail-on` uses, so CI can tell *vulnerable* from *not trustworthy*. A source whose cache covered every lookup stays silent.
-- **Tables you can actually hand over**; every table has a split **Copy** button — the left half copies it whole, the chevron offers the first 5 rows, criticals, critical + high, or only what CISA lists as exploited, each with its row count. Pastes into Word with formatting intact.
+- Report made for productivity; every table / chart has a split **Copy for word** button.
 
 📖 **[Usage & all flags](docs/USAGE.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Comparison vs other tools](docs/COMPARISON.md)** · **[Data sources](docs/DATA-SOURCES.md)**
 
@@ -120,25 +119,6 @@ fad-checker -s ./proj -r html,json,xlsx                        # include the Exc
 fad-checker -s ./site --app-plugins wordpress --private-component wp-content/plugins/acme --offline
 ```
 
-The bundled Symfony, WordPress, Drupal, Laravel, Joomla, PrestaShop, TYPO3 and Magento/Adobe Commerce application inventories are experimental in capability; a present CMS/framework is **activated by the default `--app-plugins auto`** — any recognized layout (conjunctive positive markers per product; a bare `require` never creates an application) is inventoried with honest per-capability coverage, and `--app-plugins none` opts out. Dependency descriptors are still scanned throughout the tree: findings in a recognized CMS appear under that instance, while findings in an unrecognized subtree stay in the ordinary dependency sections. They keep private/custom extensions separate and attribute CVEs in their Composer dependencies to the owning extension. Symfony Flex `symfony.lock` is read for recipe context; `composer.lock` supplies installed versions. WordPress can assess a locally supplied Wordfence v3 production-feed snapshot for explicitly declared public components; Drupal can assess a local packages.drupal.org security-advisory snapshot. PrestaShop and TYPO3 assess the publishers' own GitHub repository advisory feeds (`--prestashop-advisories[-live]`, `--typo3-advisories[-live]`), matched per composer coordinate with the publishers' range grammars normalized; Joomla and Magento/Adobe Commerce have no machine-readable publisher feed and stay explicitly not-qualified. WordPress core file integrity compares the tree against the official api.wordpress.org checksums (`--wp-checksums[-live]`, per-version and locale): modified and unexpected files inside `wp-admin`/`wp-includes` are diagnostics under the `integrity` capability, never CVE findings. `--max-advisory-age` bounds their age from a collection date declared inside the snapshot file. `--drupal-advisories-live` fetches Drupal advisories, while `WORDFENCE_API_KEY` or `--wordfence-api-key` fetches the official Wordfence production feed (optionally with `--wordfence-feed-url`). Live snapshots use an atomic local cache (the Drupal live source queries the union of every instance's public packages). A configured local source is validated before discovery: an unreadable, invalid or stale file exits `2` with no report even when no instance matches it. Private extensions remain separate. In the report, findings follow the application view: a CVE on a core, framework, official framework component, bundle, extension or theme is **direct**; a CVE on a library is **indirect** under the component that introduces it (or under the application's primary core/framework when only the root manifest proves it), never direct by mere lock presence. A publisher constat the standard Composer lane already found merges into that finding with the union of its sources instead of duplicating it. A shared physical occurrence is detailed in every exposed instance section with its own origins per instance, coverage rows name the component they are about, identical coverage gaps group into one actionable block per cause, and the overview chart ranks exposed instances with a shared occurrence counted in each. A detected instance keeps its “CMS & Frameworks” chapter even at zero findings — the instance synthesis (version, exposure counts, coverage lanes) always renders, so a clean framework is stated as a result, never a blank; only the CVE tables wait for findings. See [application inventory usage](docs/USAGE.md#application-inventory-experimental).
-
-**What `-t <dir>` actually does.** It is an **extraction** step, not a Snyk adapter. It writes a
-parallel tree of **normalised dependency descriptors**: every `pom.xml` reduced to the
-dependency-relevant nodes (coordinates, `properties`, `dependencyManagement`, `dependencies`,
-`modules`), reactor parents rewired to their real in-tree `relativePath`, `${…}` resolved in
-coordinates — **plus every non-Maven lockfile/manifest mirrored** at the same relative path
-(`package-lock`/`yarn.lock`/`pnpm-lock`, `composer.lock`/`symfony.lock`, `poetry`/`Pipfile`/`uv`/`pdm`,
-`*.csproj`/`packages.lock.json`, `go.mod`/`go.sum`, `Gemfile.lock`, and companions like
-`Directory.Packages.props` or `nuget.config`). Online it also **probes every coordinate against
-the configured Maven repositories** and reports the ones that don't exist there — your
-**private/internal modules** — which `-e <regex>` then strips from the rewritten POMs. Then it
-**stops**: no CVE/EOL pass and no report unless you also pass `--snyk`, a `--report-<type>`,
-`--fail-on*` or `--baseline`. What you get is a buildless, sanitised dependency inventory you can
-archive as audit evidence, hand to a client or a legal review, or point any scanner at — Snyk via
-`--snyk` being one of them.
-
-A non-empty `-t` directory is refused unless `--force` is supplied. A target that overlaps the source tree or is a symlink is always refused.
-
 > [!IMPORTANT]
 > **`--offline` reads the cache, it doesn't replace it.** On a *cold* cache there is nothing to
 > match against, so an offline first run legitimately reports **0 CVE / 0 EOL / 0 outdated**;
@@ -167,36 +147,6 @@ The report keeps the six root chapters. Sub-chapters appear only when they conta
 The HTML report opens in any browser, contains every detail (CVSS vectors, references, full descriptions, CPE configurations, via-paths for transitives) and ships a Word-compatible `.doc` twin. Every match carries a **composite priority** (KEV-exploited > EPSS likelihood > CVSS severity), and the run can additionally emit a **CycloneDX 1.6 SBOM** (`--report-sbom`, vulnerabilities inline) and a **CSAF 2.0 VEX** (`--report-csaf`) for downstream tooling.
 
 <p align="center"><img src="docs/assets/report.png" alt="fad-checker HTML report; executive summary with severity tiles and a detailed CVE table with CWE, descriptions and fix versions" width="900"></p>
-
-## Coverage, honestly: the pairs Snyk reports and fad-checker doesn't
-
-No tool finds everything. fad-checker leads at **87% of a 908-pair union**, and **131 pairs came
-back from Snyk and not from it**. Adjudicated one by one against OSV, **none is a recall bug**:
-
-| | Verdict |
-| ---: | --- |
-| 57 | wrong artifact — the advisory binds a different coordinate |
-| 31 | out of range — the version is outside every declared affected range |
-| 23 | not in OSV — 19 proprietary `SNYK-*` ids, 4 that only NVD carries |
-| 19 | no Maven binding — the advisory binds no Maven package at all |
-| 1 | already reported, under the CVE alias |
-| **0** | **confirmed miss** |
-
-**Two thirds contradict the public record**, so reporting them would mean shipping false
-positives. `CVE-2023-6481` is the clean example: claimed on `logback-classic@1.2.2`, it binds
-`logback-core` at `[1.2.12, 1.2.13)` — wrong artifact, and a version published before the flaw
-existed.
-
-**Scope.** All 131 are Snyk's: OSV-Scanner, Trivy and Grype+Syft each contributed **0** findings
-no one else had. And all are on the Maven target — outside Maven the graph is in the lockfile,
-every scanner reads the same input, and the benchmark measures identical finding sets on npm,
-RubyGems and Composer.
-
-**Which is why `--snyk` exists.** fad-checker takes `snyk test` output as an **input** and merges
-it, so you get the union rather than picking a side. A coverage choice, not a correction.
-
-Method, caveats and the per-pair verdicts → [`docs/BENCHMARK.md`](docs/BENCHMARK.md); reproduce
-with [`scripts/adjudicate-gap.js`](scripts/adjudicate-gap.js).
 
 ## CMS & frameworks
 
