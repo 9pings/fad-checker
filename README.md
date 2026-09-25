@@ -2,7 +2,6 @@
  fad-checker
 </h1>
 
----
 <p align="center">
 App security is a fad, it doesn't last.<br>
 Stay safe & keep checking :)
