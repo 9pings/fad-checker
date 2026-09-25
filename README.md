@@ -2,13 +2,6 @@
  fad-checker
 </h1>
 
-<p align="center">
-App security is a fad, it doesn't last.<br>
-Stay safe & keep checking :)
-</p>
-
----
-
 [![npm version](https://img.shields.io/npm/v/fad-checker.svg)](https://www.npmjs.com/package/fad-checker)
 [![npm downloads](https://img.shields.io/npm/dm/fad-checker.svg)](https://www.npmjs.com/package/fad-checker)
 [![license](https://img.shields.io/npm/l/fad-checker.svg)](LICENSE)
