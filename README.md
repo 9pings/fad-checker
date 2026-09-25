@@ -5,7 +5,7 @@
 ---
 <p align="center">
 App security is a fad, it doesn't last.<br>
-So keep calm & keep on checking :)
+Stay safe & keep checking :)
 </p>
 
 ---
