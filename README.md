@@ -4,7 +4,7 @@
 
 ---
 <p align="center">
-Security is a fad, it doesn't last.<br>
+App security is a fad, it doesn't last.<br>
 So keep calm & keep on checking :)
 </p>
 
