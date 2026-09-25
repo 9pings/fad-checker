@@ -1,4 +1,12 @@
-# fad-checker
+<h1 align="center">
+ fad-checker
+</h1>
+
+---
+<p align="center">
+Security is a fad — it doesn't last, so stay safe & keep on checking
+</p>
+---
 
 [![npm version](https://img.shields.io/npm/v/fad-checker.svg)](https://www.npmjs.com/package/fad-checker)
 [![npm downloads](https://img.shields.io/npm/dm/fad-checker.svg)](https://www.npmjs.com/package/fad-checker)
