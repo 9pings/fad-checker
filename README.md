@@ -4,7 +4,7 @@
 
 ---
 <p align="center">
-Security is a fad — it doesn't last, so stay safe & keep on checking
+Security is a fad — it doesn't last, so stay safe & keep on checking :)
 </p>
 
 ---
