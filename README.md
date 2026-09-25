@@ -6,6 +6,7 @@
 <p align="center">
 Security is a fad — it doesn't last, so stay safe & keep on checking
 </p>
+
 ---
 
 [![npm version](https://img.shields.io/npm/v/fad-checker.svg)](https://www.npmjs.com/package/fad-checker)
@@ -14,7 +15,7 @@ Security is a fad — it doesn't last, so stay safe & keep on checking
 [![node](https://img.shields.io/node/v/fad-checker.svg)](https://nodejs.org)
 [![CI](https://github.com/9pings/fad-checker/actions/workflows/ci.yml/badge.svg)](https://github.com/9pings/fad-checker/actions/workflows/ci.yml)
 
-> **F**ormidable **A**uditor's **D**ependency **C**hecker<br>
+> AKA **F**ormidable **A**uditor's **D**ependency **C**hecker<br>
 > AKA **F**uckin' **A**utonomous **D**ependency **C**hecker<br>
 
 `fad-checker` is a polyglot dependency auditor built for **professional code audits**.
