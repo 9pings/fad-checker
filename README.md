@@ -15,6 +15,7 @@
 
 It scans **10 ecosystems + 9 CMS/Frameworks** (WordPress, Drupal, Symfony, Laravel…) in one pass, with **no build tools**, support **air-gapped** workflows using transferred caches, private package detection, committed binaries & certificates, then produces clean **HTML reports + json baseline + (DOC/XLSX/SARIF/CycloneDX/etc)** .
 
+
 🌐 **[Project site & docs →](https://9pings.github.io/fad-checker/)**
 
 <p align="center"><img src="docs/assets/demo.gif" alt="fad-checker animated terminal demo: an offline Maven audit — dependencies absent from Maven Central flagged as private/internal, the compact single-line vulnerability-database progress, then findings coloured by severity" height="500"></p>
@@ -22,17 +23,18 @@ It scans **10 ecosystems + 9 CMS/Frameworks** (WordPress, Drupal, Symfony, Larav
 ## Features
 
 - **10 ecosystems in one pass**; Maven, Gradle, npm/Yarn/pnpm, Composer, PyPI, NuGet, Go, Ruby — plus **vendored JS**, committed **native binaries** (identified by checksum) and **embedded JARs** (fat-jars/war/ear, opened in-memory).
-- **No build tools**; No `mvn`/`gradle`/`npm install`/`pip`/`dotnet restore`/`go build`, no `node_modules/`. The Maven graph is resolved the way Maven resolves it. → [how](docs/COMPARISON.md#how-its-autonomous-no-build-tools)
-- **CVE from multiple sources, merged & prioritised**; CVEProject + OSV.dev + Packagist security advisories (Composer — the database `composer audit` queries) + NVD, CPE/version cross-checked to cut false positives, ranked **CISA KEV → EPSS → CVSS**.
-- **Beyond CVEs**; Report **EOL and out-of-active-support** frameworks, deprecated/abandoned/yanked, outdated with release dates, SPDX **licenses**, and **private/internal packages**
+- **No build tools**; No `mvn`/`gradle`/`npm`/`pip`/`dotnet`/`go`, no `node_modules/` → [how](docs/COMPARISON.md#how-its-autonomous-no-build-tools)
+- **CVE from multiple sources, merged & prioritised**; CVEProject + OSV.dev + Packagist security advisories + NVD, ranked **CISA KEV → EPSS → CVSS**.
+- **Beyond CVEs**; Report **EOL and out-of-active-support** frameworks, deprecated/abandoned/yanked, outdated, SPDX **licenses**, and **private/internal packages**
 - **CMS & frameworks audited as instances**; Symfony, Laravel, WordPress, Drupal, Joomla, PrestaShop, TYPO3, Magento/Adobe Commerce and SPIP with per-instance inventory (core, plugins, themes, bundles, components) → [the dedicated guide](docs/CMS-FRAMEWORKS.md) 
-- **Crypto material**; committed **certificates** (expiry, weak key, weak signature, self-signed), **private vs public keys** across PEM/OpenSSH/PuTTY/PGP and JKS/PKCS#12 keystores. Parsed offline, no network.
+- **Crypto material**; committed **certificates**, **private vs public keys** across PEM/OpenSSH/PuTTY/PGP and JKS/PKCS#12 keystores.
 - **Air-gapped flow**; **zero network under `--offline`** → [Benchmark](docs/BENCHMARK.md) · [Air-gapped](#air-gapped-audits)
 - **Shared cache for a scanner fleet**; `fad-checker serve-cache` + `--proxy-cache`  → [cache usage](docs/USAGE.md#shared-proxy-cache-server-serve-cache----proxy-cache)
-- **Supply-chain risk**; known-**malicious** advisories (always block the CI gate) and suspected **typosquats** (`--typosquat`).
-- **Audit-grade**; every report carries a **provenance manifest** and a **Methodology & limitations** chapter; artifacts ship `SHA256SUMS`; **differential audits** diff against a prior run (`--baseline`) and CI can gate on *new* findings only.
+- **Supply-chain risk**; known-**malicious** advisories and suspected **typosquats** (`--typosquat`).
+- **Audit-grade**; every report carries a **provenance manifest** and a **Methodology & limitations** chapter; a `SHA256SUMS`;
+- **Differential audits** diff against a prior run (`--baseline`) and CI can gate on *new* findings only.
 - **Reports in English or French** (`--lang fr`) 
-- **Outputs & CI**; HTML + findings JSON by default + Word, Excel, CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on`, triage with `--ignore`/`--vex`. 
+- **Outputs & CI**; Pro HTML report + JSON baseline by default + Word, Excel, CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on`, triage with `--ignore`/`--vex`. 
 - Report **made for productivity**; every table / chart has a **Copy for word** button.
 
 📖 **[Usage & all flags](docs/USAGE.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Comparison vs other tools](docs/COMPARISON.md)** · **[Data sources](docs/DATA-SOURCES.md)**
@@ -64,46 +66,20 @@ checkable.
 
 | What an auditor actually needs to do                                                       | **fad** | OSV | Trivy | Grype+Syft | OWASP DC | Snyk |
 | ------------------------------------------------------------------------------------------ | :-: | :-: | :-: | :-: | :-: | :-: |
-| Audit a **100-module polyglot monorepo in one command**, with **no toolchain installed** ¹ | ✅ 105 modules | ⚠️ reactor skipped | ⚠️ needs `~/.m2` | ⚠️ opt-in | ⚠️ Java build | ⚠️ `mvn` build |
-| **Scan offline / air-gapped without dropping transitive deps** ²                           | ✅ 657/657 | ❌ | ⚠️ `~/.m2` | ⚠️ opt-in | ⚠️ mirror | ❌ |
-| **Identify the private/internal deps** across a big project ³                              | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Extract cleaned deps descriptors** into an external directory ⁴                          | ✅ `-t` | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Report EOL / deprecated frameworks & deps**, transitive ones included ⁵                  | ✅ | ⚠️ deprecated only | ⚠️ OS distros only | ❌ | ❌ | ⚠️ web UI only |
-| **Report committed keys & certificates** ⁶                                                 | ✅ | ❌ | ⚠️ key rule | ❌ | ❌ | ❌ |
-| **Spot committed binaries** (`.dll`, `.exe`, …) and check them against their checksums ⁷   | ✅ | ❌ | ⚠️ some | ⚠️ patterns | ❌ | ❌ |
-| **Clearly list what was *not* scanned** — before the client asks ⁸                         | ✅ warnings + method | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log |
-| **Answer "against what data?" six months later** ⁹                                         | ✅ | ❌ | ❌ | ⚠️ DB date | ⚠️ NVD date | ❌ |
-| **Send a report, not a JSON dump** ¹⁰                                                      | ✅ HTML + `.doc` | ⚠️ HTML list | ⚠️ template | ❌ | ⚠️ HTML list | ⚠️ `snyk-to-html` |
-| **Charts, per-CVE drill-down and a pasteable Word copy** ¹¹                                | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Make delta reports showing only what changed** ¹²                                        | ✅ `--baseline` | ❌ | ❌ | ❌ | ❌ | ⚠️ cloud |
-| **Audit CMS/framework instances as such** — plugins, themes, publisher advisories ¹³      | ✅ 9 products | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Share one cache across the fleet**, API keys server-side ¹⁴                              | ✅ `serve-cache` | ❌ | ⚠️ local DB | ⚠️ local DB | ⚠️ local DB | ⚠️ cloud |
-
-¹ No `mvn`/`go`/`npm`/`pip`/`dotnet` — manifests parsed off disk, nothing installed or executed. 105 × `pom.xml` in one pass: **790 pairs vs OSV-Scanner's 657**, 133 fad-only, versions mediated *per module* not flattened.
-
-² **657 of 657** of OSV-Scanner's *online* Maven result, under `unshare -rn` — no network interface. Tripwire-tested; only public coordinates ever leave the enclave.
-
-³ Chapter 0 names every coordinate that **every** configured registry answered 404 for — Maven, npm, PyPI, NuGet, Composer, Go and RubyGems — with the manifest(s) declaring it. A registry that timed out or errored is never counted: an inconclusive answer would otherwise accuse a client of shipping internal packages because their proxy was flaky. `-e <regex>` then excludes them.
-
-⁴ `-t <dir>`: normalised POMs plus every non-Maven lockfile mirrored, private coordinates stripped. Archivable, and scannable by anything — `--snyk` included.
-
-⁵ endoflife.date, split **direct vs transitive** so you know which dep to bump, plus deprecated / abandoned / yanked and outdated. Trivy covers OS distros only; Snyk's package health is web-only.
-
-⁶ Inventory *and* verdicts: expiry, RSA<2048, MD5/SHA1, self-signed; private **vs** public keys; JKS/PKCS#12. Offline parser. Trivy's secret rule finds the file, not the flaw.
-
-⁷ Identified by **hash** via deps.dev + CIRCL → should-be-declared / name≠checksum / unknown / malicious. Syft's patterns name a version, not an identity.
-
-⁸ Chapter 0 flags what *this* scan couldn't reach (missing lockfiles, BOM-only versions, Yarn Berry, incomplete application checks); the methodology section states what the tool never assesses. Elsewhere the first is a log line the audit never sees, the second isn't written down.
-
-⁹ Provenance manifest: tool, runtime, mode, run configuration and cache freshness for **each consulted source**. Grype and Dependency-Check carry one source's date, not the run.
-
-¹⁰ Chapters 0→6 with an executive summary and fix recipes, self-contained HTML plus optional Word `.doc`. None of the others emits Word.
-
-¹¹ Four inline-SVG charts — CWE, vulnerable transitives per root dep, your most vulnerable modules (direct vs transitive on a single-module project), and fix-priority bands. Category colours identify each slice; an aligned outer ring shows its severity mix. They render in the `.doc` too, with one-click copy as PNG (or a table as rich HTML) that pastes into Word formatted. Every CVE keeps its CVSS vector, CWE, references, CPE config and via-path behind a drill-down, with zero external assets.
-
-¹² `--baseline` adds a Δ chapter (new / fixed / unchanged); `--fail-on-new` gates on new findings only. Snyk tracks this on its platform, not as a local diff.
-¹³ Symfony, Laravel, WordPress, Drupal, Joomla, PrestaShop, TYPO3, Magento/Adobe Commerce, SPIP — inventoried per instance (core, plugins, themes, bundles, components) with direct/indirect attribution, publisher advisory feeds where they exist (Wordfence, packages.drupal.org, PrestaShop/TYPO3 GitHub) and WordPress core checksums; the others scan lockfiles only, with no CMS-instance view at all. → [the dedicated guide](docs/CMS-FRAMEWORKS.md)
-¹⁴ `fad-checker serve-cache` + `--proxy-cache`: one upstream call per provider resource per TTL for the whole fleet, single-flight coalescing, stale-if-error, and NVD/Wordfence/GitHub keys held by the server (use `--wordfence-live` to activate Wordfence with a server key). Trivy/Grype/DC cache a local DB; Snyk's is on its platform.
+| Audit a **100-module polyglot monorepo in one command**, with **no toolchain installed**  | ✅ 105 modules | ⚠️ reactor skipped | ⚠️ needs `~/.m2` | ⚠️ opt-in | ⚠️ Java build | ⚠️ `mvn` build |
+| **Scan offline / air-gapped without dropping transitive deps**                            | ✅ 657/657 | ❌ | ⚠️ `~/.m2` | ⚠️ opt-in | ⚠️ mirror | ❌ |
+| **Identify the private/internal deps** across a big project                               | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Extract cleaned deps descriptors** into an external directory                           | ✅ `-t` | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Report EOL / deprecated frameworks & deps**, transitive ones included                   | ✅ | ⚠️ deprecated only | ⚠️ OS distros only | ❌ | ❌ | ⚠️ web UI only |
+| **Report committed keys & certificates**                                                  | ✅ | ❌ | ⚠️ key rule | ❌ | ❌ | ❌ |
+| **Spot committed binaries** (`.dll`, `.exe`, …) and check them against their checksums    | ✅ | ❌ | ⚠️ some | ⚠️ patterns | ❌ | ❌ |
+| **Clearly list what was *not* scanned** — before the client asks                          | ✅ warnings + method | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log | ⚠️ log |
+| **Answer "against what data?" six months later**                                          | ✅ | ❌ | ❌ | ⚠️ DB date | ⚠️ NVD date | ❌ |
+| **Send a report, not a JSON dump**                                                       | ✅ HTML + `.doc` | ⚠️ HTML list | ⚠️ template | ❌ | ⚠️ HTML list | ⚠️ `snyk-to-html` |
+| **Charts, per-CVE drill-down and a pasteable Word copy**                                 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Make delta reports showing only what changed**                                         | ✅ `--baseline` | ❌ | ❌ | ❌ | ❌ | ⚠️ cloud |
+| **Audit CMS/framework instances as such** — plugins, themes, publisher advisories       | ✅ 9 products | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Share one cache across the fleet**, API keys server-side                               | ✅ `serve-cache` | ❌ | ⚠️ local DB | ⚠️ local DB | ⚠️ local DB | ⚠️ cloud |
 
 
 **Deliberately not a goal: reachability.** A finding is a vulnerable version on the dependency
