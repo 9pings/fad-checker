@@ -13,33 +13,38 @@
 
 `fad-checker` is a polyglot dependency auditor built for **professional code audits**.
 
-
-It scans **10 ecosystems + 9 CMS/Frameworks** (WordPress, Drupal, Symfony, Laravel…) in one pass, with **no build tools**, **air-gapped** workflows using transferred caches, private package detection, committed binaries & certificates, then produces clean **HTML reports + json baseline + (DOC/XLSX/SARIF/CycloneDX/etc)** .
+It scans **10 ecosystems + 9 CMS/Frameworks** (WordPress, Drupal, Symfony, Laravel…) in one pass, with **no build tools**, support **air-gapped** workflows using transferred caches, private package detection, committed binaries & certificates, then produces clean **HTML reports + json baseline + (DOC/XLSX/SARIF/CycloneDX/etc)** .
 
 🌐 **[Project site & docs →](https://9pings.github.io/fad-checker/)**
 
-> [!WARNING]
-> fad-checker is new and may still contain ( rare ) bugs. Treat its output as a strong first pass, **double-check anything critical**, and please [report issues](https://github.com/9pings/fad-checker/issues); they get fixed fast.
-
-<p align="center"><img src="docs/assets/demo.gif" alt="fad-checker animated terminal demo: an offline Maven audit — dependencies absent from Maven Central flagged as private/internal, the compact single-line vulnerability-database progress, then findings coloured by severity" height="600"></p>
+<p align="center"><img src="docs/assets/demo.gif" alt="fad-checker animated terminal demo: an offline Maven audit — dependencies absent from Maven Central flagged as private/internal, the compact single-line vulnerability-database progress, then findings coloured by severity" height="500"></p>
 
 ## Features
 
 - **10 ecosystems in one pass**; Maven, Gradle, npm/Yarn/pnpm, Composer, PyPI, NuGet, Go, Ruby — plus **vendored JS**, committed **native binaries** (identified by checksum) and **embedded JARs** (fat-jars/war/ear, opened in-memory).
-- **No build tools**; manifests and lockfiles are read off disk. No `mvn`/`gradle`/`npm install`/`pip`/`dotnet restore`/`go build`, no `node_modules/`. The Maven graph is resolved the way Maven resolves it. → [how](docs/COMPARISON.md#how-its-autonomous-no-build-tools)
-- **CVE, merged & prioritised**; CVEProject + OSV.dev + Packagist security advisories (Composer — the database `composer audit` queries) + NVD, CPE/version cross-checked to cut false positives, ranked **CISA KEV → EPSS → CVSS**.
-- **Beyond CVEs**; EOL and out-of-active-support frameworks, deprecated/abandoned/yanked, outdated with release dates, SPDX **licenses**, and **private/internal packages** — every coordinate no configured registry knows, in any ecosystem.
+- **No build tools**; No `mvn`/`gradle`/`npm install`/`pip`/`dotnet restore`/`go build`, no `node_modules/`. The Maven graph is resolved the way Maven resolves it. → [how](docs/COMPARISON.md#how-its-autonomous-no-build-tools)
+- **CVE from multiple sources, merged & prioritised**; CVEProject + OSV.dev + Packagist security advisories (Composer — the database `composer audit` queries) + NVD, CPE/version cross-checked to cut false positives, ranked **CISA KEV → EPSS → CVSS**.
+- **Beyond CVEs**; Report **EOL and out-of-active-support** frameworks, deprecated/abandoned/yanked, outdated with release dates, SPDX **licenses**, and **private/internal packages**
+- **CMS & frameworks audited as instances**; Symfony, Laravel, WordPress, Drupal, Joomla, PrestaShop, TYPO3, Magento/Adobe Commerce and SPIP with per-instance inventory (core, plugins, themes, bundles, components) → [the dedicated guide](docs/CMS-FRAMEWORKS.md) 
 - **Crypto material**; committed **certificates** (expiry, weak key, weak signature, self-signed), **private vs public keys** across PEM/OpenSSH/PuTTY/PGP and JKS/PKCS#12 keystores. Parsed offline, no network.
-- **Air-gapped**; **zero network under `--offline`**, regression-tested and reproducible under `unshare -rn`. On Maven it recovers **657/657** of OSV-Scanner's *online* result with no network interface at all, against 45 / 40 / 37 for the others. → [Benchmark](docs/BENCHMARK.md) · [Air-gapped](#air-gapped-audits)
-- **CMS & frameworks audited as instances**; Symfony, Laravel, WordPress, Drupal, Joomla, PrestaShop, TYPO3, Magento/Adobe Commerce and SPIP are auto-activated with per-instance inventory (core, plugins, themes, bundles, components) → [the dedicated guide](docs/CMS-FRAMEWORKS.md) · [application usage](docs/USAGE.md#application-inventory-experimental)
-- **Shared cache for a scanner fleet**; `fad-checker serve-cache` + `--proxy-cache` turns one box into the cache point for every other instance. → [cache usage](docs/USAGE.md#shared-proxy-cache-server-serve-cache----proxy-cache)
+- **Air-gapped flow**; **zero network under `--offline`** → [Benchmark](docs/BENCHMARK.md) · [Air-gapped](#air-gapped-audits)
+- **Shared cache for a scanner fleet**; `fad-checker serve-cache` + `--proxy-cache`  → [cache usage](docs/USAGE.md#shared-proxy-cache-server-serve-cache----proxy-cache)
 - **Supply-chain risk**; known-**malicious** advisories (always block the CI gate) and suspected **typosquats** (`--typosquat`).
 - **Audit-grade**; every report carries a **provenance manifest** and a **Methodology & limitations** chapter; artifacts ship `SHA256SUMS`; **differential audits** diff against a prior run (`--baseline`) and CI can gate on *new* findings only.
 - **Reports in English or French** (`--lang fr`) 
-- **Outputs & CI**; HTML + findings JSON by default (Word `.doc` on `--report-doc`), Excel `.xlsx` (`--report-xlsx`), CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on`, triage with `--ignore`/`--vex`. Private registries for every ecosystem.
-- Report made for productivity; every table / chart has a split **Copy for word** button.
+- **Outputs & CI**; HTML + findings JSON by default + Word, Excel, CycloneDX 1.6 SBOM, CSAF 2.0 VEX, SARIF 2.1.0, JSON; gate with `--fail-on`, triage with `--ignore`/`--vex`. 
+- Report **made for productivity**; every table / chart has a **Copy for word** button.
 
 📖 **[Usage & all flags](docs/USAGE.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Comparison vs other tools](docs/COMPARISON.md)** · **[Data sources](docs/DATA-SOURCES.md)**
+
+## Quick start
+
+```bash
+npm install -g fad-checker
+fad-checker -s ./my-project          # → ./fad-checker-report/cve-report.html
+```
+
+A free [NVD API key](https://nvd.nist.gov/developers/request-an-api-key) (instant) gives 10× faster enrichment: `fad-checker --set-nvd-key YOUR_KEY`. A few common runs; full list via `fad-checker --help` or [docs/USAGE.md](docs/USAGE.md)
 
 ### Interactive HTML samples
 
@@ -47,6 +52,9 @@ It scans **10 ecosystems + 9 CMS/Frameworks** (WordPress, Drupal, Symfony, Larav
 - **[Multi-instance CMS & frameworks — open the report](https://9pings.github.io/fad-checker/samples/multi-cms-frameworks.html)**: WordPress 6.4.2, Drupal 8.5.0, Symfony Demo (Symfony 7.1.1) and BookStack v24.10 (Laravel 10.48.22), with findings attributed to each instance.
 
 These are standalone reports from real source scans, frozen on **2026-09-24**. The CMS sample focuses on PHP dependencies; WordPress advisory coverage is explicitly incomplete without a Wordfence feed. [Sample scope, sources and reproduction commands](docs/samples/README.md).
+
+> [!WARNING]
+> fad-checker is new and may still contain ( rare ) bugs. Treat its output as a strong first pass, **double-check anything critical**, and please [report issues](https://github.com/9pings/fad-checker/issues); they get fixed fast.
 
 ## Why use fad-checker for code audits?
 
@@ -97,23 +105,13 @@ checkable.
 ¹³ Symfony, Laravel, WordPress, Drupal, Joomla, PrestaShop, TYPO3, Magento/Adobe Commerce, SPIP — inventoried per instance (core, plugins, themes, bundles, components) with direct/indirect attribution, publisher advisory feeds where they exist (Wordfence, packages.drupal.org, PrestaShop/TYPO3 GitHub) and WordPress core checksums; the others scan lockfiles only, with no CMS-instance view at all. → [the dedicated guide](docs/CMS-FRAMEWORKS.md)
 ¹⁴ `fad-checker serve-cache` + `--proxy-cache`: one upstream call per provider resource per TTL for the whole fleet, single-flight coalescing, stale-if-error, and NVD/Wordfence/GitHub keys held by the server (use `--wordfence-live` to activate Wordfence with a server key). Trivy/Grype/DC cache a local DB; Snyk's is on its platform.
 
-**Where it loses** — containers/OS packages, auto-fix PRs, and CVE coverage against Snyk's curated
-feed → [`docs/COMPARISON.md`](docs/COMPARISON.md) ·
-[the gap, measured](#coverage-honestly-the-pairs-snyk-reports-and-fad-checker-doesnt).
 
 **Deliberately not a goal: reachability.** A finding is a vulnerable version on the dependency
 graph, and the report says exactly that (in Methodology) instead of guessing at call paths. Deciding
 whether the vulnerable code is reachable in *this* application is the auditor's call, made with
 application context no scanner has.
 
-## Quick start
-
-```bash
-npm install -g fad-checker
-fad-checker -s ./my-project          # → ./fad-checker-report/cve-report.html
-```
-
-A free [NVD API key](https://nvd.nist.gov/developers/request-an-api-key) (instant) gives 10× faster enrichment: `fad-checker --set-nvd-key YOUR_KEY`. A few common runs; full list via `fad-checker --help` or [docs/USAGE.md](docs/USAGE.md):
+## More basic exemples :
 
 ```bash
 fad-checker -s ./proj -e "^com\.acme\."                        # exclude private libs (coord regex)
@@ -134,8 +132,6 @@ fad-checker -s ./site --app-plugins wordpress --private-component wp-content/plu
 > that's an empty cache, not a clean project. Warm it once (a normal online run on any project,
 > or `--import-cache`), then `--offline` returns the full result set with zero network calls.
 > Air-gapped machines get their cache via [`--export-cache` / `--import-cache`](#air-gapped-audits).
-
-A single self-contained binary (no Node), from-source install and shell completion are in → [docs/USAGE.md](docs/USAGE.md).
 
 ## What it finds
 
