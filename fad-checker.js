@@ -1501,6 +1501,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		return `${list.length - u} EOL${u ? `, ${u} out of support` : ""}`;
 	};
 	let eolResults = [];
+	let commercialBuildNotes = [];
 	if (willEol) {
 		const st = progress.start("EOL frameworks (endoflife.date)");
 		try {
@@ -1828,6 +1829,20 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		const reattributed = attributeMatchOrigins(cveMatches);
 		if (reattributed && verbose) console.log(`   re-attributed ${reattributed} match(es) to their resolving manifest/module`);
 	}
+	// 6a-ter. Paid support past the open-source end of life (endoflife.date extendedSupport):
+	// per EOL finding, the build of its own branch that fixes the CVEs found, the newest
+	// vendor build when a vendor repository is configured, and — when the project already
+	// runs a vendor build — the finding leaves the EOL list for a chapter-0 note.
+	if (eolResults.length) {
+		try {
+			const { annotateCommercialSupport } = require("./lib/commercial-support");
+			const { commercialBuilds } = await annotateCommercialSupport(eolResults, cveMatches, { offline, repos: mavenRepos });
+			if (commercialBuilds.length) {
+				eolResults = eolResults.filter(e => e.status !== "commercial");
+				commercialBuildNotes = commercialBuilds;
+			}
+		} catch (err) { if (verbose) console.warn(chalk.yellow(`   commercial-support annotation skipped: ${err.message}`)); }
+	}
 	if (options.src) {
 		const { expandComposerFindings } = require("./lib/application-inventory");
 		cveMatches = expandComposerFindings(cveMatches, options.src, applicationRelations);
@@ -2068,6 +2083,13 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	}
 
 	const reportWarnings = [
+		// A project already on a vendor build of an open-source-EOL cycle: covered by the paid
+		// support that build comes from, so it is a note, not an EOL finding.
+		...commercialBuildNotes.map(e => ({ type: "commercial-build",
+			product: e.product, cycle: e.cycle, coord: `${e.dep.groupId}:${e.dep.artifactId}`,
+			version: e.commercialBuild.version, lastPublic: e.commercialBuild.lastPublic, until: e.extendedSupport,
+			...(e.dep.manifestPaths?.[0] ? { manifestPath: e.dep.manifestPaths[0] } : {}),
+			message: `${e.dep.groupId}:${e.dep.artifactId} ${e.commercialBuild.version} is not on Maven Central and is newer than the last public ${e.product} ${e.cycle} release (${e.commercialBuild.lastPublic}): a vendor build under paid support${e.extendedSupport && e.extendedSupport !== "true" ? ` (until ${e.extendedSupport})` : ""}, not reported as end-of-life.` })),
 		...appState.diagnostics.map(d => ({ type: "cms-coverage", code: d.code,
 			applicationId: d.applicationId || null, ...(d.path ? { path: d.path } : {}),
 			message: `${d.applicationId || d.pluginId || "application"}: ${d.message}` })),

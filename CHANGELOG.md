@@ -20,6 +20,17 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - `--retries <n>`: number of retries (5+n s apart) before an unresponsive data source
   stops the run. Default 5 (unchanged behaviour); `0` disables retrying.
 
+- EOL and paid support: when endoflife.date lists commercial support past the open-source
+  end of life (`extendedSupport`, e.g. Broadcom for Spring), the EOL row states it — it
+  stays an EOL finding, since those fixes are paid builds from the vendor's repository. It
+  also gives the build of the dependency's OWN branch that fixes the CVEs found (from the
+  advisories' per-branch bounds: CVE-2024-38820 on 5.3.x → a build above 5.3.40, not the
+  6.1.14 migration) and, with the vendor repository configured (`--add-repo maven … --token`),
+  the newest vendor build and whether it reaches that bound. A project already running a
+  vendor build (newer than the cycle's last public release and absent from Maven Central)
+  is not reported as EOL: a chapter-0 note says so. JSON: `extendedSupport`, `cycleLatest`,
+  `branchFix`, `latestCommercial`; every CVE match carries `cve.branchFix`.
+
 ### Fixed
 Reliability — every item below produced a false positive or a false negative; each is
 checked against `mvn dependency:tree` / Maven's own `ComparableVersion` / the package

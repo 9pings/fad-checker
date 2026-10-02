@@ -168,3 +168,36 @@ test("non-framework EOL findings are untouched by grouping (no anchor / componen
 	assert.equal(r[0].components, undefined);
 	assert.equal(r[0].dep, hib, "the original record is passed through");
 });
+
+// endoflife.date `extendedSupport`: PAID support past the open-source end of life. It must
+// NOT clear the finding (subscribers only, builds from the vendor's private repository) —
+// it is stated beside it.
+const { makeDepRecord: mkRec } = require("../lib/dep-record");
+const { generateHtmlReport } = require("../lib/cve-report");
+const springDep = mkRec({ ecosystem: "maven", namespace: "org.springframework", name: "spring-core", version: "5.3.39", manifestPath: "/p/pom.xml" });
+const SPRING = [
+	{ cycle: "6.2", eol: "2026-06-30", extendedSupport: "2032-06-30", latest: "6.2.19" },
+	{ cycle: "5.3", eol: "2024-08-31", extendedSupport: "2029-08-31", latest: "5.3.39" },
+	{ cycle: "5.2", eol: "2021-12-31", extendedSupport: "2023-12-31", latest: "5.2.25.RELEASE" },
+];
+const ANGULARJS = [{ cycle: "1.8", eol: "2021-12-31", extendedSupport: true, latest: "1.8.3" }];
+
+test("extendedSupport: a future vendor date keeps the EOL finding and carries the date; a past one is dropped; `true` is kept as offered", async () => {
+	const r53 = await checkEolDeps(new Map([["org.springframework:spring-core", springDep]]), { cycles: { "spring-framework": SPRING }, now: NOW });
+	assert.equal(r53.length, 1);
+	assert.equal(r53[0].status, "eol", "paid support does not clear the finding");
+	assert.equal(r53[0].extendedSupport, "2029-08-31");
+	const old = { ...springDep, version: "5.2.25.RELEASE", versions: ["5.2.25.RELEASE"] };
+	const r52 = await checkEolDeps(new Map([["org.springframework:spring-core", old]]), { cycles: { "spring-framework": SPRING }, now: NOW });
+	assert.equal(r52[0].extendedSupport, null, "commercial support ended too: nothing to state");
+	const ng = mkRec({ ecosystem: "npm", name: "angular", version: "1.8.3", manifestPath: "/p/package-lock.json" });
+	const rng = await checkEolDeps(new Map([["npm:angular", ng]]), { cycles: { angularjs: ANGULARJS }, now: NOW });
+	if (rng.length) assert.equal(rng[0].extendedSupport, "true");
+});
+
+test("extendedSupport is stated in the EOL row, in English and French", () => {
+	const finding = { dep: springDep, product: "Spring Framework", productSlug: "spring-framework", cycle: "5.3", status: "eol", eol: "2024-08-31", latest: "6.2.19", notes: "The 5.3 branch ended at 5.3.39.", extendedSupport: "2029-08-31" };
+	const payload = lang => ({ cveMatches: [], eolResults: [finding], obsoleteResults: [], outdatedResults: [], projectInfo: { name: "d", src: "/p", generatedAt: "x" }, locale: lang });
+	assert.ok(generateHtmlReport(payload("en")).includes("Paid commercial support until 2029-08-31."));
+	assert.ok(generateHtmlReport(payload("fr")).includes("Support commercial payant jusqu&#39;au 2029-08-31.") || generateHtmlReport(payload("fr")).includes("Support commercial payant jusqu'au 2029-08-31."));
+});

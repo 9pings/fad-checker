@@ -109,3 +109,18 @@ test("EOL detail: a grouped TRANSITIVE component shows its chain, never the anch
 	assert.ok(!html.includes("declaration line not located"));
 	fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("EOL detail: a transitive component that names its RESOLVING modules (per-module resolution) still shows its chain", () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-eol-refs-"));
+	const pom = path.join(dir, "pom.xml");
+	fs.writeFileSync(pom, `<project>\n<dependencies>\n<dependency>\n<groupId>org.springframework</groupId>\n<artifactId>spring-web</artifactId>\n</dependency>\n</dependencies>\n</project>`);
+	const dep = makeDepRecord({ ecosystem: "maven", namespace: "org.springframework", name: "spring-web", version: "6.2.19", manifestPath: pom });
+	const components = [
+		{ name: "org.springframework:spring-aop", version: "6.2.19", scope: "transitive", via: ["org.springframework:spring-web"], manifestPaths: [pom] },
+		{ name: "org.springframework:spring-web", version: "6.2.19", manifestPaths: [pom] },
+	];
+	const html = generateHtmlReport({ cveMatches: [], eolResults: [{ dep, components, product: "Spring Framework", cycle: "6.2", status: "eol", eol: "2026-06-30" }], obsoleteResults: [], outdatedResults: [], projectInfo: { name: "d", src: dir, generatedAt: "x" } });
+	assert.ok(!html.includes("no declaration in this POM"), "the resolving module is not where a transitive is declared");
+	assert.ok(html.includes("<code>org.springframework:spring-web</code> → <code>org.springframework:spring-aop</code>"));
+	fs.rmSync(dir, { recursive: true, force: true });
+});
