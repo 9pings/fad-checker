@@ -170,7 +170,11 @@ test("parsePnpmLock v6: /name@version(peers) keys + top-level deps, dev flag hon
 	assert.equal(m["axios"].version, "1.6.0");
 	assert.equal(m["follow-redirects"].version, "1.15.3");  // transitive
 	assert.equal(m["jest"].scope, "dev");                   // dev: true in packages
-	assert.equal(m["@types/node"].scope, "dev");            // scoped + dev
+	// scoped + dev. No importer reaches it in this fixture (an orphan): like the
+	// package-lock path, a package nothing declares is a "transitive", and the lock's
+	// own `dev: true` flag is what keeps it out of production.
+	assert.equal(m["@types/node"].scope, "transitive");
+	assert.equal(m["@types/node"].isDev, true);
 });
 
 test("collectNpmDeps: pnpm-lock.yaml collected, ecosystemType stays npm, ignoreTest drops dev", () => {

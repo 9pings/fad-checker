@@ -17,7 +17,7 @@ const chalk = require("chalk");
 const pLimit = require("p-limit");
 const { program } = require("commander");
 const ui = require("./lib/ui");
-const { createSourceHealth, guardedFetch, formatAbort, setActiveLedger } = require("./lib/source-health");
+const { createSourceHealth, guardedFetch, formatAbort, setActiveLedger, setRetryAttempts } = require("./lib/source-health");
 
 const core = require("./lib/core");
 
@@ -396,6 +396,8 @@ program
 	.option("--vex <file>", "ingest a CSAF VEX and suppress what it marks not-affected/fixed")
 	.option("--licenses", "run license detection + copyleft policy check (off by default)")
 	.option("--offline", "no network: use cached CVE/OSV/NVD/EPSS/KEV/POM data only")
+	.option("--no-nvd-mirror", "NVD only: don't fall back to the fkie-cad/nvd-json-data-feeds mirror when NVD does not answer")
+	.option("--retries <n>", "retries (waiting 5+n s each) before a data source that does not answer stops the run; 0 = none", "5")
 	.option("--proxy-cache <url>", "shared data-source cache (`serve-cache`)")
 	.option("--proxy-cache-token <token>", "authenticate to a shared proxy-cache server (or set FAD_PROXY_CACHE_TOKEN)")
 	.option("--proxy <url>", "corporate proxy for all requests")
@@ -470,7 +472,7 @@ program
 // The -d / -a vocabularies, laid out once under the options instead of wrapped inside two
 // option descriptions where they cost fifteen lines.
 program.addHelpText("after", `
-  -d  eol nvd osv packagist-audit epss kev retire transitive all-libs checksums osv-db report
+  -d  eol nvd nvd-mirror osv packagist-audit epss kev retire transitive all-libs checksums osv-db report
       vendored-js-inventory default-excludes
       maven gradle npm yarn nuget composer pypi go ruby js jars binaries certs
   -a  licenses eol-support typosquat snyk osv-db nvd-cpe-match cve-refresh
@@ -561,6 +563,8 @@ const verbose = !!options.verbose;
 // globalThis.fetch, so wrapping it once covers all of them — and a lookup served from the
 // warm cache issues no request at all, which IS the "100% from cache, stay silent" rule.
 const sourceHealth = createSourceHealth();
+try { setRetryAttempts(options.retries == null ? 5 : options.retries); }
+catch (err) { console.error(chalk.red(`❌  ${err.message}`)); process.exit(2); }
 if (!options.offline) {
 	// The mirror/registry rotations report their own exhaustion (their requests bypass the
 	// guard: they carry their own AbortSignal and failover).
@@ -933,7 +937,21 @@ async function timedPhase(label, fn) {
 			console.warn(chalk.red(`❌  ${id} collect failed:`), chalk.dim(err.message));
 			continue;
 		}
-		for (const [k, v] of res.deps) resolved.set(k, v);
+		for (const [k, v] of res.deps) {
+			// Maven and Gradle both key a coordinate as bare `g:a`. In a hybrid tree the second
+			// codec used to OVERWRITE the first's record — a Gradle constraint on a coord a pom
+			// declares turned the Maven dependency into a managed-only pin, dropped later. Keep
+			// both: the later one is filed under a build-tool-qualified key (matching reads
+			// groupId/artifactId, not the key).
+			const prev = resolved.get(k);
+			if (prev && prev.ecosystem === v.ecosystem && (prev.ecosystemType || prev.ecosystem) !== (v.ecosystemType || v.ecosystem)) {
+				const alt = `${v.ecosystemType}:${k}`;
+				v.coordKey = alt;
+				resolved.set(alt, v);
+				continue;
+			}
+			resolved.set(k, v);
+		}
 		if (res.warnings?.length) collectWarnings.push(...res.warnings);
 		for (const p of (res.parsedManifests || [])) parsedManifests.push({ path: p, ecosystemType: id });
 		if (id === "maven") mavenCtx = res._maven;
@@ -1314,11 +1332,14 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const cveIndexExists = fs.existsSync(require("./lib/cve-download").CVE_INDEX_PATH);
 	const otherRegistryIds = activeIds.filter(id => id !== "maven" && id !== "gradle" && id !== "npm" && id !== "yarn" && getCodec(id)?.checkRegistry);
 	const willCve = !!cveScanner && (!(options.cveOffline || offline) || cveIndexExists);
-	const willTransitive = !!(options.transitive && (runMaven || runGradle));
-	// Per-module version mediation overlay: recover transitive versions the global
-	// transitive pass masks via cross-module depMgmt bleed. Runs after (and only when)
-	// the global pass runs, and needs the parsed store + per-module props.
-	const willOverlay = willTransitive && !!mavenPropsByPom && !!mavenStore;
+	// Maven with a source tree: every module is resolved on ITS OWN effective model
+	// (lib/maven-reactor.js) and the scan set is rebuilt from the union — this replaces the
+	// old global merged pass + additive per-module overlay, which let one project's pins
+	// re-version another's. Runs even with --no-transitive (directs and their managed
+	// versions are still per module). The global pass remains for Gradle records and for a
+	// descriptor import without a source tree.
+	const willReactor = !!(runMaven && mavenPropsByPom && mavenStore);
+	const willTransitive = !!(options.transitive && (runGradle || (runMaven && !willReactor)));
 	// External import BOMs (e.g. spring-boot-dependencies): resolve their managed
 	// versions to backfill declared deps that pin no version of their own (the usual
 	// Spring Boot setup). Cached via poms-cache; offline-aware (uses warmed POMs,
@@ -1365,11 +1386,14 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 	const willBinaryId = [...resolved.values()].some(d => d.provenance === "binary");
 	// License detection piggybacks on the registry passes (same fetched metadata),
 	// so it adds no progress step of its own.
-	const totalSteps = [willBom, willTransitive, willOverlay, willCve, willEol, willEol && composerPlatforms.length > 0,
+	const totalSteps = [willBom, willReactor, willTransitive, willCve, willEol, willEol && composerPlatforms.length > 0,
 		willOutdated, /*npm reg*/ true, ...otherRegistryIds.map(() => true), willOsv, willPackagistAudit, willOsvDb,
 		willNvd, willEpss, willKev, willRetire, willCerts, willBinaryId].filter(Boolean).length;
 	const progress = new ui.Progress(totalSteps, { onStepEnd: abortIfDegraded });
 
+	// The external import-BOM + <parent> managed table, kept for the transitive pass: Maven
+	// pins transitive versions with it too, not only versionless declarations.
+	let bomDepMgmt = new Map();
 	if (willBom) {
 		const st = progress.start("BOM / parent version resolution (Maven Central)");
 		try {
@@ -1387,8 +1411,27 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			const propertyOverrides = require("./lib/maven-bom").collectPropertyOverrides(mavenStore);
 			const parentMgmt = await resolveBomManagedVersions(externalParents, { ...base, via: "parent", propertyOverrides });
 			for (const [k, v] of parentMgmt) if (!mgmt.has(k)) mgmt.set(k, v);
+			bomDepMgmt = mgmt;
 			const filled = backfillVersions(resolved, mgmt);
 			st.done(`${filled} dep version(s) from ${allBoms.length} BOM(s) + ${externalParents.length} parent(s)`);
+		} catch (err) { st.fail(err.message); }
+	}
+
+	if (willReactor) {
+		const st = progress.start(options.transitive ? "Maven resolution, module by module (Maven Central)" : "Maven direct versions, module by module");
+		try {
+			const { resolveReactor } = require("./lib/maven-reactor");
+			const rr = await resolveReactor(resolved, mavenStore, mavenPropsByPom, {
+				verbose,
+				offline,
+				maxDepth: parseInt(options.transitiveDepth, 10) || 6,
+				includeTestDeps: !options.ignoreTest,
+				repos: mavenRepos,
+				transitive: !!options.transitive,
+				deps2Exclude,
+			});
+			st.done(`${rr.modules} module(s), ${resolved.size} dependencies${rr.dropped.length ? `, ${rr.dropped.length} managed-only coord(s) on no classpath` : ""}`);
+			if (verbose && rr.dropped.length) console.log(chalk.gray(`   not on any classpath, not scanned: ${rr.dropped.slice(0, 10).join(", ")}${rr.dropped.length > 10 ? ", …" : ""}`));
 		} catch (err) { st.fail(err.message); }
 	}
 
@@ -1400,26 +1443,21 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 			maxDepth: parseInt(options.transitiveDepth, 10) || 6,
 			includeTestDeps: !options.ignoreTest,
 			repos: mavenRepos,
+			bomDepMgmt,
+			// With the reactor in charge of the Maven records, only Gradle ones are seeded here.
+			...(willReactor ? { only: d => d.ecosystemType === "gradle" } : {}),
 		});
 		st.done(`+${resolved.size - directCount} transitive (total ${resolved.size})`);
 	}
 
-	if (willOverlay) {
-		const st = progress.start("Per-module version mediation (masked transitives)");
-		try {
-			const { expandPerModuleOverlay } = require("./lib/version-overlay");
-			const ov = await expandPerModuleOverlay(resolved, mavenStore, mavenPropsByPom, {
-				verbose,
-				offline,
-				maxDepth: parseInt(options.transitiveDepth, 10) || 6,
-				includeTestDeps: !options.ignoreTest,
-				repos: mavenRepos,
-			});
-			st.done(`+${ov.appended} masked version(s) recovered across ${ov.modules} module(s)`);
-			if (verbose && ov.recovered.length) {
-				for (const r of ov.recovered) console.log(`   ↳ ${r.coord}: +${r.version} (had ${r.had})  via ${r.module}`);
-			}
-		} catch (err) { st.fail(err.message); }
+	// <dependencyManagement>-only pins: keep the ones a resolution pass reached (now
+	// transitives), drop the rest — a pin nothing pulls in is on no classpath.
+	{
+		const { settleManagedOnly } = require("./lib/cve-match");
+		const settled = settleManagedOnly(resolved);
+		if (verbose && settled.dropped.length) {
+			console.log(chalk.gray(`   ${settled.dropped.length} <dependencyManagement>-only pin(s) not on any classpath, not scanned: ${settled.dropped.slice(0, 10).join(", ")}${settled.dropped.length > 10 ? ", …" : ""}`));
+		}
 	}
 
 	// Scan-completeness signals — computed NOW (after BOM backfill) so only the deps
@@ -1630,7 +1668,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 		} else {
 			try {
 				const { enrichMatches } = require("./lib/nvd");
-				await enrichMatches(cveMatches, { verbose, offline, onProgress: (p, t) => st.tick(p, t) });
+				await enrichMatches(cveMatches, { verbose, offline, mirror: options.nvdMirror !== false, onProgress: (p, t) => st.tick(p, t) });
 
 				// 4c-bis. NVD CPE ranges as an ADDITIVE tier, curated coordinates only.
 				// OSV/GHSA declare affected ranges per release BRANCH; NVD declares them for
@@ -1737,7 +1775,7 @@ async function runReportFlow(resolved, ecoFlags = {}) {
 					if (retireMatches.length && willNvd) {
 						try {
 							const { enrichMatches } = require("./lib/nvd");
-							await enrichMatches(retireMatches, { verbose, offline, onProgress: (p, t) => st.tick(p, t) });
+							await enrichMatches(retireMatches, { verbose, offline, mirror: options.nvdMirror !== false, onProgress: (p, t) => st.tick(p, t) });
 						} catch (err) { if (verbose) ui.warn(`vendored-JS NVD enrichment skipped: ${err.message}`); }
 					}
 					st.done(`${retireMatches.length} finding(s)${invN ? ` · ${invN} lib(s) inventoried` : ""}`);

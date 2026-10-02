@@ -21,7 +21,7 @@ const os = require("os");
 const path = require("path");
 const core = require("../lib/core");
 const { collectResolvedDeps, expandWithTransitives, matchDepsAgainstCves } = require("../lib/cve-match");
-const { expandPerModuleOverlay } = require("../lib/version-overlay");
+const { resolveReactor } = require("../lib/maven-reactor");
 
 const FIXTURE = path.join(__dirname, "fixtures", "maven-inherited-direct");
 const MC = "https://repo1.maven.org/maven2";
@@ -63,8 +63,7 @@ async function collectFixture() {
 test("overlay must NOT surface a transitive that an INHERITED direct dep overrides", async () => {
 	const { store, propsByPom, resolved } = await collectFixture();
 	const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-inherited-"));
-	await expandWithTransitives(resolved, { fetcher: fakeFetcher, cacheDir });
-	await expandPerModuleOverlay(resolved, store, propsByPom, { fetcher: fakeFetcher, cacheDir });
+	await resolveReactor(resolved, store, propsByPom, { fetcher: fakeFetcher, cacheDir });
 
 	const cc = resolved.get("org.apache.commons:commons-compress");
 	assert.ok(cc, "commons-compress should be in the resolved set");
@@ -75,8 +74,7 @@ test("overlay must NOT surface a transitive that an INHERITED direct dep overrid
 test("no CVE is fabricated against the overridden 1.24.0", async () => {
 	const { store, propsByPom, resolved } = await collectFixture();
 	const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-inherited-"));
-	await expandWithTransitives(resolved, { fetcher: fakeFetcher, cacheDir });
-	await expandPerModuleOverlay(resolved, store, propsByPom, { fetcher: fakeFetcher, cacheDir });
+	await resolveReactor(resolved, store, propsByPom, { fetcher: fakeFetcher, cacheDir });
 
 	const idx = {
 		byPackageName: { "org.apache.commons:commons-compress": [{ id: "CVE-FIX-0002", severity: "HIGH", ranges: [{ lessThan: "1.26.0" }] }] },

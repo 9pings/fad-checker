@@ -29,7 +29,7 @@ const os = require("os");
 const path = require("path");
 const core = require("../lib/core");
 const { collectResolvedDeps, expandWithTransitives, matchDepsAgainstCves } = require("../lib/cve-match");
-const { expandPerModuleOverlay } = require("../lib/version-overlay");
+const { resolveReactor } = require("../lib/maven-reactor");
 const { attributeMatchOrigins } = require("../lib/attribution");
 
 const FIXTURE = path.join(__dirname, "fixtures", "maven-test-scope-masking");
@@ -71,8 +71,7 @@ async function run() {
 	const resolved = collectResolvedDeps(store, propsByPom, {});
 	const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "fad-testscope-mask-"));
 	const opts = { fetcher, cacheDir, includeTestDeps: true };
-	await expandWithTransitives(resolved, opts);
-	const overlay = await expandPerModuleOverlay(resolved, store, propsByPom, opts);
+	const overlay = await resolveReactor(resolved, store, propsByPom, opts);
 	return { resolved, overlay };
 }
 

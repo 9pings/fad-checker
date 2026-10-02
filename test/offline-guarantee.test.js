@@ -18,7 +18,7 @@ const path = require("path");
 const core = require("../lib/core");
 const { fetchPom, effectivePom, resolveTransitiveDeps } = require("../lib/transitive");
 const { collectResolvedDeps } = require("../lib/cve-match");
-const { expandPerModuleOverlay } = require("../lib/version-overlay");
+const { resolveReactor } = require("../lib/maven-reactor");
 
 const freshCache = () => fs.mkdtempSync(path.join(os.tmpdir(), "fad-airgap-"));
 function tripwireFetcher() {
@@ -52,7 +52,7 @@ test("offline: resolveTransitiveDeps makes zero network calls on a cold cache", 
 	assert.equal(out.size, 0);
 });
 
-test("offline: the per-module version overlay makes zero network calls", async () => {
+test("offline: the per-module Maven resolution makes zero network calls", async () => {
 	// Parse the masking fixture, then run the overlay offline with a tripwire fetcher.
 	const FIXTURE = path.join(__dirname, "fixtures", "maven-version-masking");
 	const store = core.newMetadataStore();
@@ -62,7 +62,6 @@ test("offline: the per-module version overlay makes zero network calls", async (
 	const resolved = collectResolvedDeps(store, propsByPom, {});
 
 	const f = tripwireFetcher();
-	const ov = await expandPerModuleOverlay(resolved, store, propsByPom, { offline: true, fetcher: f, cacheDir: freshCache() });
-	assert.equal(f.calls(), 0, "the overlay must respect --offline (cache-first, never network)");
-	assert.equal(ov.appended, 0, "cold cache offline → nothing resolved, but crucially nothing fetched");
+	await resolveReactor(resolved, store, propsByPom, { offline: true, fetcher: f, cacheDir: freshCache() });
+	assert.equal(f.calls(), 0, "the per-module resolution must respect --offline (cache-first, never network)");
 });

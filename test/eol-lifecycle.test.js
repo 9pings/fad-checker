@@ -105,10 +105,10 @@ test("grouping: framework components in one manifest at one cycle → ONE findin
 	assert.equal(r[0].status, "unsupported");
 	assert.equal(r[0].cycle, "5.4");
 	assert.deepEqual(r[0].components, [
-		{ name: "symfony/console", version: "5.4.47" },
-		{ name: "symfony/framework-bundle", version: "5.4.45" },
-		{ name: "symfony/http-kernel", version: "5.4.51" },
-		{ name: "symfony/yaml", version: "5.4.45" },
+		{ name: "symfony/console", version: "5.4.47", manifestPaths: [L] },
+		{ name: "symfony/framework-bundle", version: "5.4.45", manifestPaths: [L] },
+		{ name: "symfony/http-kernel", version: "5.4.51", manifestPaths: [L] },
+		{ name: "symfony/yaml", version: "5.4.45", manifestPaths: [L] },
 	]);
 });
 

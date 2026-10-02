@@ -331,3 +331,47 @@ test("with no ledger registered (offline, or a unit test) the hook is inert", ()
 	assert.doesNotThrow(() => noteFanoutExhausted("https://api.osv.dev/x", ["HTTP 503"]));
 	assert.doesNotThrow(() => noteFanoutExhausted("not-a-url", []));
 });
+
+/* ---------------- --retries ---------------- */
+const { setRetryAttempts, getRetryAttempts, describeSchedule } = require("../lib/source-health");
+
+test("--retries: guardedFetch honours a configured retry count (schedule stays 5+n)", async () => {
+	const h = createSourceHealth();
+	const waits = [];
+	let calls = 0;
+	const f = guardedFetch({ health: h, retries: 2, fetch: async () => { calls++; return { ok: false, status: 503 }; }, sleep: async ms => { waits.push(ms); } });
+	await f("https://api.first.org/data/v1/epss");
+	assert.equal(calls, 3, "the first call plus 2 retries");
+	assert.deepEqual(waits, [6000, 7000]);
+	assert.deepEqual(h.degraded().map(d => d.id), ["epss"]);
+});
+
+test("--retries 0: the first failed answer declares the source down, without sleeping", async () => {
+	const h = createSourceHealth();
+	let calls = 0, slept = 0;
+	const f = guardedFetch({ health: h, retries: 0, fetch: async () => { calls++; return { ok: false, status: 503 }; }, sleep: async () => { slept++; } });
+	await f("https://api.first.org/data/v1/epss");
+	assert.equal(calls, 1);
+	assert.equal(slept, 0);
+	assert.equal(h.isDown("epss"), true);
+});
+
+test("--retries: the run-wide setting reaches guards built without an explicit count, and the abort message", async () => {
+	try {
+		assert.equal(getRetryAttempts(), 5, "default is 5");
+		setRetryAttempts("3");
+		const h = createSourceHealth();
+		let calls = 0;
+		const f = guardedFetch({ health: h, fetch: async () => { calls++; return { ok: false, status: 503 }; }, sleep: async () => {} });
+		await f("https://api.first.org/data/v1/epss");
+		assert.equal(calls, 4);
+		assert.match(formatAbort(h.degraded()), /3 attempts, 6→8 s/);
+		assert.equal(describeSchedule(0), "no retry");
+		assert.equal(describeSchedule(1), "1 attempt, 6 s");
+	} finally { setRetryAttempts(5); }
+});
+
+test("--retries: a value that is not a non-negative integer is refused, never clamped", () => {
+	for (const bad of ["five", "-1", "2.5", "", null]) assert.throws(() => setRetryAttempts(bad), /non-negative integer/);
+	assert.equal(getRetryAttempts(), 5, "a refused value leaves the setting untouched");
+});

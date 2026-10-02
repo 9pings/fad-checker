@@ -71,7 +71,7 @@ test("a versionless managed coord is never left as a literal ${...}", async () =
 	}
 });
 
-// Symmetric to the masked-version rule in lib/version-overlay.js: a DECLARED version is dev
+// Symmetric to the masked-version rule in lib/attribution.js: a DECLARED version is dev
 // only when every manifest declaring it does so at test/provided scope. The record is
 // coord-wide, so without per-version scope a test-only version inherits the coordinate's
 // production flag. Real case, Dubbo 2.7.8: hibernate-validator:5.2.4.Final is declared once,

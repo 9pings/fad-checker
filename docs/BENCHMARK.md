@@ -11,6 +11,29 @@ since been adjudicated against the public record and **none is a recall bug** �
 [the measurement](#what-fad-checker-misses-and-why). Its differentiator remains the second table:
 what survives when the network is gone.
 
+> **Re-measured — 2026-10-02, after the Maven mediation fixes** (dependencyManagement-only
+> pins no longer scanned, `<exclusions>` and managed scopes applied, import-BOM versions pinning
+> transitives — see CHANGELOG). Same pinned commit, same unit. OSV-Scanner online now reports
+> **705** pairs (its database grew since the table below): fad recovers **705/705 online and
+> 705/705 under `unshare -rn --offline`**, before and after the fixes. The fixes remove **71**
+> fad pairs and add none; **none of the 71 is reported by OSV-Scanner**, and each was checked
+> against `mvn dependency:tree` on the declaring modules: `jackson-databind`/`jackson-core`
+> **2.4.3** (55 pairs — no module resolves 2.4.3), `io.netty:netty:3.10.6.Final` (13 — excluded
+> from zookeeper), `grpc-netty-shaded:1.22.1` (managed only; its declaration is commented out),
+> `commons-httpclient:3.0.1` and `junit:4.11` (on no classpath of the modules they were filed
+> under). fad goes from 883 to 812 pairs: those 71 were false positives.
+>
+> **Second pass, same day — Maven resolved module by module** (`lib/maven-reactor.js`, plus
+> Maven's own version ordering and deterministic nearest-wins). OSV-Scanner recall stays
+> **705/705 online and air-gapped**. fad goes from 812 to **834** pairs: **−9** that were false
+> positives — `jetty-server`/`jetty-http` `9.4.11.v20180605` for CVE-2017-7656/7657/7658 and
+> CVE-2018-12536, all fixed IN 9.4.11 (the old ordering ranked `.v20180605` below 9.4.11), and a
+> CVE filed on the `spring-framework-bom` POM — and **+31** real ones the global pass masked:
+> netty **4.1.35.Final** (`netty-codec`/`-handler`/`-codec-http`/`-common`) in dubbo-rpc-grpc,
+> `netty-all` **4.1.25.Final** in dubbo-rpc-rest, `jetty-util` 9.4.11.v20180605 — every one of
+> them present at that version and scope in `mvn dependency:tree` of the module it is filed
+> under. Air-gapped wall clock, warm cache: about 1 s.
+
 ## Two different questions
 
 A scanner comparison usually conflates two things. This one separates them, because the

@@ -5,6 +5,82 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- EOL chapter: each row is click-to-expand. The detail panel lists every descriptor
+  that declares the framework (or each component of a grouped framework) down to
+  `file:line` plus the declaration itself; a transitive finding shows every chain
+  and where the direct dependency to bump is declared (`lib/descriptor-refs.js`).
+  Grouped EOL `components[]` now carry `manifestPaths` / `scope` / `via` in the JSON.
+- NVD mirror (`fkie-cad/nvd-json-data-feeds`, a daily git mirror of the NVD API 2.0: same
+  JSON, no key, no rate limit). Without an NVD API key it is read FIRST, in parallel; a CVE
+  it does not hold (not mirrored yet) or cannot serve goes to NVD, which must answer (full
+  retry schedule, the run stops otherwise). With a key NVD stays first and the mirror is its
+  fallback. A cached record past its TTL is served rather than dropped when no source
+  answers. `--no-nvd-mirror` (`-d nvd-mirror`) restores NVD-only.
+- `--retries <n>`: number of retries (5+n s apart) before an unresponsive data source
+  stops the run. Default 5 (unchanged behaviour); `0` disables retrying.
+
+### Fixed
+Reliability — every item below produced a false positive or a false negative; each is
+checked against `mvn dependency:tree` / Maven's own `ComparableVersion` / the package
+manager's documented semantics, and locked by a test.
+
+- Maven version ordering now equals Maven's `ComparableVersion`: unknown qualifiers sort
+  AFTER the release (`32.0.0-jre > 32.0.0`, Jetty `9.4.11.v20180605 > 9.4.11`), a number
+  beats a qualifier, `1.0.1 > 1.0-1`, `1-rc < 1-rc1`, `1.0a1` = alpha-1. Guava's fixing
+  release was "affected" by the CVEs it fixes, Jetty's by its own. Verified on 9 816 real
+  version pairs (0 mismatch); 1 542 of them kept as a test oracle.
+- Maven version ranges (`[1.0,2.0)`) are resolved to the highest published version inside
+  them (maven-metadata.xml) instead of being compared as a literal version, which matched
+  every upper-bounded CVE.
+- Maven is now resolved MODULE BY MODULE (`lib/maven-reactor.js`): each module with its own
+  `<dependencyManagement>`, external parent, imported BOMs and property overrides; the scan set
+  is the union of what the modules really hold. The former global merged pass let one
+  project's pins re-version another project's dependencies (several projects under one scan
+  root) and kept a managed version a module overrides as a direct dependency. It replaces the
+  per-module overlay (`lib/version-overlay.js`, removed).
+- A coordinate present only in `<dependencyManagement>` (a version pin) or an imported BOM
+  is no longer scanned as a dependency; it is kept only where a module really resolves it.
+- Transitive resolution is deterministic and follows Maven's mediation: nearest wins, then
+  first declared (the result used to depend on network latency); the winner keeps its version
+  and a wider-scope path only widens its scope and its subtree's.
+- `<exclusions>` (declared and managed) are applied; a dependency without `<scope>` takes the
+  managed scope, locally and in upstream POMs (junit/mockito managed `test` in a root pom,
+  logback managed `test` by a library's parent, no longer production); transitives of a
+  `provided` dependency are dev; import-BOM / parent managed versions pin transitives.
+- Upstream POMs: a child redeclaring an inherited dependency overrides it; an explicit
+  managed entry beats an imported BOM and the first imported BOM wins;
+  `${project.parent.version}` resolves. An external parent's own `<dependencies>` are scanned;
+  an `<optional>` direct dependency is on its own module's classpath; an `activeByDefault`
+  profile's properties override the main `<properties>`.
+- Maven transitive resolution no longer seeds npm/PyPI/… records as Maven roots
+  (`undefined:<name>` lookups sent to Maven Central and mirrors).
+- Gradle: `constraints { }` entries and `force(...)` are version constraints, not direct
+  dependencies (a constraint is a floor, a force a pin); `exclude(...)` (per dependency and
+  per configuration) is applied; the widest scope wins whatever the declaration order;
+  `gradle.lockfile` entries are not re-walked as resolution roots; `-e` matches the groupId;
+  in a hybrid Maven + Gradle tree one build tool's record no longer overwrites the other's.
+- yarn (v1 and Berry) and pnpm: dependencies are classified from the lockfile graph —
+  transitives are transitive (with their `via` chain), dev is dev only when reachable solely
+  through dev dependencies. Dev-only CVEs no longer trip `--fail-on`.
+- npm aliases (`string-width-cjs` → `string-width`, `npm:` specifiers in package-lock v1/v3,
+  yarn, Berry, pnpm) are scanned under the REAL package name; CVEs of the real package were
+  never queried.
+
+- Local OSV database (`--osv-db`): range events are evaluated in sorted order per the OSV
+  schema (unsorted events gave false positives and negatives), and `limit` events are honoured.
+- Source merging is alias-symmetric: a GHSA-keyed finding and a CVE-keyed one carrying that
+  GHSA as an alias (or sharing any alias) are one finding, in either arrival order.
+- Packagist advisories: the Composer constraint evaluator follows composer/semver — `^1.0`,
+  `~1.2`, `1.2.*`, `<2.0` exclude 2.0 pre-releases; `1.2.3-p1 > 1.2.3`; `< 3.4.6` (spaced
+  operators) parses; a `composer.lock` package at a pre-release/patch version is checked
+  instead of silently skipped.
+- NuGet `packages.lock.json`: `CentralTransitive` entries are transitive, not direct; Direct in
+  any target framework / project wins; `Project` references are never scanned as packages.
+
+### Changed
+- Relicensed from MIT to Apache-2.0 (`LICENSE`, `package.json`).
+
 ## [2.7.0] - 2026-09-24
 
 ### Fixed

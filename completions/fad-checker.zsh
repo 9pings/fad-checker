@@ -28,6 +28,8 @@ _fad_check() {
 		'--no-binaries[skip committed native-binary scanning]'
 		'--no-certs[skip certificate / key-material scanning]'
 		'--cert-expiry-days[warn on certs expiring within N days (default 90)]:days:'
+		'--retries[retries before an unreachable data source stops the run (default 5)]:count:'
+		'--no-nvd-mirror[NVD only, no fkie-cad mirror fallback]'
 		'(-d --disable)'{-d,--disable}'[turn features OFF, comma-separated]:list:'
 		'(-a --activate)'{-a,--activate}'[turn ON what is off by default, comma-separated]:list:'
 		'(-r --report)'{-r,--report}'[outputs to write: html,doc,xlsx,sbom,csaf,json,sarif]:list:'
