@@ -5,6 +5,7 @@
  */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const path = require("path");
 const { G, MC, upstream, writeLocal, run, versionsOf } = require("./helpers/maven-scenario");
 
 const leaf = (a, v, extra = {}) => ({ g: G, a, v, ...extra });
@@ -84,7 +85,8 @@ test("a module overriding a managed version: the overridden value is on no class
 	}), R);
 	assert.deepEqual(versionsOf(r, "X"), ["2.0"]);
 	assert.deepEqual(versionsOf(r, "Z"), ["2.0"]);
-	assert.ok(r.get(`${G}:X`).manifestPaths.every(p => p.endsWith("m/pom.xml")), "defined in m, not in the root that only manages it");
+	// path.join: the manifest path is a native path (m\\pom.xml on Windows).
+	assert.ok(r.get(`${G}:X`).manifestPaths.every(p => p.endsWith(path.join("m", "pom.xml"))), "defined in m, not in the root that only manages it");
 });
 
 test("a local BOM module overridden by a child: only the child's version", async () => {
